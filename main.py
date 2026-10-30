@@ -1815,6 +1815,7 @@ class Plugin:
             else:
                 self._overlay.hide()
                 self._resume_paused_games()
+                self._release_capture()
             if self._hotkey:
                 # Ctrl+Alt+T must close a shown translation whatever is in front, e.g. one started from the side
                 # menu's Translate button over Big Picture, which isn't a Steam game
@@ -1823,6 +1824,13 @@ class Plugin:
         except Exception as e:
             logger.error(f"native_overlay_update failed: {e}")
             return False
+
+    def _release_capture(self):
+        """Drop the capture's pixels (the PNG and the decoded frame, megabytes) once nothing needs them; the window
+        position stays for get_windows_status."""
+        if self._capture_target:
+            self._capture_target.pop("png", None)
+            self._capture_target.pop("image", None)
 
     # Windows: Pause Game While Translating. The game is paused when its translation appears (right after the capture,
     # so the screenshot shows it running) and everything paused is resumed when the translation is hidden, however
@@ -2481,6 +2489,9 @@ class Plugin:
 
     async def discard_screenshot(self, image_path: str) -> bool:
         """Delete a screenshot the frontend won't recognize (the translation was cancelled after the capture)."""
+        if IS_WINDOWS and self._capture_target and image_path == self._capture_target.get("path"):
+            self._release_capture()  # the capture is in memory, not a file
+            return True
         if not self._is_own_screenshot(image_path):
             return False
         try:
@@ -2491,7 +2502,11 @@ class Plugin:
 
     async def recognize_text_file(self, image_path: str):
         if IS_WINDOWS and self._capture_target and image_path == self._capture_target.get("path"):
-            return await Plugin.recognize_text(self, self._capture_target["png"])  # the capture, from memory
+            png = self._capture_target.pop("png", None)  # the capture, from memory; only OCR needs the PNG
+            if png is None:
+                logger.error("The capture was already recognized or discarded")
+                return []
+            return await Plugin.recognize_text(self, png)
         if not self._is_own_screenshot(image_path):
             logger.error(f"Refusing to read a file outside the screenshot folder: {image_path}")
             return []
