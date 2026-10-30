@@ -1,6 +1,11 @@
 // End-to-end tests on the real device: Steam Big Picture + Decky Loader running, a real Steam game, the real
 // translate shortcut, the real button in Steam's side menu, and what actually ends up on screen.
 //
+// The final smoke check before a release. The logic is tested in CI (tests/README.md); what only this checks:
+// the real Steam and Decky behave as the emulator in tests/integration assumes (menu stores per window, Decky
+// keeping the unloaded plugin in the side menu), and the Windows parts CI replaces really work: RegisterHotKey
+// with a game in front, the WGC capture of the game, the on-device OCR, the overlay window drawn over the game.
+//
 //   pnpm test:e2e                     (E2E_APPID / E2E_WINDOW pick another game, default The Banner Saga)
 //
 // The tests take over the screen and keyboard for about a minute: don't use the device meanwhile. They launch the
@@ -93,6 +98,7 @@ describe(`${NAME} end to end`, { timeout: 240000 }, () => {
         }
     });
 
+    // device only: RegisterHotKey + SendInput, WGC capture, on-device OCR, the layered window over the game
     it('Ctrl+Alt+T translates the game and closes the translation again', async () => {
         await focusGame();
         const before = screenshotGame('hotkey-before');
@@ -107,6 +113,7 @@ describe(`${NAME} end to end`, { timeout: 240000 }, () => {
         assert.equal((await steam.pluginState()).visible, false);
     });
 
+    // device only: Steam's real menu store of the game's overlay window reports the side menu
     it('opening the Steam side menu closes the translation, and the menu offers Translate', async () => {
         await focusGame();
         log.mark();
@@ -124,6 +131,7 @@ describe(`${NAME} end to end`, { timeout: 240000 }, () => {
         assert.equal(overlay().visible, false, 'the translation came back after the menu closed');
     });
 
+    // device only: the button in Steam's real Quick Access window, and the side menu gone from the capture
     it('the Translate button in the side menu translates the game', async () => {
         await focusGame();
         const before = screenshotGame('button-before');
@@ -139,6 +147,7 @@ describe(`${NAME} end to end`, { timeout: 240000 }, () => {
         await dismissIfShown();
     });
 
+    // device only: real Decky Loader's reload (the behaviour tests/integration/decky.ts emulates)
     it('after a plugin reload (store update) the side menu still translates', async () => {
         // the side menu was open on the plugin when it was reloaded: Decky kept showing the unloaded instance
         await steam.openPluginInSideMenu();
