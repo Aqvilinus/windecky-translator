@@ -1824,12 +1824,6 @@ class Plugin:
             logger.error(f"native_overlay_update failed: {e}")
             return False
 
-    async def native_overlay_suppress(self, on):
-        """Windows: a Steam side menu opened over the translation (src/windows.ts): the still steps aside meanwhile."""
-        if IS_WINDOWS and self._overlay:
-            self._overlay.set_suppressed(bool(on))
-        return True
-
     # Windows: Pause Game While Translating. The game is paused when its translation appears (right after the capture,
     # so the screenshot shows it running) and everything paused is resumed when the translation is hidden, however
     # it was started (Ctrl+Alt+T, the side menu, a controller shortcut) and even if the game exited meanwhile.

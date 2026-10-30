@@ -26,6 +26,7 @@ import { ImageState, ImageOverlay } from "./Overlay";
 import { GameTranslatorLogic } from "./Translator";
 import { cleanupAllFontDOM } from "./fonts";
 import { IS_WINDOWS, forwardOverlayToBackend, listenForHotkey, trackSteamApps } from "./windows";
+import { adoptActivePlugin } from "./deckyState";
 import { ProgressInfo } from "./Input";
 import { ActivationIndicator } from "./ActivationIndicator";
 import { SettingsProvider, useSettings } from "./SettingsContext";
@@ -358,9 +359,12 @@ export default definePlugin(() => {
     const logic = new GameTranslatorLogic(imageState);
 
     // Add image overlay as a global component (Windows: the backend draws it over the game window instead)
-    const stopForwarding = IS_WINDOWS ? forwardOverlayToBackend(imageState) : null;
+    const stopForwarding = IS_WINDOWS ? forwardOverlayToBackend(imageState, logic.dismiss) : null;
     const stopHotkey = IS_WINDOWS ? listenForHotkey(logic) : null;
     const stopTrackingApps = IS_WINDOWS ? trackSteamApps() : null;
+    // after a reload the side menu would keep showing the unloaded instance (deckyState.ts)
+    const stopAdopting = adoptActivePlugin(PLUGIN_NAME,
+        p => (p.content as { props?: { logic?: unknown } } | undefined)?.props?.logic === logic);
     if (IS_WINDOWS) {
         // a Steam UI reload leaves the backend running: hide a translation the old UI left on screen (and resume a
         // game it paused), since this UI starts with none
@@ -390,6 +394,7 @@ export default definePlugin(() => {
             stopForwarding?.();
             stopHotkey?.();
             stopTrackingApps?.();
+            stopAdopting();
             routerHook.removeGlobalComponent("ImageOverlay");
             routerHook.removeGlobalComponent("HoldActivationIndicator");
         },

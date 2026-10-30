@@ -58,6 +58,15 @@ jobs:
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
+      - name: Tests
+        shell: bash
+        run: |
+          corepack enable
+          corepack pnpm install --frozen-lockfile
+          corepack pnpm run typecheck
+          corepack pnpm test
+          python -m compileall -q main.py py_modules scripts
+
       - name: Build plugin and dependencies
         shell: bash
         env:

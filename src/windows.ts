@@ -19,7 +19,7 @@ type StateListener = Parameters<ImageState['onStateChanged']>[0];
 // How often the side menus are checked while a translation is on screen
 const SIDE_MENU_CHECK_MS = 250;
 
-export function forwardOverlayToBackend(state: ImageState): () => void {
+export function forwardOverlayToBackend(state: ImageState, dismiss: () => void): () => void {
     let menuTimer: ReturnType<typeof setInterval> | null = null;
     let menuOpen = false;
     const stopWatchingMenus = () => {
@@ -27,15 +27,16 @@ export function forwardOverlayToBackend(state: ImageState): () => void {
         menuTimer = null;
         menuOpen = false;
     };
-    // The side menu over a game is drawn into the game's window, under the overlay window: while one is open the
-    // still steps aside, and comes back when it closes
+    // The side menu over a game is drawn into the game's window, under the overlay window: opening one closes the
+    // translation. A menu still open when the translation appears (closing after Translate) doesn't count.
     const watchMenus = () => {
         if (menuTimer) return;
+        menuOpen = anySideMenuOpen();
         menuTimer = setInterval(() => {
             const open = anySideMenuOpen();
-            if (open === menuOpen) return;
+            const opened = open && !menuOpen;
             menuOpen = open;
-            call('native_overlay_suppress', open).catch(() => { /* the backend logs its own errors */ });
+            if (opened) dismiss();
         }, SIDE_MENU_CHECK_MS);
     };
 

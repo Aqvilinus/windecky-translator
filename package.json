@@ -6,7 +6,9 @@
   "scripts": {
     "build": "shx rm -rf dist && rollup -c",
     "watch": "rollup -c -w",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "node --test --test-reporter=spec tests/e2e/translate.e2e.mjs"
   },
   "repository": {
     "type": "git",
@@ -37,7 +39,8 @@
     "rollup": "^4.66.0",
     "shx": "^0.3.4",
     "tslib": "^2.4.0",
-    "typescript": "^5.6.0"
+    "typescript": "^5.6.0",
+    "vitest": "^5.0.5"
   },
   "dependencies": {
     "qrcode.react": "^4.2.0",

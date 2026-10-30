@@ -384,7 +384,6 @@ class Overlay:
         self._state = None
         self._target = None
         self._shown = False
-        self._suppressed = False  # a Steam side menu is open over the game: the still steps aside
         self._dib = None  # (width, height, memory DC, bitmap, old bitmap, bits): reused while the size stays
 
     def start(self):
@@ -399,10 +398,6 @@ class Overlay:
 
     def hide(self):
         self._queue.put(("hide", None, None))
-
-    def set_suppressed(self, on):
-        """Hide the still while a Steam side menu is open (it is drawn into the game, under this window)."""
-        self._queue.put(("suppress", bool(on), None))
 
     def stop(self):
         if self._thread:
@@ -441,9 +436,6 @@ class Overlay:
                         self._state, self._target, draw = state, target, True
                     elif cmd == "hide":
                         self._state, draw = None, False
-                        self._suppressed = False
-                    elif cmd == "suppress":
-                        self._suppressed = state
                 if draw:
                     try:
                         self._draw()
@@ -523,7 +515,7 @@ class Overlay:
             user32.ReleaseDC(None, screen)
 
     def _sync_visibility(self):
-        want = self._state is not None and bool(self._state.get("visible", True)) and not self._suppressed
+        want = self._state is not None and bool(self._state.get("visible", True))
         tgt = (self._target or {}).get("hwnd")
         if want and tgt:
             if not user32.IsWindow(wintypes.HWND(tgt)):

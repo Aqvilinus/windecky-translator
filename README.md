@@ -36,7 +36,7 @@ Might be helpful for learning a new language by playing games or some other purp
 >   translator takes over for 15 minutes. Offline NLLB works as upstream.
 > - **Overlay:** Big Picture sits behind the game on Windows, so the translation is drawn in a click-through window
 >   on top of everything: a still of the captured frame with the translations fitted over the original text, like
->   upstream's overlay.
+>   upstream's overlay. Opening a Steam side menu closes the translation (the menu would be drawn under it).
 > - **Shortcut:** **Ctrl+Alt+T** translates, a second press closes the translation. It is registered only while a game
 >   started from Steam is in front, so the combo keeps working normally everywhere else. Map it to a controller
 >   button in your handheld's app (e.g. OneXConsole) or Steam Input. (Windows gives controller input only to the app
@@ -55,6 +55,13 @@ Might be helpful for learning a new language by playing games or some other purp
 > **Development:** clone into `%USERPROFILE%\homebrew\plugins\decky-translator`, `pnpm install && pnpm run build`, then
 > `python scripts/build_windows.py --version dev --skip-frontend` and copy `out/plugin-dependencies.tar.gz` into `bin/`
 > (main.py unpacks it on the next start). Note that installing the release zip over a clone replaces the clone.
+>
+> **Tests:** `pnpm run typecheck && pnpm test` (unit tests in `tests/frontend`, run by CI). `pnpm test:e2e` runs the
+> end-to-end tests on the device itself (Steam Big Picture with Decky Loader, a Steam game: The Banner Saga by default,
+> `E2E_APPID`/`E2E_WINDOW` for another): it presses Ctrl+Alt+T in the game, clicks Translate in Steam's side menu over
+> the game, reloads the plugin like a store update, and checks the overlay window and the translated screen
+> (screenshots in `tests/e2e/artifacts`). It takes the screen and keyboard for about half a minute. Run it after
+> changing the frontend or the overlay.
 
 ![Screenshot](assets/screenshot_1.jpg)
 
