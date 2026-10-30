@@ -31,7 +31,7 @@ DICTIONARY = {"Willkommen, Reisender": "Welcome, traveller", "Neues Spiel": "New
 
 # ---------------------------------------------------------------- Decky
 def install_decky(base_dir):
-    """Decky's module as main.py sees it (decky.pyi); returns the list emit() appends (event, args) to."""
+    """Decky's module as main.py sees it (typings/decky.pyi); returns the list emit() appends (event, args) to."""
     dirs = {name: os.path.join(base_dir, name) for name in ("settings", "runtime", "logs", "plugin", "home")}
     for d in dirs.values():
         os.makedirs(d, exist_ok=True)
