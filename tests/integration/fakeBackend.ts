@@ -59,6 +59,7 @@ export class FakeBackend implements Backend {
         native_overlay_update: () => true,
         set_steam_app: () => true,
         get_windows_status: () => ({ hotkey: { registered: true }, capture: {} }),
+        get_boot_status: () => [],  // no problems while loading
         get_windows_ocr_languages: () => ['en', 'de'],
         get_translation_cache_stats: () => ({ entries: 0, size_bytes: 0 }),
         start_hidraw_monitor: () => ({ success: false, error: 'No controller shortcut on Windows' }),
