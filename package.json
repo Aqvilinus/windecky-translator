@@ -1,6 +1,6 @@
 {
   "name": "decky-translator",
-  "version": "0.9.1",
+  "version": "1.0.0",
   "type": "module",
   "description": "Translate anything on screen to your language. Works with any game or application - a great tool for language learning or enjoying untranslated games",
   "scripts": {

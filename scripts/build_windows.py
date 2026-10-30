@@ -1,6 +1,9 @@
 """Build the Windows release: the plugin zip and plugin-dependencies.tar.gz, the way upstream's Linux build does.
 
-    python scripts/build_windows.py --version 0.9.1-win.1 [--repo owner/name] [--skip-frontend] [--out out]
+    python scripts/build_windows.py --version 1.0.0 [--repo owner/name] [--skip-frontend] [--out out]
+
+--version is the plugin version (semantic versioning, this project's own line starting at 1.0.0) and also the release
+tag, with no "v" prefix: release 1.0.0 is tagged 1.0.0. A local build can use any other name, e.g. dev.
 
 - plugin-dependencies.tar.gz: py_modules/ (requirements-windows.txt as cp314 win_amd64 wheels) and python314/ (portable
   CPython 3.14 for Windows, python-build-standalone, SHA-256 pinned). Decky Loader downloads it with the plugin
@@ -16,6 +19,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -141,11 +145,13 @@ def make_zip(out, version, repo, deps_sha):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--version", required=True, help="release tag and plugin version, e.g. 0.9.1-win.1")
+    ap.add_argument("--version", required=True, help="plugin version and release tag, e.g. 1.0.0 (no \"v\")")
     ap.add_argument("--repo", default=os.environ.get("GITHUB_REPOSITORY", "Aqvilinus/windecky-translator"))
     ap.add_argument("--out", default=os.path.join(ROOT, "out"))
     ap.add_argument("--skip-frontend", action="store_true", help="use the existing dist/")
     args = ap.parse_args()
+    if re.match(r"v\d", args.version):  # the tag is the bare version, so a "v" would end up in the plugin's version
+        raise SystemExit(f"--version {args.version}: give it without the v ({args.version[1:]}), the tag is the same")
 
     os.makedirs(args.out, exist_ok=True)
     work = os.path.join(ROOT, "dependencies_build")  # git-ignored, like upstream's
