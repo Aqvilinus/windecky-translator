@@ -1,0 +1,18 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", "group:allNonMajor", "schedule:weekly", "helpers:pinGitHubActionDigests"],
+  "lockFileMaintenance": { "enabled": true },
+  "packageRules": [
+    {
+      "description": "py3langid 0.4.0 dropped from_pickled_model; Steam's client runs React 16",
+      "matchPackageNames": ["py3langid", "@types/react"],
+      "enabled": false
+    },
+    {
+      "description": "Majors that break: Chrome Screen AI's code is for protobuf 6, the OCR stack shares numpy's ABI",
+      "matchPackageNames": ["protobuf", "numpy", "opencv-python-headless", "typescript", "react-icons"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
+    }
+  ]
+}
