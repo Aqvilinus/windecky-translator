@@ -78,20 +78,6 @@ export async function showBootProblems(title: string): Promise<void> {
     for (const body of problems || []) toaster.toast({ title, body, duration: 10000 });
 }
 
-// Steam's running apps -> the backend (py_modules/winport/steam_games.py set_steam_app). A game whose launcher exited
-// has no steam.exe among its ancestors any more; while Steam reports its app as running, a process started after it
-// still counts as the game (for the pause).
-export function trackSteamApps(): () => void {
-    const report = (appid: number, running: boolean, instance = 0, alreadyRunning = false) =>
-        call('set_steam_app', appid, running, instance, alreadyRunning).catch(() => { /* logged by the backend */ });
-    try {
-        for (const app of Router.RunningApps || []) if (app?.appid) report(Number(app.appid), true, 0, true);
-    } catch { /* no store yet */ }
-    const reg = SteamClient?.GameSessions?.RegisterForAppLifetimeNotifications?.(
-        n => report(n.unAppID, n.bRunning, n.nInstanceID));
-    return () => reg?.unregister();
-}
-
 // Each Steam UI window (Big Picture, the overlay over each game) has a menu store of its own. Steam's internals: the
 // methods are still called with ?. and try/catch, so a Steam update that renames them only turns these checks off.
 type SideMenuStore = NonNullable<NonNullable<typeof Router.WindowStore>['SteamUIWindows'][number]['MenuStore']>;

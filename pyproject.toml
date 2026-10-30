@@ -9,6 +9,7 @@ dependencies = [
     "requests==2.34.2",
     "urllib3==2.8.0",
     "Pillow==13.0.0",
+    "psutil==7.2.2",  # Pause Game While Translating: the game's processes (winport/pause.py)
     # pywinrt: Windows.Graphics.Capture (screenshots), Windows.Media.Ocr (on-device OCR)
     "winrt-runtime==4.0.3",
     "winrt-Windows.Foundation==4!10.0.28000.2705",
