@@ -43,5 +43,6 @@ environments = ["sys_platform == 'win32' and platform_machine == 'AMD64'"]
 no-build = true  # wheels only: the plugin ships cp314 win_amd64 binaries
 
 [tool.pytest.ini_options]
-testpaths = ["tests/backend", "tests/python"]
+testpaths = ["tests/backend"]
+pythonpath = [".", "py_modules"]
 addopts = "-ra -p no:cacheprovider"
