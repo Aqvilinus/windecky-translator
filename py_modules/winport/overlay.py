@@ -224,13 +224,15 @@ def _background(image, box):
             (max(0, x0 - 3), min(h, y1), min(w, x1 + 3), min(h, y1 + 3)),          # below
             (max(0, x0 - 3), max(0, y0), max(0, x0), min(h, y1)),                  # left
             (min(w, x1), max(0, y0), min(w, x1 + 3), min(h, y1))]                  # right
-    px = []
+    channels = ([], [], [])
     for b in ring:
         if b[2] > b[0] and b[3] > b[1]:
-            px.extend(image.crop(b).getdata())
-    if not px:
+            data = image.crop(b).convert("RGB").tobytes()  # (Image.getdata goes away in Pillow 14)
+            for c in range(3):
+                channels[c].extend(data[c::3])
+    if not channels[0]:
         return None
-    return tuple(sorted(p[c] for p in px)[len(px) // 2] for c in range(3))
+    return tuple(sorted(ch)[len(ch) // 2] for ch in channels)
 
 
 def auto_alignments(boxes, scale):
