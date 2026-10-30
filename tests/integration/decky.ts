@@ -23,6 +23,7 @@ export interface PluginEntry {
     icon?: React.ReactNode;
     alwaysRender?: boolean;
     onDismount?(): void;
+    loadId?: number;  // the emulator's own: which load of the bundle this entry is (shown in the side menu's DOM)
 }
 
 export interface Backend {
@@ -56,7 +57,7 @@ function DeckyPanel({ state }: { state: DeckyState }) {
     useDeckyState(state);
     const active = state._activePlugin;
     if (active) {
-        return h('div', { 'data-decky-plugin': active.name },
+        return h('div', { 'data-decky-plugin': active.name, 'data-decky-load': active.loadId },
             h('button', { 'data-decky-back': true, onClick: () => state.closeActivePlugin() }, 'Back'),
             h('div', { className: 'titleView' }, active.titleView ?? active.title),
             active.content);
@@ -161,7 +162,7 @@ export class FakeDecky {
             await this.backend.restart?.();
         }
         const plugin = evaluateBundle(this.bundlePath, ++this.loads)();
-        this.state.setPlugins([...this.state._plugins, { ...plugin, name: this.pluginName, version: this.version }]);
+        this.state.setPlugins([...this.state._plugins, { ...plugin, name: this.pluginName, version: this.version, loadId: this.loads }]);
     }
 
     unload() {
