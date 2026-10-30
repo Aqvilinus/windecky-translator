@@ -36,6 +36,7 @@ const WindowsStatus: VFC = () => {
         }}>
             {row('Shortcut', hotkey.registered ? `${hotkey.hotkey} active` : hotkey.error ? `taken (error ${hotkey.error})` : 'inactive')}
             {row('In front', exe ? `${exe} (${pid})${isGame ? ', a game' : ''}` : '-')}
+            {status.overlay_error && row('Overlay', status.overlay_error)}
             {row('Last capture', capture.width ? `${capture.width}x${capture.height} at (${capture.left},${capture.top})` : '-')}
         </div>
     );

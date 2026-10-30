@@ -51,6 +51,7 @@ user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
 user32.DestroyWindow.argtypes = [wintypes.HWND]
 user32.SetWindowPos.argtypes = [wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
                                 wintypes.UINT]
+user32.UpdateLayeredWindow.restype = wintypes.BOOL
 user32.UpdateLayeredWindow.argtypes = [wintypes.HWND, wintypes.HDC, ctypes.c_void_p, ctypes.c_void_p, wintypes.HDC,
                                        ctypes.c_void_p, wintypes.COLORREF, ctypes.c_void_p, wintypes.DWORD]
 user32.GetDC.restype = wintypes.HDC
@@ -387,6 +388,7 @@ class Overlay:
         self._target = None
         self._shown = False
         self._dib = None  # (width, height, memory DC, bitmap, old bitmap, bits): reused while the size stays
+        self.error = None  # why the overlay can't be drawn (get_windows_status), None while it works
 
     def start(self):
         if self._thread is None:
@@ -418,6 +420,8 @@ class Overlay:
         user32.RegisterClassW(ctypes.byref(wc))  # fails harmlessly if a previous overlay thread registered it
         self._hwnd = user32.CreateWindowExW(WS_EX_STYLE, CLASS_NAME, "Decky Translator", WS_POPUP, 0, 0, 1, 1,
                                             None, None, hinst, None)
+        if not self._hwnd:
+            self._fail(f"could not create the overlay window (error {ctypes.get_last_error()})")
         msg = wintypes.MSG()
         try:
             while True:
@@ -444,7 +448,7 @@ class Overlay:
                     try:
                         self._draw()
                     except Exception as e:  # noqa: BLE001 - keep the thread alive
-                        logger.error("overlay draw failed: %r", e)
+                        self._fail(f"draw failed: {e!r}")
                 self._sync_visibility()
                 while user32.PeekMessageW(ctypes.byref(msg), None, 0, 0, PM_REMOVE):
                     user32.TranslateMessage(ctypes.byref(msg))
@@ -480,6 +484,12 @@ class Overlay:
         img = render(self._state or {}, tgt, mon, scale, self._frame())
         self._upload(img, mon)
 
+    def _fail(self, error):
+        """Log a drawing failure once (until the overlay works again) and keep it for get_windows_status."""
+        if error != self.error:
+            logger.error("overlay: %s", error)
+        self.error = error
+
     def _dib_for(self, mw, mh, screen):
         """The 32-bit top-down DIB section the layered window is updated from, made once per size."""
         if self._dib and self._dib[:2] == (mw, mh):
@@ -512,9 +522,12 @@ class Overlay:
             _, _, hdc, _, _, bits = self._dib_for(mw, mh, screen)
             ctypes.memmove(bits, data, len(data))
             blend = BLENDFUNCTION(AC_SRC_OVER, 0, 255, AC_SRC_ALPHA)
-            user32.UpdateLayeredWindow(self._hwnd, screen, ctypes.byref(wintypes.POINT(mx, my)),
-                                       ctypes.byref(wintypes.SIZE(mw, mh)), hdc, ctypes.byref(wintypes.POINT(0, 0)), 0,
-                                       ctypes.byref(blend), ULW_ALPHA)
+            if user32.UpdateLayeredWindow(self._hwnd, screen, ctypes.byref(wintypes.POINT(mx, my)),
+                                          ctypes.byref(wintypes.SIZE(mw, mh)), hdc, ctypes.byref(wintypes.POINT(0, 0)),
+                                          0, ctypes.byref(blend), ULW_ALPHA):
+                self.error = None
+            else:
+                self._fail(f"UpdateLayeredWindow failed (error {ctypes.get_last_error()})")
         finally:
             user32.ReleaseDC(None, screen)
 
