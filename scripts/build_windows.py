@@ -1,19 +1,11 @@
-"""Build the Windows release: the plugin zip and plugin-dependencies.tar.gz, the way upstream's Linux build does.
+"""Build the Windows release: the plugin zip and plugin-dependencies.tar.gz.
 
-    python scripts/build_windows.py --version 1.0.0 [--repo owner/name] [--skip-frontend] [--out out]
+    uv run python scripts/build_windows.py --version 1.0.0 [--repo owner/name] [--skip-frontend] [--out out]
 
---version is the plugin version (semantic versioning, this project's own line starting at 1.0.0) and also the release
-tag, with no "v" prefix: release 1.0.0 is tagged 1.0.0. A local build can use any other name, e.g. dev.
-
-- plugin-dependencies.tar.gz: py_modules/ (the packages in uv.lock, cp314 win_amd64 wheels) and python314/ (portable
-  CPython 3.14 for Windows from python-build-standalone, downloaded by uv). Decky Loader downloads it with the plugin
-  (package.json remote_binary, its hash checked) into bin/, main.py extracts it on the first start.
-- decky-translator-windows.zip: the plugin (folder decky-translator/), its package.json pointing remote_binary at
-  https://github.com/<repo>/releases/download/<version>/plugin-dependencies.tar.gz with the archive's SHA-256.
-  Install it in Decky's developer settings (Install Plugin from URL / from ZIP file).
-
-Runs on the windows-latest runner (.github/workflows/build-windows.yml) and locally (needs node + pnpm through
-corepack unless --skip-frontend) and uv.
+- plugin-dependencies.tar.gz: py_modules/ (the packages in uv.lock) and python314/ (portable CPython 3.14 for the
+  workers). Decky Loader downloads it with the plugin into bin/; main.py extracts it on the first start.
+- decky-translator-windows.zip: the plugin, its package.json pointing remote_binary at the archive in the
+  <version> release of <repo>, with the archive's SHA-256.
 """
 import argparse
 import hashlib
