@@ -70,10 +70,8 @@ jobs:
           corepack pnpm install --frozen-lockfile
           python -m pip install --disable-pip-version-check --require-hashes -r requirements-windows.txt -r requirements-dev.txt
 
-      - name: Frontend tests (emulated Steam and Decky, with the contract tests against main.py)
+      - name: Frontend tests
         shell: bash
-        env:
-          PLUGIN_PYTHON: python
         run: |
           corepack pnpm run typecheck
           corepack pnpm test
