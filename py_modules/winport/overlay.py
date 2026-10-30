@@ -437,7 +437,9 @@ class Overlay:
                     if cmd == "show":
                         self._state, self._target, draw = state, target, True
                     elif cmd == "hide":
-                        self._state, draw = None, False
+                        # let go of the captured frame and the screen-sized bitmap (~20-80 MB) until the next show
+                        self._state, self._target, draw = None, None, False
+                        self._free_dib()
                 if draw:
                     try:
                         self._draw()
