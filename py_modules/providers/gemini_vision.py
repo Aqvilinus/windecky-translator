@@ -57,75 +57,57 @@ def _get_png_dimensions(data: bytes) -> tuple:
     return width, height
 
 
+_SEPARATOR = re.compile(r'\s*,?\s*')
+
+
+def _as_regions(value) -> Optional[list]:
+    if isinstance(value, list):
+        return value
+    if isinstance(value, dict) and isinstance(value.get("regions"), list):
+        return value["regions"]
+    return None
+
+
 def _parse_json_response(text: str) -> Optional[list]:
-    """
-    Try to extract a JSON array from Gemini's response text.
-    Three-tier parsing: direct, markdown-stripped, bracket-matched.
-    """
-    cleaned = text.strip()
-
-    # Strip thinking tags
-    cleaned = re.sub(r'<think>.*?</think>', '', cleaned, flags=re.DOTALL)
-    cleaned = re.sub(r'<reasoning>.*?</reasoning>', '', cleaned, flags=re.DOTALL)
-    cleaned = cleaned.strip()
-
-    # Tier 1: direct parse
-    try:
-        result = json.loads(cleaned)
-        if isinstance(result, list):
-            return result
-        if isinstance(result, dict) and "regions" in result:
-            return result["regions"]
-    except json.JSONDecodeError:
-        pass
-
-    # Tier 2: strip markdown code fences
-    md_match = re.search(r'```(?:json)?\s*\n?(.*?)\n?\s*```', cleaned, re.DOTALL)
-    if md_match:
+    """The regions array from Gemini's reply text: the JSON itself, inside a markdown fence, embedded in prose, or a
+    reply cut off mid-array (then the complete region objects before the cut). json.JSONDecoder.raw_decode does the
+    scanning, so brackets inside the region texts don't confuse it."""
+    cleaned = re.sub(r'<think>.*?</think>', '', text.strip(), flags=re.DOTALL)
+    cleaned = re.sub(r'<reasoning>.*?</reasoning>', '', cleaned, flags=re.DOTALL).strip()
+    fence = re.search(r'```(?:json)?\s*\n?(.*?)\n?\s*```', cleaned, re.DOTALL)
+    candidates = [cleaned] + ([fence.group(1).strip()] if fence else [])
+    for candidate in candidates:
         try:
-            result = json.loads(md_match.group(1).strip())
-            if isinstance(result, list):
-                return result
-            if isinstance(result, dict) and "regions" in result:
-                return result["regions"]
+            regions = _as_regions(json.loads(candidate))
+        except json.JSONDecodeError:
+            continue
+        if regions is not None:
+            return regions
+
+    decoder = json.JSONDecoder()
+    # JSON embedded in other text: decode from the first bracket
+    starts = [i for i in (cleaned.find('['), cleaned.find('{')) if i != -1]
+    if starts:
+        try:
+            regions = _as_regions(decoder.raw_decode(cleaned, min(starts))[0])
+            if regions is not None:
+                return regions
         except json.JSONDecodeError:
             pass
 
-    # Tier 3: find the outermost [...] by bracket matching
-    start = cleaned.find('[')
-    if start != -1:
-        depth = 0
-        for i in range(start, len(cleaned)):
-            if cleaned[i] == '[':
-                depth += 1
-            elif cleaned[i] == ']':
-                depth -= 1
-                if depth == 0:
-                    try:
-                        return json.loads(cleaned[start:i + 1])
-                    except json.JSONDecodeError:
-                        break
-
-    # Tier 4: truncated response recovery -- find all complete {...} objects
-    # inside the outermost array, even if the array itself isn't closed
-    if start != -1:
-        regions = []
-        obj_depth = 0
-        obj_start = -1
-        for i in range(start + 1, len(cleaned)):
-            if cleaned[i] == '{':
-                if obj_depth == 0:
-                    obj_start = i
-                obj_depth += 1
-            elif cleaned[i] == '}':
-                obj_depth -= 1
-                if obj_depth == 0 and obj_start != -1:
-                    try:
-                        obj = json.loads(cleaned[obj_start:i + 1])
-                        regions.append(obj)
-                    except json.JSONDecodeError:
-                        pass
-                    obj_start = -1
+    # A reply cut off mid-array: keep each complete top-level object of the array
+    array = cleaned.find('[')
+    if array != -1:
+        regions, pos = [], array + 1
+        while True:
+            pos = _SEPARATOR.match(cleaned, pos).end()
+            if pos >= len(cleaned) or cleaned[pos] != '{':
+                break
+            try:
+                obj, pos = decoder.raw_decode(cleaned, pos)
+            except json.JSONDecodeError:
+                break  # the object the reply was cut in
+            regions.append(obj)
         if regions:
             logger.warning(f"Recovered {len(regions)} regions from truncated response")
             return regions
