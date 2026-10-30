@@ -1,5 +1,4 @@
-"""main.py without Decky Loader, Steam or a game: what the backend tests (and the frontend's Python backend,
-tests/integration/python_backend.py) run it with.
+"""main.py without Decky Loader, Steam or a game: what the backend tests run it with.
 
 - Decky's module (decky / decky_plugin) is a stand-in with the directories in a temporary folder, a logger, and
   emit() recording the events sent to the frontend.

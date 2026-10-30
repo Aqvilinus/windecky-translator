@@ -7,7 +7,7 @@
     "build": "shx rm -rf dist && rollup -c",
     "watch": "rollup -c -w",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "vitest run --dir tests/frontend",
     "test:e2e": "node --test --test-reporter=spec tests/e2e/translate.e2e.mjs"
   },
   "repository": {
@@ -36,9 +36,6 @@
     "@types/react": "16.14.0",
     "@types/react-dom": "^19.1.2",
     "@types/webpack": "^5.28.0",
-    "happy-dom": "21.0.4",
-    "react": "18.3.1",
-    "react-dom": "18.3.1",
     "rollup": "^4.66.0",
     "shx": "0.4.0",
     "tslib": "^2.4.0",

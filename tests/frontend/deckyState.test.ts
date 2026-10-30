@@ -1,5 +1,5 @@
-// src/deckyState.ts edge cases (timers, a missing Decky). The reload itself is tested end to end in
-// tests/integration/plugin.test.ts.
+// src/deckyState.ts edge cases (timers, a missing Decky). The reload itself is tested on the device in
+// tests/e2e/translate.e2e.mjs.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { adoptActivePlugin, type DeckyPluginEntry } from '../../src/deckyState';
 

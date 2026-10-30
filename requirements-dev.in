@@ -1,4 +1,4 @@
-# Test-only Python packages (tests/backend, tests/integration's Python backend); never shipped with the plugin.
+# Test-only Python packages (tests/backend, tests/python); never shipped with the plugin.
 # The tests run on the plugin's own packages too: CI installs requirements-windows.txt and this lock, both hashed.
 # After changing this file (or requirements-windows.txt), regenerate the lock with:
 #   uv pip compile requirements-dev.in -c requirements-windows.txt --python-platform x86_64-pc-windows-msvc
