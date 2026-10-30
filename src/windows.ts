@@ -3,7 +3,7 @@
 // is a normal window behind the game, so the backend draws the overlay in a click-through window of its own
 // (py_modules/winport/overlay.py). This forwards every ImageState change to it; the screenshot itself stays in the
 // backend, which took it.
-import { addEventListener, call, removeEventListener } from '@decky/api';
+import { addEventListener, call, removeEventListener, toaster } from '@decky/api';
 import { Router } from '@decky/ui';
 import type { MenuStore } from '@decky/ui/dist/modules/Router';
 import { ImageState } from './Overlay';
@@ -67,6 +67,18 @@ export function listenForHotkey(logic: GameTranslatorLogic): () => void {
     };
     addEventListener('translator_hotkey', onHotkey);
     return () => removeEventListener('translator_hotkey', onHotkey);
+}
+
+// Problems the backend found while loading (main.py get_boot_status), e.g. a Decky update that changed its Python so
+// the capture or overlay modules no longer load: a toast for each, instead of a shortcut that silently does nothing.
+export async function showBootProblems(title: string): Promise<void> {
+    let problems: string[] = [];
+    try {
+        problems = await call<[], string[]>('get_boot_status');
+    } catch {
+        return;  // the backend didn't load at all: Decky shows that itself
+    }
+    for (const body of problems || []) toaster.toast({ title, body, duration: 10000 });
 }
 
 // Steam's running apps -> the backend (py_modules/winport/hotkey.py set_steam_app). A game whose launcher exited has

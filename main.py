@@ -92,7 +92,10 @@ if os.path.exists(BIN_PY_MODULES_DIR) and BIN_PY_MODULES_DIR not in sys.path:
     sys.path.insert(0, BIN_PY_MODULES_DIR)
 
 # Now import third-party libraries (after sys.path is configured)
-import decky_plugin
+try:
+    import decky_plugin  # Decky's legacy name for the plugin API module
+except ImportError:
+    import decky as decky_plugin  # the current name, in case a Decky release drops the old one
 
 # Import provider system
 from providers import ProviderManager, NetworkError, ApiKeyError, RateLimitError
@@ -250,13 +253,30 @@ import select
 IS_WINDOWS = sys.platform == "win32"
 # Windows: the screenshot's stand-in for the frontend (a 1x1 transparent PNG; the backend keeps the real one)
 PLACEHOLDER_PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+# What keeps parts of the plugin from working, for the frontend to show (get_boot_status). Capture and overlay load
+# compiled modules (winrt, Pillow) built for one Python version into Decky's own interpreter: after a Decky update
+# that changes its Python they fail to import, and the rest of the plugin should still load and say why.
+_BOOT_ERRORS = []
 if IS_WINDOWS:
     # Decky Loader for Windows: capture, controller and overlay have Windows implementations (py_modules/winport)
     fcntl = None
-    from winport.capture import capture_foreground
-    from winport.hotkey import GameHotkey
-    from winport.overlay import Overlay
-    from winport import process as winprocess
+    if sys.version_info[:2] != (3, 14):
+        _BOOT_ERRORS.append(f"Decky Loader runs Python {sys.version_info[0]}.{sys.version_info[1]}, this build of the "
+                            "plugin was made for 3.14: update the plugin")
+    try:
+        from winport.capture import capture_foreground
+    except Exception as _e:  # noqa: BLE001 - ImportError, or OSError from a DLL that won't load
+        capture_foreground = None
+        _BOOT_ERRORS.append(f"Screen capture is unavailable: {_e}")
+    try:
+        from winport.overlay import Overlay
+    except Exception as _e:  # noqa: BLE001
+        Overlay = None
+        _BOOT_ERRORS.append(f"The translation overlay is unavailable: {_e}")
+    from winport.hotkey import GameHotkey  # ctypes only
+    from winport import process as winprocess  # ctypes only
+    for _error in _BOOT_ERRORS:
+        logger.error(_error)
 else:
     import fcntl
 
@@ -1773,6 +1793,9 @@ class Plugin:
         global _processing_lock
         _processing_lock = True
         try:
+            if capture_foreground is None:
+                logger.error("Screen capture is unavailable (see the start of the log)")
+                return {"path": "", "base64": ""}
             own = (self._overlay.hwnd,) if self._overlay and self._overlay.hwnd else ()
             cap = await capture_foreground(exclude=own)
             if cap is None:
@@ -1802,6 +1825,8 @@ class Plugin:
     async def native_overlay_update(self, state):
         try:
             if not IS_WINDOWS:
+                return False
+            if Overlay is None:
                 return False
             if self._overlay is None:
                 self._overlay = Overlay()
@@ -1885,10 +1910,15 @@ class Plugin:
         from winport import clipboard
         return clipboard.get_text()
 
+    async def get_boot_status(self):
+        """Problems found while the plugin loaded (see _BOOT_ERRORS); the frontend shows them once."""
+        return list(_BOOT_ERRORS) if IS_WINDOWS else []
+
     async def get_windows_status(self):
-        """Diagnostics of the Windows parts: hotkey, controller, last capture."""
+        """Diagnostics of the Windows parts: hotkey, overlay, last capture."""
         return {
             "hotkey": self._hotkey.status() if self._hotkey else None,
+            "overlay_error": self._overlay.error if self._overlay else None,
             "capture": {k: v for k, v in (self._capture_target or {}).items() if k not in ("png", "image")},
         }
 

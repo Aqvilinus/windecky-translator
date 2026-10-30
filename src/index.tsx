@@ -25,7 +25,7 @@ import { BsTranslate } from "react-icons/bs";
 import { ImageState, ImageOverlay } from "./Overlay";
 import { GameTranslatorLogic } from "./Translator";
 import { cleanupAllFontDOM } from "./fonts";
-import { IS_WINDOWS, forwardOverlayToBackend, listenForHotkey, trackSteamApps } from "./windows";
+import { IS_WINDOWS, forwardOverlayToBackend, listenForHotkey, showBootProblems, trackSteamApps } from "./windows";
 import { adoptActivePlugin } from "./deckyState";
 import { ProgressInfo } from "./Input";
 import { ActivationIndicator } from "./ActivationIndicator";
@@ -369,6 +369,7 @@ export default definePlugin(() => {
         // a Steam UI reload leaves the backend running: hide a translation the old UI left on screen (and resume a
         // game it paused), since this UI starts with none
         call('native_overlay_update', { visible: false }).catch(() => { /* logged by the backend */ });
+        showBootProblems(PLUGIN_NAME);
     }
     if (!IS_WINDOWS) {
         routerHook.addGlobalComponent("ImageOverlay", () => (
