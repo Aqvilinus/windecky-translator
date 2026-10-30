@@ -904,7 +904,7 @@ class Plugin:
             return None
 
     async def get_enabled_state(self):
-        return await self.get_setting("enabled", True)
+        return self._settings.get_setting("enabled", True) if self._settings else True
 
     async def clear_translation_cache(self):
         try:
