@@ -1,10 +1,7 @@
 # Weekly update PRs; Build Windows runs on each of them (a pin without a cp314 win_amd64 wheel fails there).
-# requirements-windows.txt is the hashed lock made from requirements-windows.in, requirements-dev.txt (test-only: pytest,
-# responses) the one made from requirements-dev.in (see the commands at the top of each .in); after merging an update,
-# regenerate the locks if the PR changed only one file of a pair.
 version: 2
 updates:
-  - package-ecosystem: "pip"
+  - package-ecosystem: "uv"
     directory: "/"
     schedule:
       interval: "weekly"

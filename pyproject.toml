@@ -1,0 +1,47 @@
+# Python packages of the plugin: Decky Loader for Windows runs main.py on its frozen Python 3.14, and the on-device
+# engines' workers run on the portable Python 3.14 that scripts/build_windows.py bundles with these packages.
+# Update the lock with: uv lock --upgrade
+[project]
+name = "windecky-translator"
+version = "1.0.0"
+requires-python = "==3.14.*"
+dependencies = [
+    "requests==2.34.2",
+    "urllib3==2.8.0",
+    "Pillow==13.0.0",
+    # pywinrt: Windows.Graphics.Capture (screenshots), Windows.Media.Ocr (on-device OCR)
+    "winrt-runtime==4.0.3",
+    "winrt-Windows.Foundation==4!10.0.28000.2705",
+    "winrt-Windows.Foundation.Collections==4!10.0.28000.2705",
+    "winrt-Windows.Globalization==4!10.0.28000.2705",
+    "winrt-Windows.Graphics==4!10.0.28000.2705",
+    "winrt-Windows.Graphics.Capture==4!10.0.28000.2705",
+    "winrt-Windows.Graphics.Capture.Interop==4.0.0",
+    "winrt-Windows.Graphics.DirectX==4!10.0.28000.2705",
+    "winrt-Windows.Graphics.DirectX.Direct3D11==4!10.0.28000.2705",
+    "winrt-Windows.Graphics.DirectX.Direct3D11.Interop==4.1.0",
+    "winrt-Windows.Graphics.Imaging==4!10.0.28000.2705",
+    "winrt-Windows.Media.Ocr==4!10.0.28000.2705",
+    "winrt-Windows.Storage.Streams==4!10.0.28000.2705",
+    # On-device engines (worker subprocesses)
+    "protobuf==6.33.6",  # Chrome Screen AI's generated code is for 6.x
+    "rapidocr==3.10.0",
+    "onnxruntime==1.31.1",
+    "opencv-python-headless==5.0.0.93",
+    "numpy==2.5.4",
+    "ctranslate2==4.8.4",
+    "sentencepiece==0.2.2",
+    "py3langid==0.3.0",  # 0.4.0 dropped LanguageIdentifier.from_pickled_model
+]
+
+[dependency-groups]
+dev = ["pytest==9.2.0", "responses==0.26.3"]
+
+[tool.uv]
+package = false
+environments = ["sys_platform == 'win32' and platform_machine == 'AMD64'"]
+no-build = true  # wheels only: the plugin ships cp314 win_amd64 binaries
+
+[tool.pytest.ini_options]
+testpaths = ["tests/backend", "tests/python"]
+addopts = "-ra -p no:cacheprovider"

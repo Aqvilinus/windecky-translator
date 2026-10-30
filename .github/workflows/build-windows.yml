@@ -40,14 +40,11 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Setup Python
-        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+      - name: Setup uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
         with:
-          python-version: '3.14'
-          cache: 'pip'
-          cache-dependency-path: |
-            requirements-windows.txt
-            requirements-dev.txt
+          version: '0.13.6'
+          enable-cache: true
 
       - name: Get version
         id: version
@@ -68,7 +65,7 @@ jobs:
         run: |
           corepack enable
           corepack pnpm install --frozen-lockfile
-          python -m pip install --disable-pip-version-check --require-hashes -r requirements-windows.txt -r requirements-dev.txt
+          uv sync --locked
 
       - name: Frontend tests
         shell: bash
@@ -79,8 +76,8 @@ jobs:
       - name: Backend tests
         shell: bash
         run: |
-          python -m pytest
-          python -m compileall -q main.py py_modules scripts
+          uv run --locked pytest
+          uv run --locked python -m compileall -q main.py py_modules scripts
 
       - name: Build plugin and dependencies
         shell: bash
@@ -88,7 +85,7 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           corepack enable
-          python scripts/build_windows.py --version "$VERSION" --repo "$GITHUB_REPOSITORY" --out out
+          uv run --locked python scripts/build_windows.py --version "$VERSION" --repo "$GITHUB_REPOSITORY" --out out
 
       - name: Upload plugin
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
