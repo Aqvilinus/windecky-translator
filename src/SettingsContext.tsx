@@ -2,10 +2,8 @@
 import React, { createContext, useContext, useEffect, useReducer } from 'react';
 import { call } from '@decky/api';
 import { GameTranslatorLogic } from './Translator';
-import { InputMode } from './Input';
 import { logger } from './Logger';
 import { LLM_DEFAULT_MODELS } from './llm';
-import { IS_WINDOWS } from './platform';
 
 // API keys: the backend hands out only their first 3 and last 4 characters (main.py display_key), and saving that
 // same text back changes nothing. A key typed in a dialog is kept here in the same shortened form.
@@ -21,11 +19,8 @@ export function displayKey(value: string): string {
 export interface Settings {
     inputLanguage: string;
     targetLanguage: string;
-    inputMode: InputMode;
     enabled: boolean;
     initialized: boolean;
-    holdTimeTranslate: number;
-    holdTimeDismiss: number;
     confidenceThreshold: number; // New setting for confidence threshold
     rapidocrConfidence: number; // RapidOCR-specific confidence threshold (0.0-1.0)
     rapidocrBoxThresh: number; // RapidOCR box detection threshold (0.0-1.0)
@@ -34,8 +29,6 @@ export interface Settings {
     chromeScreenAiPersistentMode: boolean; // Keep Chrome Screen AI worker alive between requests
     ct2PersistentMode: boolean; // Keep CT2/NLLB worker alive between requests
     pauseGameOnOverlay: boolean; // Setting to control pausing game when overlay is shown
-    quickToggleEnabled: boolean; // Quick toggle overlay with right button in combo modes
-    useFreeProviders: boolean; // Use free providers (OCR.space + free Google Translate) - deprecated, use ocrProvider
     ocrProvider: 'rapidocr' | 'ocrspace' | 'googlecloud' | 'gemini_vision' | 'chromescreenai' | 'windows_ocr'; // OCR provider
     translationProvider: 'freegoogle' | 'googlecloud' | 'ct2' | 'llm'; // Translation provider
     googleApiKey: string; // Google Cloud Vision API key for text recognition
@@ -43,12 +36,6 @@ export interface Settings {
     geminiModel: string; // Gemini model to use
     debugMode: boolean; // Debug mode for verbose console logging
     fontScale: number; // Overlay font scale multiplier for external monitors
-    groupingPower: number; // Text grouping aggressiveness (0.25 normal - 1.0 huge)
-    translatedTextAlignment: 'auto' | 'left' | 'right' | 'center' | 'justify';  // auto: as the original (Windows)
-    translatedTextFontFamily: string;
-    translatedTextFontStyle: 'normal' | 'bold' | 'italic' | 'bolditalic';
-    hideIdenticalTranslations: boolean;
-    allowLabelGrowth: boolean;
     customRecognitionSettings: boolean;
     translationCacheEnabled: boolean;
     llmBackend: 'gemini' | 'groq' | 'custom'; // AI translation (providers/llm_translate.py)
@@ -70,11 +57,8 @@ type SettingsAction =
 const initialSettings: Settings = {
     inputLanguage: "",
     targetLanguage: "",
-    inputMode: InputMode.L5_BUTTON,  // Default to L5 back button
     enabled: true,
     initialized: false,
-    holdTimeTranslate: 1000, // Default to 1 second (1000ms)
-    holdTimeDismiss: 500,    // Default to 0.5 seconds (500ms)
     confidenceThreshold: 0.6, // Default confidence threshold
     rapidocrConfidence: 0.5, // Default RapidOCR confidence threshold (0.0-1.0)
     rapidocrBoxThresh: 0.5, // Default RapidOCR box detection threshold (0.0-1.0)
@@ -83,8 +67,6 @@ const initialSettings: Settings = {
     chromeScreenAiPersistentMode: false,
     ct2PersistentMode: false,
     pauseGameOnOverlay: false, // Default to not pausing game
-    quickToggleEnabled: false, // Default to disabled
-    useFreeProviders: true, // Default to free providers (no API key needed) - deprecated
     ocrProvider: "chromescreenai", // Default to chromescreenai (Chrome Screen AI) provider
     translationProvider: "freegoogle", // Default to free Google Translate
     googleApiKey: "", // Empty by default, only needed for Google Cloud
@@ -92,12 +74,6 @@ const initialSettings: Settings = {
     geminiModel: "gemini-3.5-flash", // Default Gemini model
     debugMode: false, // Debug mode off by default
     fontScale: 1.0,
-    groupingPower: 0.25,
-    translatedTextAlignment: IS_WINDOWS ? 'auto' : 'center',
-    translatedTextFontFamily: '',
-    translatedTextFontStyle: 'normal',
-    hideIdenticalTranslations: false,
-    allowLabelGrowth: false,
     customRecognitionSettings: false,
     translationCacheEnabled: true,
     llmBackend: "gemini",
@@ -155,10 +131,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
                 const mappedSettings: Partial<Settings> = {
                     inputLanguage: serverSettings.input_language,
                     targetLanguage: serverSettings.target_language,
-                    inputMode: serverSettings.input_mode,
                     enabled: serverSettings.enabled,
-                    holdTimeTranslate: serverSettings.hold_time_translate,
-                    holdTimeDismiss: serverSettings.hold_time_dismiss,
                     confidenceThreshold: serverSettings.confidence_threshold || 0.6, // Add default if not present
                     rapidocrConfidence: serverSettings.rapidocr_confidence ?? 0.5, // RapidOCR confidence (0.0-1.0)
                     rapidocrBoxThresh: serverSettings.rapidocr_box_thresh ?? 0.5, // RapidOCR box threshold (0.0-1.0)
@@ -167,8 +140,6 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
                     chromeScreenAiPersistentMode: serverSettings.chromescreenai_persistent_mode ?? false,
                     ct2PersistentMode: serverSettings.ct2_persistent_mode ?? false,
                     pauseGameOnOverlay: serverSettings.pause_game_on_overlay || false, // Add default if not present
-                    quickToggleEnabled: serverSettings.quick_toggle_enabled || false, // Add default if not present
-                    useFreeProviders: serverSettings.use_free_providers !== false, // Default to true (deprecated)
                     ocrProvider: serverSettings.ocr_provider || "chromescreenai", // OCR provider setting
                     translationProvider: serverSettings.translation_provider || "freegoogle", // Translation provider setting
                     googleApiKey: serverSettings.google_api_key || "", // Google API key
@@ -176,12 +147,6 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
                     geminiModel: serverSettings.gemini_model || "gemini-3.5-flash",
                     debugMode: serverSettings.debug_mode || false,
                     fontScale: serverSettings.font_scale ?? 1.0,
-                    groupingPower: serverSettings.grouping_power ?? 0.25,
-                    translatedTextAlignment: serverSettings.translated_text_alignment ?? (IS_WINDOWS ? 'auto' : 'center'),
-                    translatedTextFontFamily: serverSettings.translated_text_font_family ?? '',
-                    translatedTextFontStyle: serverSettings.translated_text_font_style ?? 'normal',
-                    hideIdenticalTranslations: serverSettings.hide_identical_translations ?? false,
-                    allowLabelGrowth: serverSettings.allow_label_growth ?? false,
                     customRecognitionSettings: serverSettings.custom_recognition_settings ?? false,
                     translationCacheEnabled: serverSettings.translation_cache_enabled ?? true,
                     llmBackend: serverSettings.llm_backend ?? "gemini",
@@ -199,13 +164,8 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
                 // Update logic instance with settings
                 logic.setInputLanguage(serverSettings.input_language);
                 logic.setTargetLanguage(serverSettings.target_language);
-                logic.setInputMode(serverSettings.input_mode);
                 logic.setEnabled(serverSettings.enabled);
-                logic.setHoldTimeTranslate(serverSettings.hold_time_translate);
-                logic.setHoldTimeDismiss(serverSettings.hold_time_dismiss);
                 logic.setConfidenceThreshold(serverSettings.confidence_threshold || 0.6); // Set in logic
-                logic.setPauseGameOnOverlay(serverSettings.pause_game_on_overlay || false); // Set pause on overlay setting
-                logic.setQuickToggleEnabled(serverSettings.quick_toggle_enabled || false); // Set quick toggle setting
                 logger.setEnabled(serverSettings.debug_mode || false); // Set debug mode for logger
 
                 // Set provider settings for upfront API key validation
@@ -215,10 +175,6 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
                 logic.setHasGeminiApiKey(!!serverSettings.gemini_api_key);
 
                 logic.setFontScale(serverSettings.font_scale ?? 1.0);
-                logic.setTranslatedTextAlignment(serverSettings.translated_text_alignment ?? (IS_WINDOWS ? 'auto' : 'center'));
-                logic.setTranslatedTextFontFamily(serverSettings.translated_text_font_family ?? '');
-                logic.setTranslatedTextFontStyle(serverSettings.translated_text_font_style ?? 'normal');
-                logic.setAllowLabelGrowth(serverSettings.allow_label_growth ?? false);
 
                 logger.info('SettingsContext', 'All settings loaded successfully');
                 logger.logObject('SettingsContext', 'Settings', mappedSettings);
@@ -245,11 +201,8 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
             const backendKeyMap: Record<keyof Settings, string> = {
                 inputLanguage: 'input_language',
                 targetLanguage: 'target_language',
-                inputMode: 'input_mode',
                 enabled: 'enabled',
                 initialized: 'initialized',
-                holdTimeTranslate: 'hold_time_translate',
-                holdTimeDismiss: 'hold_time_dismiss',
                 confidenceThreshold: 'confidence_threshold',
                 rapidocrConfidence: 'rapidocr_confidence',
                 rapidocrBoxThresh: 'rapidocr_box_thresh',
@@ -258,8 +211,6 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
                 chromeScreenAiPersistentMode: 'chromescreenai_persistent_mode',
                 ct2PersistentMode: 'ct2_persistent_mode',
                 pauseGameOnOverlay: 'pause_game_on_overlay',
-                quickToggleEnabled: 'quick_toggle_enabled',
-                useFreeProviders: 'use_free_providers',
                 ocrProvider: 'ocr_provider',
                 translationProvider: 'translation_provider',
                 googleApiKey: 'google_api_key',
@@ -267,12 +218,6 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
                 geminiModel: 'gemini_model',
                 debugMode: 'debug_mode',
                 fontScale: 'font_scale',
-                groupingPower: 'grouping_power',
-                translatedTextAlignment: 'translated_text_alignment',
-                translatedTextFontFamily: 'translated_text_font_family',
-                translatedTextFontStyle: 'translated_text_font_style',
-                hideIdenticalTranslations: 'hide_identical_translations',
-                allowLabelGrowth: 'allow_label_growth',
                 customRecognitionSettings: 'custom_recognition_settings',
                 translationCacheEnabled: 'translation_cache_enabled',
                 llmBackend: 'llm_backend',
@@ -297,44 +242,17 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
                 case 'targetLanguage':
                     logic.setTargetLanguage(value);
                     break;
-                case 'inputMode':
-                    logic.setInputMode(value);
-                    break;
                 case 'enabled':
                     logic.setEnabled(value);
                     break;
-                case 'holdTimeTranslate':
-                    logic.setHoldTimeTranslate(value);
-                    break;
-                case 'holdTimeDismiss':
-                    logic.setHoldTimeDismiss(value);
-                    break;
                 case 'confidenceThreshold':
                     logic.setConfidenceThreshold(value);
-                    break;
-                case 'pauseGameOnOverlay':
-                    logic.setPauseGameOnOverlay(value);
-                    break;
-                case 'quickToggleEnabled':
-                    logic.setQuickToggleEnabled(value);
                     break;
                 case 'debugMode':
                     logger.setEnabled(value);
                     break;
                 case 'fontScale':
                     logic.setFontScale(value);
-                    break;
-                case 'translatedTextAlignment':
-                    logic.setTranslatedTextAlignment(value);
-                    break;
-                case 'translatedTextFontFamily':
-                    logic.setTranslatedTextFontFamily(value);
-                    break;
-                case 'translatedTextFontStyle':
-                    logic.setTranslatedTextFontStyle(value);
-                    break;
-                case 'allowLabelGrowth':
-                    logic.setAllowLabelGrowth(value);
                     break;
                 case 'ocrProvider':
                     logic.setOcrProvider(value);

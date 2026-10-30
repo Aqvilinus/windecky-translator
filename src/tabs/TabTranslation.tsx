@@ -20,7 +20,6 @@ import { showModal } from "../modal";
 import { VFC, useState, useEffect, useRef, useCallback, RefObject } from "react";
 import { call } from "@decky/api";
 import { useSettings, displayKey } from "../SettingsContext";
-import { IS_WINDOWS } from "../windows";
 import { LLM_DEFAULT_MODELS, LLM_KEY_SETTING, LLM_MODEL_SETTING, llmConfigured, llmModel } from "../llm";
 import { HiKey, HiLockClosed, HiInboxArrowDown, HiTrash, HiXMark, HiXCircle, HiExclamationTriangle, HiInformationCircle } from "react-icons/hi2";
 import { BsArrowRepeat, BsStars, BsWindows } from "react-icons/bs";
@@ -103,7 +102,6 @@ const WithPaste: VFC<{ onPaste: (text: string) => void; children: any }> = ({ on
         if (i.height > 0) setInputBox({ top: Math.round(i.top - f.top), height: Math.round(i.height) });
     }, []);
 
-    if (!IS_WINDOWS) return children;
     return (
         <Focusable style={{ display: "flex", gap: "8px", alignItems: "flex-start" }} flow-children="horizontal">
             <div ref={fieldRef} style={{ flex: 1, minWidth: 0 }}>{children}</div>
@@ -754,7 +752,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
     const [windowsOcrLanguages, setWindowsOcrLanguages] = useState<string[] | null>(null);
 
     useEffect(() => {
-        if (!IS_WINDOWS || settings.ocrProvider !== 'windows_ocr') return;
+        if (settings.ocrProvider !== 'windows_ocr') return;
         call<[], string[]>('get_windows_ocr_languages').then(setWindowsOcrLanguages).catch(() => setWindowsOcrLanguages([]));
     }, [settings.ocrProvider]);
 
@@ -860,7 +858,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                 <style>{`.dt-ocr-dropdown-wrapper .dt-recommended-tag { display: none !important; }`}</style>
                             <Dropdown
                                 rgOptions={[
-                                    ...(IS_WINDOWS ? [{ label: <span style={{ display: "flex", alignItems: "center", height: "20px", lineHeight: "20px" }}><span>On-Device</span><span style={{ fontSize: "10px", opacity: 0.7, marginLeft: "4px", transform: "translateY(2px)" }}>(Windows OCR)</span></span>, data: "windows_ocr" }] : []),
+                                    { label: <span style={{ display: "flex", alignItems: "center", height: "20px", lineHeight: "20px" }}><span>On-Device</span><span style={{ fontSize: "10px", opacity: 0.7, marginLeft: "4px", transform: "translateY(2px)" }}>(Windows OCR)</span></span>, data: "windows_ocr" },
                                     { label: <span style={{ display: "flex", alignItems: "center", height: "20px", lineHeight: "20px" }}><span>On-Device</span><span style={{ fontSize: "10px", opacity: 0.7, marginLeft: "4px", transform: "translateY(2px)" }}>(RapidOCR)</span></span>, data: "rapidocr" },
                                     { label: <span style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", width: "100%", height: "20px", lineHeight: "20px" }}><span style={{ display: "flex", alignItems: "center" }}><span>On-Device</span><span style={{ fontSize: "10px", opacity: 0.7, marginLeft: "4px", transform: "translateY(2px)" }}>(Chrome)</span></span><span className="dt-recommended-tag" style={{ fontSize: "10px", color: "#9aa0a6", fontStyle: "italic" }}>★ recommended</span></span>, data: "chromescreenai" },
                                     { label: <span>OCR.space</span>, data: "ocrspace" },
@@ -989,7 +987,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                     <ModelDownloadError state={csai} />
                                     <ProviderRating quality={3} speed={2} />
                                     <div>- Offline and privacy-friendly text recognition</div>
-                                    <div>- Requires {IS_WINDOWS ? '80MB' : '120MB'} one-time engine download</div>
+                                    <div>- Requires 80MB one-time engine download</div>
                                     <div>- Auto-detects 70+ languages</div>
                                     <div style={{ marginTop: "6px", fontStyle: "italic", color: "#5f6268", fontSize: "10px" }}>
                                         Downloaded on demand from Google's public server

@@ -49,7 +49,6 @@ export interface TextRegion {
     isDialog: boolean;
     confidence?: number;
     textColor?: string;
-    bgColor?: number[];  // [R, G, B] average background color from screenshot
     fontSize?: number;
     textDensity?: number;
     textContext?: string;
@@ -114,9 +113,11 @@ function computeMedianHeight(regions: TextRegion[]): number {
     return heights[Math.floor(heights.length / 2)];
 }
 
+// How readily lines are glued into paragraphs (0.25 normal .. 1.0 huge): scales the vertical gap threshold
+const GROUPING_POWER = 0.25;
+
 export class TextRecognizer {
     private confidenceThreshold: number = 0.6;
-    private groupingPower: number = 0.25;
 
     constructor() {
         logger.info('TextRecognizer', 'TextRecognizer initialized');
@@ -128,15 +129,6 @@ export class TextRecognizer {
 
     getConfidenceThreshold(): number {
         return this.confidenceThreshold;
-    }
-
-    setGroupingPower(power: number): void {
-        this.groupingPower = Math.max(0.25, Math.min(1.0, power));
-        logger.debug('TextRecognizer', `Grouping power set to ${this.groupingPower}`);
-    }
-
-    getGroupingPower(): number {
-        return this.groupingPower;
     }
 
     // Phase 1: group OCR boxes that sit on the same horizontal line.
@@ -182,12 +174,12 @@ export class TextRecognizer {
 
     // Phase 2: group text lines into paragraphs.
     // Checks: vertical gap, horizontal overlap ratio, height compatibility.
-    // groupingPower scales the vertical gap threshold.
+    // GROUPING_POWER scales the vertical gap threshold.
     private assembleParagraphs(lines: TextRegion[], medianH: number): TextRegion[] {
         const n = lines.length;
         if (n <= 1) return [...lines];
 
-        const power = this.groupingPower;
+        const power = GROUPING_POWER;
         const uf = new UnionFind(n);
 
         const indexed = lines.map((l, i) => ({ l, i }));
@@ -250,18 +242,6 @@ export class TextRecognizer {
                     const narrowIsUpper = (widthA < widthB && la.rect.top < lb.rect.top) ||
                                           (widthB < widthA && lb.rect.top < la.rect.top);
                     if (widthRatio < 0.15 && narrowIsUpper) continue;
-                }
-
-                // Background color: different background = different UI element.
-                // Uses simple RGB distance. Threshold of 60 catches obvious
-                // differences (dark vs light, blue vs gray) while allowing
-                // minor shading variation within the same panel.
-                if (la.bgColor && lb.bgColor) {
-                    const dr = la.bgColor[0] - lb.bgColor[0];
-                    const dg = la.bgColor[1] - lb.bgColor[1];
-                    const db = la.bgColor[2] - lb.bgColor[2];
-                    const colorDist = Math.sqrt(dr * dr + dg * dg + db * db);
-                    if (colorDist > 60) continue;
                 }
 
                 uf.union(indexed[a].i, indexed[b].i);
@@ -381,14 +361,6 @@ export class TextRecognizer {
             let isDialog = sorted[0].isDialog;
             let confidenceSum = sorted[0].confidence ?? 0;
             let confidenceCount = sorted[0].confidence !== undefined ? 1 : 0;
-            // Accumulate bgColor for averaging
-            let colorR = 0, colorG = 0, colorB = 0, colorCount = 0;
-            if (sorted[0].bgColor) {
-                colorR += sorted[0].bgColor[0];
-                colorG += sorted[0].bgColor[1];
-                colorB += sorted[0].bgColor[2];
-                colorCount++;
-            }
 
             for (let i = 1; i < sorted.length; i++) {
                 const region = sorted[i];
@@ -413,12 +385,6 @@ export class TextRecognizer {
                     confidenceSum += region.confidence;
                     confidenceCount++;
                 }
-                if (region.bgColor) {
-                    colorR += region.bgColor[0];
-                    colorG += region.bgColor[1];
-                    colorB += region.bgColor[2];
-                    colorCount++;
-                }
             }
 
             const result: TextRegion = {
@@ -431,13 +397,6 @@ export class TextRecognizer {
             }
             if (confidenceCount > 0) {
                 result.confidence = confidenceSum / confidenceCount;
-            }
-            if (colorCount > 0) {
-                result.bgColor = [
-                    Math.round(colorR / colorCount),
-                    Math.round(colorG / colorCount),
-                    Math.round(colorB / colorCount)
-                ];
             }
             merged.push(result);
         }
@@ -588,7 +547,7 @@ export class TextRecognizer {
         logger.debug('TextRecognizer', `Auto-glue: Processing ${regions.length} regions`);
 
         const medianH = computeMedianHeight(regions);
-        logger.debug('TextRecognizer', `Auto-glue: Median line height = ${medianH}px, grouping power = ${this.groupingPower}`);
+        logger.debug('TextRecognizer', `Auto-glue: Median line height = ${medianH}px`);
 
         // Phase 1: assemble word-level boxes into lines
         const lines = this.assembleLines(regions, medianH);
@@ -690,29 +649,6 @@ export class TextRecognizer {
 
             return true;
         });
-    }
-
-    async recognizeText(imageData: string): Promise<TextRegion[]> {
-        try {
-            const response = await call<[string], TextRegion[]>('recognize_text', imageData);
-
-            if (response) {
-                const regions = response;
-                logger.info('TextRecognizer', `Got ${regions.length} raw text regions from OCR`);
-
-                const mergedRegions = this.applyAutoGlue(regions);
-                const filteredRegions = this.filterUntranslatableText(mergedRegions);
-                logger.info('TextRecognizer', `After filtering, ${filteredRegions.length} regions remain`);
-
-                return filteredRegions;
-            }
-
-            logger.error('TextRecognizer', 'Failed to recognize text');
-            return [];
-        } catch (error) {
-            logger.error('TextRecognizer', 'Text recognition error', error);
-            return [];
-        }
     }
 
     async recognizeTextFile(imagePath: string): Promise<TextRegion[]> {
