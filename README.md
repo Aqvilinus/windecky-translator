@@ -1,326 +1,152 @@
-<p align="center">
-  <img src="assets/readme-logo.png" alt="WinDecky Translator" />
-</p>
-
-![GitHub Release](https://img.shields.io/github/v/release/Aqvilinus/windecky-translator)
-![License](https://img.shields.io/badge/license-GPL--3.0-green)
-![Build Status](https://img.shields.io/github/actions/workflow/status/Aqvilinus/windecky-translator/build-windows.yml)
-
 # WinDecky Translator
 
-WinDecky Translator is a Windows port by Aqvilinus, based on [Decky Translator](https://github.com/cat-in-a-box/Decky-Translator) by cat-in-a-box (GPL-3.0).
+[![Release](https://img.shields.io/github/v/release/Aqvilinus/windecky-translator)](https://github.com/Aqvilinus/windecky-translator/releases)
+[![Build](https://img.shields.io/github/actions/workflow/status/Aqvilinus/windecky-translator/build-windows.yml)](https://github.com/Aqvilinus/windecky-translator/actions/workflows/build-windows.yml)
+[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-green)](LICENSE)
 
-A [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) plugin that lets you translate any text on your screen while using Steam Big Picture on Windows.
+Translate any text on your screen while you play in Steam Big Picture on Windows. WinDecky Translator is a [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) plugin: press one shortcut in a game, and it captures the game window, reads the text with OCR, translates it and draws the translation right over the original lines. Handy for games that were never localized, or for learning a language while you play.
 
-It captures your screen, recognizes text using OCR, translates it and then shows the result with screen overlay.
+![The Banner Saga main menu before and after translation into Russian](assets/screenshot.jpg)
 
-Might be helpful for learning a new language by playing games or some other purposes (you tell me!).
-
-> ## About the Windows port
->
-> Built and tested on a OneXPlayer 3 (Intel Core Ultra, Arc graphics), Windows 11 in Xbox full screen mode, with the
-> Windows build of Decky Loader.
-> Upstream's frontend, text grouping, translation cache and providers are kept; the SteamOS-only parts have Windows
-> counterparts (`py_modules/winport`, `src/windows.ts`):
->
-> - **Screen capture:** Windows.Graphics.Capture of the window in front. It takes the frame from the Windows
->   compositor, so it works the same for DirectX, Vulkan, OpenGL or plain desktop apps.
-> - **Text recognition:** all of upstream's engines. On-Device (Chrome), the default as upstream, runs Google's Chrome Screen AI for Windows
->   (`chrome_screen_ai.dll`, downloaded on demand like on Linux) and reads 70+ languages; RapidOCR runs as upstream.
->   On-Device (Windows OCR) uses Windows' own engine, no download, but it misreads stylized game fonts and each language needs its Windows language pack
->   (the settings list the installed ones). OCR.space, Google Cloud and Gemini Vision work as upstream.
-> - **Translation:** upstream's engines, plus **AI Translation**: Gemini (key from aistudio.google.com) or Groq (key
->   from console.groq.com) or any OpenAI-compatible server (OpenRouter, a local llama.cpp server). The whole screen
->   goes in one request, so lines are translated in context; Google Translate, then Bing, take over whenever the AI
->   is unavailable or rate-limited. Free Google: one request per screen; on a rate limit Microsoft Bing's free web
->   translator takes over for 15 minutes. Offline NLLB works as upstream.
-> - **Overlay:** Big Picture sits behind the game on Windows, so the translation is drawn in a click-through window
->   on top of everything: a still of the captured frame with the translations fitted over the original text, like
->   upstream's overlay. Opening a Steam side menu closes the translation (the menu would be drawn under it).
-> - **Shortcut:** **Ctrl+Alt+T** translates, a second press closes the translation. It is registered only while a game
->   started from Steam is in front, so the combo keeps working normally everywhere else. Map it to a controller
->   button in your handheld's app (e.g. OneXConsole) or Steam Input. (Windows gives controller input only to the app
->   in front, so the plugin can't read controller buttons itself.)
-> - **Fewer settings:** the translation layout needs no tuning. Each label is set in the size of the original line,
->   aligned like the original, and uses the free space next to it before its text gets smaller.
-> - **Pause Game While Translating:** suspends the game's processes while the translation is up (NtSuspendProcess).
->
-> **Install:** download `decky-translator-windows.zip` from the
-> [releases](https://github.com/Aqvilinus/windecky-translator/releases) and install it in Decky's developer
-> settings (Install Plugin from URL with the zip's link, or from the downloaded ZIP file). Like upstream, Decky Loader
-> then downloads `plugin-dependencies.tar.gz` (about 130 MB: a portable Python 3.14 for the on-device engines' worker
-> processes and the plugin's Python packages, checked against the SHA-256 in `package.json`), and the plugin unpacks it
-> into `bin/` on its first start. Releases are built by `.github/workflows/build-windows.yml` (`scripts/build_windows.py`).
->
-> **Development:** clone into `%USERPROFILE%\homebrew\plugins\decky-translator`, `pnpm install && pnpm run build`, then
-> `python scripts/build_windows.py --version dev --skip-frontend` and copy `out/plugin-dependencies.tar.gz` into `bin/`
-> (main.py unpacks it on the next start). Note that installing the release zip over a clone replaces the clone.
->
-> **Tests:** `pnpm run typecheck && pnpm test` (unit tests in `tests/frontend`, run by CI). `pnpm test:e2e` runs the
-> end-to-end tests on the device itself (Steam Big Picture with Decky Loader, a Steam game: The Banner Saga by default,
-> `E2E_APPID`/`E2E_WINDOW` for another): it presses Ctrl+Alt+T in the game, clicks Translate in Steam's side menu over
-> the game, reloads the plugin like a store update, and checks the overlay window and the translated screen
-> (screenshots in `tests/e2e/artifacts`). It takes the screen and keyboard for about half a minute. Run it after
-> changing the frontend or the overlay.
-
-![Screenshot](assets/screenshot_1.jpg)
-
-![Translation Demo](assets/translation.gif)
+It is based on [Decky Translator](https://github.com/cat-in-a-box/Decky-Translator) by cat-in-a-box, rebuilt for Windows. It is a separate project with its own releases, and it is not affiliated with Valve, Microsoft or Google.
 
 ## Requirements
 
-- Steam Deck (LCD or OLED)
-- Experimental support for non-steamOS handhelds and distros
-- [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) installed
-- Internet connection required for web-based providers and for initial download of offline models
+- Windows 11, 64-bit (Windows 10 may work but is untested)
+- Steam in Big Picture mode
+- [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) for Windows (tested with 3.3.1)
+- An internet connection for the web engines and for the one-time downloads of the on-device engines
 
-## Installation
+Developed and tested on a OneXPlayer handheld (Intel Core Ultra, Arc graphics) running Windows 11 in full screen mode. Any Windows PC with Steam Big Picture should work.
 
-### From Decky Plugin Store
-1. Install [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader/tree/main?tab=readme-ov-file#-installation) for Windows (Steam Big Picture)
-2. Press <picture><source media="(prefers-color-scheme: dark)" srcset="assets/icons/light/qam.svg"><img height="16" alt="QAM" src="assets/icons/dark/qam.svg"></picture> to open the side bar and go to the Decky tab <picture><source media="(prefers-color-scheme: dark)" srcset="assets/icons/light/plug.svg"><img height="16" alt="Decky" src="assets/icons/dark/plug.svg"></picture>
-3. In the upper right corner press <picture><source media="(prefers-color-scheme: dark)" srcset="assets/icons/light/store.svg"><img height="16" alt="Store" src="assets/icons/dark/store.svg"></picture> to view all the available plugins
-4. Search for "Decky Translator" and install it
+## Install
 
-### Manual Installation
-1. Install [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader/tree/main?tab=readme-ov-file#-installation) for Windows (Steam Big Picture)
-2. [Download](https://github.com/Aqvilinus/windecky-translator/releases/latest/download/decky-translator-windows.zip) the latest release from the [Releases](https://github.com/Aqvilinus/windecky-translator/releases) page
-3. Save the *decky-translator-windows.zip* archive to any directory on your device
-4. Press <picture><source media="(prefers-color-scheme: dark)" srcset="assets/icons/light/qam.svg"><img height="16" alt="QAM" src="assets/icons/dark/qam.svg"></picture>, go to the Decky tab <picture><source media="(prefers-color-scheme: dark)" srcset="assets/icons/light/plug.svg"><img height="16" alt="Decky" src="assets/icons/dark/plug.svg"></picture> and click <picture><source media="(prefers-color-scheme: dark)" srcset="assets/icons/light/gear.svg"><img height="16" alt="Settings" src="assets/icons/dark/gear.svg"></picture>
-5. Enable "Developer Mode" in General tab
-6. Open the Developer tab
-7. Install Plugin from ZIP file -> "Browse" and then select *decky-translator-windows.zip*
+1. Download `decky-translator-windows.zip` from the [latest release](https://github.com/Aqvilinus/windecky-translator/releases/latest).
+2. In Big Picture, open the Quick Access menu, go to the Decky tab and open Decky's settings.
+3. Turn on **Developer Mode** (General tab), then in the **Developer** tab choose **Install Plugin from ZIP File** and pick the zip. Instead of downloading, you can also use **Install Plugin from URL** with the zip's link.
 
-## How to use it?
+During the install Decky Loader also downloads `plugin-dependencies.tar.gz` from the same release (about 130 MB: a portable Python 3.14 and the plugin's Python packages). Its SHA-256 is checked against the one in the plugin's `package.json`, and the plugin unpacks it into its `bin` folder on the first start, so the first start takes a little longer.
 
-1. Press "Translate" button in the main tab of the plugin
-2. Press <picture><source media="(prefers-color-scheme: dark)" srcset="assets/icons/light/qam.svg"><img height="16" alt="QAM" src="assets/icons/dark/qam.svg"></picture> to open the menu again and press "Close Overlay"
+To update, install the newer zip the same way. Your settings and downloaded engines are kept.
 
-## How to quickly use it?
+## How to use
 
-1. Hold L4 button for a Quick Translation
-2. Hold L4 button again to disable the translation overlay
+### From the side menu
 
-Button or Combinations can be configured in the Controls tab
+Open the Quick Access menu, go to the Decky tab, open **WinDecky Translator** and press **Translate**. The menu closes, and a moment later the translation appears over the game. Press **Close Overlay** in the same place, or the shortcut below, to close it.
 
-## How does it do that? 
+Opening any Steam side menu while a translation is on screen closes the translation, so it never covers the menu.
 
-Decky Translator allows you to choose different Text Recognition and Translation methods - feel free to experiment.
+### With the shortcut
 
-### Text Recognition (OCR)
+Press **Ctrl+Alt+T** in a game to translate, and press it again to close the translation. The shortcut works only while a game started from Steam is in front; everywhere else Ctrl+Alt+T keeps its usual meaning.
 
-| Provider                                                                                               | Type      | Description                                                                                            | Requirements              |
-|--------------------------------------------------------------------------------------------------------|-----------|--------------------------------------------------------------------------------------------------------|---------------------------|
-| [**Chrome Screen AI**](https://source.chromium.org/chromium/chromium/src/+/main:services/screen_ai/)   | On-device | OCR using Chromium's screen-ai library. The best recognition quality available                         | One-time 120 MB download  |
-| [**RapidOCR**](https://github.com/RapidAI/RapidOCR)                                                    | On-device | OCR using PP-OCRv5 ONNX models. Alternative solution for on-device recognition                         | One-time 75 MB download   |
-| [**Gemini Vision**](https://ai.google.dev/gemini-api)                                                  | Web       | Recognition and translation in a single API call. Best for stylized/in-game text, but is not very fast | Internet + API key        |
-| [**OCR.space**](https://ocr.space/)                                                                    | Web       | Free EU-based Cloud OCR API with some usage limitations. Good choice if you don't translate very often | Internet                  |
-| [**Google Cloud Vision**](https://cloud.google.com/vision)                                             | Web       | High accuracy and speed. Great for complex text. Has a great free tier, but requires some setup        | Internet + API key        |
+To translate with a controller, map Ctrl+Alt+T to a button: in your handheld's own app (for example OneXConsole on OneXPlayer) or in the game's Steam Input layout. The plugin can't listen to controller buttons itself, because Windows sends controller input only to the app in front.
+
+## Engines
+
+Translation happens in two steps: text recognition (OCR) finds the text on the screenshot, and a translation engine translates it. You pick both in the plugin's **Translation** tab. Several options are free and need no account at all.
+
+### Text recognition
+
+| Engine | Where it runs | Key | Notes |
+| --- | --- | --- | --- |
+| **On-Device (Chrome)** (default) | Your PC | None | Google's Chrome Screen AI engine. Best quality, detects 70+ languages by itself. One-time 80 MB download. |
+| **On-Device (RapidOCR)** | Your PC | None | PaddleOCR models. 27 languages; you choose the input language. One-time 75 MB download. |
+| **On-Device (Windows OCR)** | Your PC | None | Built into Windows, nothing to download. Each language needs its Windows language pack, and stylized game fonts are often misread. |
+| **OCR.space** | Web | None | Free cloud OCR. Limited to 500 requests a day and 10 per 10 minutes. |
+| **Google Cloud Vision** | Web | Google Cloud | Very accurate and fast. 1,000 free requests a month, then paid. |
+| **Gemini Vision** | Web | Gemini | Recognizes and translates in one request, so no separate translation engine is used. Great with stylized text, but slower. |
 
 ### Translation
 
-| Provider                                                                                     | Type      | Description                                                                                                                          | Requirements                |
-|----------------------------------------------------------------------------------------------|-----------|--------------------------------------------------------------------------------------------------------------------------------------|-----------------------------|
-| [**NLLB-200**](https://huggingface.co/facebook/nllb-200-distilled-1.3B)                      | On-device | Meta's NLLB-200 1.3B distilled model running locally via CTranslate2. Fully offline after download                                   | One-time 1.4 GB download    |
-| [**Gemini Vision**](https://ai.google.dev/gemini-api)                                        | Web       | When Gemini is selected as the OCR provider, it returns the translation in the same call — no separate translation provider needed   | Internet + API key          |
-| [**Google Translate**](https://translate.google.com/)                                        | Web       | It's Google. And it translates                                                                                                       | Internet                    |
-| [**Google Cloud Translation**](https://cloud.google.com/translate)                           | Web       | High quality translations                                                                                                            | Internet + API key          |
+| Engine | Where it runs | Key | Notes |
+| --- | --- | --- | --- |
+| **Google Translate** (default) | Web | None | Free. If Google rate-limits you, Microsoft Bing's free translator takes over for 15 minutes. |
+| **AI Translation: Groq** | Web | Groq (free) | Sends the whole screen in one request, so lines are translated in context. Fast; the free tier allows about 1,000 requests a day. |
+| **AI Translation: Gemini** | Web | Gemini (free) | Same idea as Groq. In the EU/EEA, the UK and Switzerland, Google's terms allow only paid use, so you need billing on the key's project. |
+| **AI Translation: Custom server** | Web or your PC | Depends | Any OpenAI-compatible API: OpenRouter, a local llama.cpp server and so on. |
+| **On-Device (NLLB-200)** | Your PC | None | Meta's NLLB-200 model, fully offline after a one-time 1.4 GB download. No auto-detect: choose the input language. Experimental. |
+| **Google Cloud Translation** | Web | Google Cloud | High quality. 500,000 free characters a month, then paid. |
 
+When AI Translation can't answer (no key yet, the service is down or you hit its limit), Google Translate and then Bing step in, so you always get a translation.
 
-**Note:** Google Cloud and Gemini require an API key but offer a generous free tier for personal use.
+A good free setup is **On-Device (Chrome)** for recognition and **AI Translation: Groq** for translation. If you don't want to create any account, use **Google Translate**.
 
-<details>
-<summary><h2>How to get Google Cloud API key?</h2></summary>
+### Getting a key
 
+Press the key button next to the engine in the Translation tab and paste the key (the dialog has a **Paste** button).
 
-### Step 1: Create a Google Cloud Project
-1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Click "Select a project" at the top, then "New Project"
-3. Give your project a name (any name would work) and click "Create"
+- **Groq:** sign in at [console.groq.com](https://console.groq.com/keys), open **API Keys** and create a key. No card is needed.
+- **Gemini:** sign in at [Google AI Studio](https://aistudio.google.com/app/apikey) and create a key. The same key works for AI Translation and for Gemini Vision.
+- **Google Cloud:** in the [Google Cloud Console](https://console.cloud.google.com/) create a project, enable the **Cloud Vision API** and/or the **Cloud Translation API**, then create an API key under **APIs & Services > Credentials**. Restricting the key to those two APIs and setting a budget alert under **Billing > Budgets & alerts** is a good idea.
 
-### Step 2: Enable Required APIs
-1. Go to [APIs & Services > Library](https://console.cloud.google.com/apis/library)
-2. Search for and enable:
-   - **Cloud Vision API**
-   - **Cloud Translation API**
+Treat your keys like passwords and don't share them.
 
-### Step 3: Create an API Key
-1. Go to [APIs & Services > Credentials](https://console.cloud.google.com/apis/credentials)
-2. Click "Create Credentials" > "API Key"
-   - *Authenticate API calls through a service account*: keep unchecked
-   - Application Restrictions: None
-3. Copy your new API key
-4. If you need to find this API key later - press "Show key" button
+## Settings worth knowing
 
-![API-Key-page](assets/google-cloud-key-1.jpg)
-![API-Key-modal](assets/google-cloud-key-2.jpg)
+- **Input Language / Output Language:** what to translate from and to. Auto-detect works with every engine except On-Device (NLLB-200).
+- **Faster Recognition / Faster Translation:** keep an on-device engine loaded between translations. Faster, but uses more memory.
+- **Cache Translations:** remembers translated lines, so text you have already seen is shown instantly and isn't sent again. **View Cached Translations** lets you browse and clear the cache.
+- **Pause Game While Translating:** suspends the game while the translation is on screen and resumes it when you close the translation. It is off by default. It doesn't work well with game streaming (Moonlight, GeForce NOW, Remote Play), and an online game may lose its connection while paused.
+- **Font Scaling:** makes the translated text bigger, for example on a large external monitor.
+- **Customize Recognition:** fine-tuning for RapidOCR and Google Cloud Vision when they miss text or pick up noise.
+- **Debug Mode:** writes detailed logs and shows a small diagnostics panel (shortcut state, the app in front, the last capture size).
 
+## Privacy
 
-### Step 4: (Optional) Restrict Your API Key
-For security, you can restrict the API key to only the Vision and Translation APIs:
-1. Click on your API key in the Credentials page
-2. Under "API restrictions", select "Restrict key"
-3. Select "Cloud Vision API" and "Cloud Translation API"
-4. Click "Save"
+- The screenshot leaves your PC only if you choose a web recognition engine: OCR.space, Google Cloud Vision or Gemini Vision. The on-device engines read it locally.
+- The recognized text is sent to the translation engine you choose: Google Translate (and Bing when it takes over), Groq, Gemini, your custom server or Google Cloud. On-Device (NLLB-200) translates locally.
+- The on-device engines are downloaded once when you first use them: Chrome Screen AI from Google's Chrome component server, the RapidOCR models from GitHub and Hugging Face, NLLB-200 from Hugging Face.
+- Settings, including your API keys, are stored in plain text in `%USERPROFILE%\homebrew\settings\decky-translator\`. The translation cache is stored there too.
+- The plugin has no analytics or telemetry.
 
-![API-Key-Restriction](assets/google-cloud-key-4.jpg)
+## Known limitations
 
-### Step 5: Add API Key to Plugin
-1. Open the Decky Translator plugin on your Steam Deck
-2. Go to the Translation tab
-3. Select Google Cloud Vision and/or Google Cloud Translation as your providers
-4. Click "Set Key"
-5. Enter your Google Cloud API key
-6. Click "Save"
-
-### API Key usually looks like this (but you should have your own):
-![API-Key-SteamOS](assets/google-cloud-key-3.jpg)
-
-### IMPORTANT: NEVER SHARE THIS API KEY WITH ANYONE!
-
-### Pricing Note
-Google Cloud offers a free tier that should be sufficient for personal use:
-- **Vision API**: First 1,000 units/month free
-- **Translation API**: First 500,000 characters/month free
-
-**From my own experience**, even everyday usage of Decky Translator with Google Cloud for both recognition and translation rarely goes beyond their free tier. 
-Only once I had to pay around 1€/month - and that was during VERY active development and testing phase. 
-
-**But if you want to stay on the safe side anyway** - you could set up a budget limit and notification in [Billing > Budgets & Alerts](https://console.cloud.google.com/billing/budgets)
-
-![API-Key-Budget](assets/google-cloud-key-5.jpg)
-
-
-</details>
-
-<details>
-<summary><h2>How to get Gemini API key?</h2></summary>
-
-Gemini Vision uses a separate key from Google Cloud — it comes from Google AI Studio, not the Cloud Console.
-
-1. Go to [Google AI Studio](https://aistudio.google.com/app/apikey)
-2. Sign in with your Google account
-3. Click "Create API key" and pick a project (or let it create one for you)
-4. Copy the key
-5. In the plugin, open the Translation tab, select **Gemini Vision** as the OCR provider, click "Set Key", paste it, and Save
-
-</details>
+- Arabic, Hebrew, Thai and other scripts that need text shaping are drawn without it in the overlay, so letters may look disconnected or in the wrong order.
+- The overlay is drawn on a still image of the game, so it doesn't follow the game if the scene changes; translate again.
+- The shortcut can't be changed yet, and it works only while a game started from Steam is in front.
+- Windows OCR needs the Windows language pack (with text recognition) for every language you read: Settings > Time & language > Language & region.
 
 ## Troubleshooting
 
-### Black screen on capture
-Try triggering translation again. If persistent, reboot your Steam Deck
+- **Nothing happens or the result is poor:** try another recognition engine first (On-Device (Chrome) is usually the best), then another translation engine.
+- **"Wrong API key":** check the key for typos and make sure the right API is enabled for it.
+- **Text is too small:** raise **Font Scaling** in the settings tab.
+- **Reporting a bug:** turn on **Debug Mode**, reproduce the problem and attach the log from `%USERPROFILE%\homebrew\logs\decky-translator\` to a [new issue](https://github.com/Aqvilinus/windecky-translator/issues/new).
 
-### Translated text is too small
-Try increasing the "Font Scaling" option in plugin settings
+## Development
 
-### Plugin says I'm using a wrong API key
-Double-check that you entered it correctly. If the issue persists, please raise an issue - let's investigate it together
+You need Node.js (pnpm comes through `corepack`) and Python 3.14.
 
-### I see nothing / Recognition is bad / It does not translate anything
-Try other combination of text recognition and translation methods. If it doesnt solve the problem - please report it here [New Issue](https://github.com/Aqvilinus/windecky-translator/issues/new). It will also help if you attach your .log file there
+```powershell
+git clone https://github.com/Aqvilinus/windecky-translator.git "$env:USERPROFILE\homebrew\plugins\decky-translator"
+cd "$env:USERPROFILE\homebrew\plugins\decky-translator"
+corepack pnpm install
+corepack pnpm run build
+python scripts/build_windows.py --version dev --skip-frontend
+```
 
-## To-Do
-### Functional
-- [x] Add offline OCR functionality
-- [x] Fix interface scaling issues on non-default SteamOS values (experimental)
-- [x] Rework temporary files solution
-- [x] Gamepad support
-- [x] Overlay font scaling for large monitors
-- [x] Fully offline Translation functionality
-- [x] Support for non-SteamOS distros
-- [ ] Disable in-game buttons while overlay is active
-- [ ] Desktop mode support
-- [ ] Nicer look for translation overlay
-- [ ] TTS for translated text (press the translated label to listen)
+The last command builds `out/plugin-dependencies.tar.gz`; copy it into `bin/`, and the plugin unpacks it on its next start. Installing a release zip over a clone replaces the clone.
 
-## Third-Party Dependencies
+Tests:
 
-This plugin uses the following third-party components. None of the heavy models are bundled in the plugin zip — they're downloaded on demand by a user.
+- `corepack pnpm run typecheck` and `corepack pnpm test` run the type check and the unit tests (`tests/frontend`). CI runs both on every push.
+- `corepack pnpm test:e2e` runs the end-to-end tests on the device itself. It needs Steam Big Picture with Decky Loader and an installed Steam game (The Banner Saga by default; set `E2E_APPID` and `E2E_WINDOW` for another one). It starts the game if it isn't running, translates with Ctrl+Alt+T and with the side menu button, reloads the plugin, and checks the overlay and the translated screen (screenshots go to `tests/e2e/artifacts`). It takes over the screen and keyboard for about a minute, so don't use the device meanwhile.
 
-### Chrome Screen AI library
+### Versions and releases
 
-The default on-device OCR engine that provides very impressive results. 
-The shared library libchromescreenai.so and its TFLite models are pulled from Google's CIPD server on demand.
+Versions follow [semantic versioning](https://semver.org/), starting at 1.0.0, independent of Decky Translator's versions. The version in `package.json` is the current one, and the release tag is the same number without a prefix (`1.0.0`).
 
-| Component | Source | License |
-|-----------|--------|---------|
-| libchromescreenai.so + TFLite models | [chromium/third_party/screen-ai](https://source.chromium.org/chromium/chromium/src/+/main:services/screen_ai/) via CIPD | BSD-3-Clause (Chromium) |
+To release, run the **Build Windows** workflow from the Actions tab with `release_version` set to the new version. It builds the zip and `plugin-dependencies.tar.gz` and publishes them as a draft release tagged with that version; the zip's download link for the dependencies points at that release.
 
-### RapidOCR Models (PP-OCRv5)
+## License and credits
 
-On-device OCR alternative. Based on [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) models (Apache 2.0), exported to ONNX format.
+WinDecky Translator is licensed under the [GNU GPL v3.0](LICENSE), like the project it is based on. Third-party components and their licenses are listed in [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES). The NLLB-200 model is licensed by Meta for non-commercial use only; the plugin doesn't ship it, you download it from Hugging Face when you choose it.
 
-- Text Detection + Chinese Recognition: [MeKo-Christian/paddleocr-onnx](https://github.com/MeKo-Christian/paddleocr-onnx)
-- Chinese Dictionary + per-language Recognition models: [monkt/paddleocr-onnx](https://huggingface.co/monkt/paddleocr-onnx) (Apache 2.0)
-- Text Classifier: [SWHL/RapidOCR](https://huggingface.co/SWHL/RapidOCR) (Apache 2.0)
+Thanks to:
 
-| File | Purpose |
-|------|---------|
-| ch_PP-OCRv5_mobile_det.onnx | Text detection model (shared across all languages) |
-| ch_rec.onnx + ch_dict.txt | Chinese/Japanese/English recognition |
-| english_rec.onnx + english_dict.txt | English recognition |
-| latin_rec.onnx + latin_dict.txt | Latin script (French, German, Spanish, etc.) |
-| eslav_rec.onnx + eslav_dict.txt | East Slavic (Russian, Ukrainian) |
-| korean_rec.onnx + korean_dict.txt | Korean recognition |
-| greek_rec.onnx + greek_dict.txt | Greek recognition |
-| thai_rec.onnx + thai_dict.txt | Thai recognition |
-| ch_ppocr_mobile_v2.0_cls_infer.onnx | Text direction classifier |
-
-### NLLB-200 Translation Model
-
-Used for offline translation. Downloaded on demand from Hugging Face.
-
-| Component | Source | License |
-|-----------|--------|---------|
-| NLLB-200 1.3B distilled (CT2 int8 conversion) | [JustFrederik/nllb-200-distilled-1.3B-ct2-int8](https://huggingface.co/JustFrederik/nllb-200-distilled-1.3B-ct2-int8) | CC-BY-NC 4.0 (Meta NLLB-200, **non-commercial use only**) |
-
-The NLLB-200 weights are licensed by Meta for non-commercial use. The plugin does not redistribute them — the user downloads them directly from Hugging Face on demand.
-
-### Python Packages (from PyPI)
-
-| Package | License | Purpose |
-|---------|---------|---------|
-| Pillow==11.2.1 | MIT-CMU | Image processing for screenshot handling |
-| requests==2.32.3 | Apache 2.0 | HTTP library for API calls |
-| urllib3==2.4.0 | MIT | HTTP client (dependency of requests) |
-| rapidocr>=3.6.0 | Apache 2.0 | OCR engine that runs the PP-OCRv5 ONNX models |
-| onnxruntime>=1.7.0 | MIT | ONNX model inference runtime |
-| ctranslate2>=4.5.0 | MIT | Inference engine for the NLLB-200 model |
-| sentencepiece>=0.2.0 | Apache 2.0 | Tokenizer used by NLLB-200 |
-| protobuf>=6.33.1 | BSD-3-Clause | Used by Chrome Screen AI for the inference protocol |
-
-### Bundled Python Runtime
-
-A portable Python 3.13 interpreter is bundled so the plugin works on distros where the system Python doesn't match (Bazzite, etc.). 
-Pulled from [astral-sh/python-build-standalone](https://github.com/astral-sh/python-build-standalone), SHA256-verified in CI.
-
-| Component                              | License                                                                     |
-|----------------------------------------|-----------------------------------------------------------------------------|
-| CPython 3.13 (python-build-standalone) | PSF-2.0, plus various component licenses (see python-build-standalone repo) |
-
-### Web Fonts
-
-Loaded from CDN on demand for the translated text overlay. Not bundled in the plugin.
-
-| Source                                                                                                                                         | License                     |
-|------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------|
-| [Google Fonts](https://fonts.google.com/) (Open Sans, Montserrat, Noto Sans, Lexend, Atkinson Hyperlegible Next, Andika, etc.)                 | SIL Open Font License (OFL) |
-| [OpenDyslexic](https://opendyslexic.org/) (via [@fontsource/opendyslexic](https://www.npmjs.com/package/@fontsource/opendyslexic) on jsDelivr) | SIL Open Font License (OFL) |
-
-
-## Thanks to
-
-- [Valve](https://www.valvesoftware.com/) for creating the Steam Deck - a beautiful device that makes projects like this possible
-- [UGT (Universal Game Translator)](https://github.com/SethRobinson/UGT) by Seth Robinson for inspiration and the idea of using game translation as a language learning tool
-- [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) team for the plugin framework
-- [Steam Deck Homebrew](https://github.com/SteamDeckHomebrew) community for their amazing plugins, which served as a great reference while building this one
-- [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR), [RapidOCR](https://github.com/RapidAI/RapidOCR) and [MeKo-Christian](https://github.com/MeKo-Christian/paddleocr-onnx) for OCR engine, OCR models and ONNX model exports that make offline text recognition possible
-- [Chromium project](https://www.chromium.org/) for the screen-ai library
-- [Meta AI](https://ai.meta.com/) for the NLLB-200 translation model
-- [OpenNMT/CTranslate2](https://github.com/OpenNMT/CTranslate2) for the inference engine and [JustFrederik](https://huggingface.co/JustFrederik) for int8 conversion
-- [OCR.space](https://ocr.space/) for the free OCR API
-- [Google](https://google.com/) for Vision, Translation and Gemini API
-- [astral-sh/python-build-standalone](https://github.com/astral-sh/python-build-standalone) for the portable Python runtime
-- [steam3d](https://github.com/steam3d) for the SteamOS UI icons
-- And You. Yes, You
+- [cat-in-a-box](https://github.com/cat-in-a-box) for [Decky Translator](https://github.com/cat-in-a-box/Decky-Translator), which this port is built on: its interface, text grouping, translation cache and engines.
+- The [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) team for the plugin framework.
+- [Chromium](https://www.chromium.org/) for the Screen AI library, [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) and [RapidOCR](https://github.com/RapidAI/RapidOCR) for the OCR models and engine, [Meta AI](https://ai.meta.com/) for NLLB-200 and [CTranslate2](https://github.com/OpenNMT/CTranslate2) for running it.
+- [astral-sh/python-build-standalone](https://github.com/astral-sh/python-build-standalone) for the portable Python runtime.
