@@ -94,10 +94,9 @@ def test_capture_ocr_translate_overlay(backend, windows, net):
     overlay = windows.overlay
     state, target = overlay.shown[-1]
     assert overlay.visible and target["hwnd"] == harness.GAME_HWND and state["regions"] == translated
-    assert windows.hotkey.holds[-1] == (True, "overlay")  # Ctrl+Alt+T closes it whatever is in front
 
     assert backend.call("native_overlay_update", {"visible": False}) is True
-    assert not overlay.visible and windows.hotkey.holds[-1] == (False, "overlay")
+    assert not overlay.visible
 
 
 def test_overlay_draws_the_labels_over_the_text(backend, windows, net):
@@ -178,7 +177,6 @@ def test_pause_game_while_translating(start, windows, net):
     _, _, translated = translate_screen(b)
     b.call("native_overlay_update", overlay_state(translated))
     assert windows.processes.suspended == {harness.GAME_PID}
-    assert (True, "pause") in windows.hotkey.holds  # Ctrl+Alt+T must still work on the frozen game
     b.call("native_overlay_update", overlay_state(translated, fontScale=1.2))  # an update: no second pause
     assert windows.processes.log.count(("suspend", harness.GAME_PID)) == 1
     b.call("native_overlay_update", {"visible": False})
@@ -207,9 +205,12 @@ def test_hotkey_reaches_the_frontend(backend, main):
     assert main.test_events == [("translator_hotkey", ())]
 
 
-def test_steam_apps(backend, windows):
+def test_steam_apps(backend):
+    from winport import steam_games
     assert backend.call("set_steam_app", 237990, True, 1, False) is True
-    assert windows.hotkey.refreshes == 1
+    assert 237990 in steam_games._steam_apps
+    assert backend.call("set_steam_app", 237990, False, 1, False) is True
+    assert 237990 not in steam_games._steam_apps
 
 
 # ---------------------------------------------------------------- the real Windows OCR, where the runner has it

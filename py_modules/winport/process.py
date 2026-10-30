@@ -1,7 +1,7 @@
 """Pause Game While Translating on Windows: suspend the game's processes, resume them on dismiss.
 
 Upstream sends SIGSTOP/SIGCONT to the game's process tree (found by Steam AppId in /proc). Here the game is the process
-of the window the screenshot came from, if Steam started it (winport.hotkey.is_steam_game), and NtSuspendProcess /
+of the window the screenshot came from, if Steam started it (winport.steam_games.is_steam_game), and NtSuspendProcess /
 NtResumeProcess (what Process Explorer's Suspend uses) pause it and its child processes. main.py pauses when the
 translation of a game appears on screen and resumes everything when it is hidden.
 
@@ -16,7 +16,7 @@ import os
 from ctypes import wintypes
 from typing import Dict, List, Optional
 
-from .hotkey import STEAM_PROCESSES, processes, is_steam_game, process_created
+from .steam_games import STEAM_PROCESSES, processes, is_steam_game, process_created
 
 logger = logging.getLogger(__name__)
 

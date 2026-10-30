@@ -24,7 +24,6 @@ const WindowsStatus: VFC = () => {
     }, []);
     if (!status) return null;
     const hotkey = status.hotkey || {};
-    const [pid, exe, isGame] = hotkey.foreground || [];
     const capture = status.capture || {};
     const row = (name: string, value: string) => (
         <div><span style={{ color: '#888' }}>{name}:</span> {value}</div>
@@ -35,7 +34,6 @@ const WindowsStatus: VFC = () => {
             fontFamily: 'monospace', border: '1px solid rgba(255,255,255,0.1)', display: 'grid', gap: '3px'
         }}>
             {row('Shortcut', hotkey.registered ? `${hotkey.hotkey} active` : hotkey.error ? `taken (error ${hotkey.error})` : 'inactive')}
-            {row('In front', exe ? `${exe} (${pid})${isGame ? ', a game' : ''}` : '-')}
             {status.overlay_error && row('Overlay', status.overlay_error)}
             {row('Last capture', capture.width ? `${capture.width}x${capture.height} at (${capture.left},${capture.top})` : '-')}
         </div>

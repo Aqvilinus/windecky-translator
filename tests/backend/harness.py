@@ -140,18 +140,10 @@ class FakeHotkey:
     def __init__(self, on_press):
         self.on_press = on_press
         self.enabled = None
-        self.holds = []
-        self.refreshes = 0
         self.closed = False
 
     def set_enabled(self, on):
         self.enabled = on
-
-    def hold(self, on, reason="pause"):
-        self.holds.append((on, reason))
-
-    def refresh(self):
-        self.refreshes += 1
 
     def status(self):
         return {"registered": bool(self.enabled), "hotkey": "Ctrl+Alt+T"}
@@ -216,7 +208,7 @@ class FakeWindows:
 
     def install(self, main):
         seams = {"capture_foreground": self.capture_foreground, "Overlay": self.overlay_cls,
-                 "GameHotkey": self._make_hotkey, "winprocess": self.processes}
+                 "Hotkey": self._make_hotkey, "winprocess": self.processes}
         for name, value in seams.items():
             self._saved[name] = getattr(main, name)
             setattr(main, name, value)

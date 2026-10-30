@@ -240,7 +240,7 @@ try:
 except Exception as _e:  # noqa: BLE001
     Overlay = None
     _BOOT_ERRORS.append(f"The translation overlay is unavailable: {_e}")
-from winport.hotkey import GameHotkey  # ctypes only
+from winport.hotkey import Hotkey  # ctypes only
 from winport import process as winprocess  # ctypes only
 for _error in _BOOT_ERRORS:
     logger.error(_error)
@@ -629,10 +629,6 @@ class Plugin:
                 self._overlay.hide()
                 self._resume_paused_games()
                 self._release_capture()
-            if self._hotkey:
-                # Ctrl+Alt+T must close a shown translation whatever is in front, e.g. one started from the side
-                # menu's Translate button over Big Picture, which isn't a Steam game
-                self._hotkey.hold(visible, "overlay")
             return True
         except Exception as e:
             logger.error(f"native_overlay_update failed: {e}")
@@ -650,22 +646,17 @@ class Plugin:
     # it was started (Ctrl+Alt+T, the side menu, a controller shortcut) and even if the game exited meanwhile.
     def _pause_captured_game(self):
         pid = winprocess.game_pid((self._capture_target or {}).get("hwnd"))
-        if pid and winprocess.suspend(pid) and self._hotkey:
-            self._hotkey.hold(True, "pause")  # Ctrl+Alt+T must still dismiss (and resume)
+        if pid:
+            winprocess.suspend(pid)
 
     def _resume_paused_games(self):
         if winprocess.any_suspended():
             winprocess.resume_all()
-        if self._hotkey:
-            # a process that refused to resume stays listed: keep Ctrl+Alt+T so the next dismiss tries again
-            self._hotkey.hold(winprocess.any_suspended(), "pause")
 
     async def set_steam_app(self, appid, running, instance_id=0, already_running=False):
         """Steam's app lifetime notifications (src/windows.ts), so games whose launcher exited still count."""
-        from winport.hotkey import set_steam_app
+        from winport.steam_games import set_steam_app
         set_steam_app(appid, bool(running), instance_id, bool(already_running))
-        if self._hotkey:
-            self._hotkey.refresh()
         return True
 
     # Windows: Ctrl+Alt+T in a game (hotkey thread) -> the frontend translates or dismisses (src/windows.ts)
@@ -1100,7 +1091,7 @@ class Plugin:
             logger.error(f"Could not resume games left paused: {e}")
         self._loop = asyncio.get_running_loop()
         try:
-            self._hotkey = GameHotkey(self._on_hotkey)
+            self._hotkey = Hotkey(self._on_hotkey)
         except Exception as e:
             logger.error(f"Could not start the Ctrl+Alt+T hotkey: {e}")
 
