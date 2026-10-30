@@ -22,13 +22,10 @@ import {
 } from "react";
 
 import { BsTranslate } from "react-icons/bs";
-import { ImageState, ImageOverlay } from "./Overlay";
+import { ImageState } from "./Overlay";
 import { GameTranslatorLogic } from "./Translator";
-import { cleanupAllFontDOM } from "./fonts";
-import { IS_WINDOWS, forwardOverlayToBackend, listenForHotkey, showBootProblems, trackSteamApps } from "./windows";
+import { forwardOverlayToBackend, listenForHotkey, showBootProblems, trackSteamApps } from "./windows";
 import { adoptActivePlugin } from "./deckyState";
-import { ProgressInfo } from "./Input";
-import { ActivationIndicator } from "./ActivationIndicator";
 import { SettingsProvider, useSettings } from "./SettingsContext";
 import { logger } from "./Logger";
 
@@ -54,10 +51,9 @@ const IconGear = () => (
     </svg>
 );
 
-// Main plugin component
 // The fixed box the tabs scroll in. Upstream sizes it to 95% of the side panel, which fits the Steam Deck. On Windows
 // the panel is shorter and the title can take two lines, so the box would end below the screen and its last settings
-// could not be scrolled to: there it reaches exactly to the panel's bottom edge.
+// could not be scrolled to: it reaches exactly to the panel's bottom edge.
 const TabsBox: VFC<{ children: any }> = ({ children }) => {
     const ref = useRef<HTMLDivElement>(null);
     const [height, setHeight] = useState("95%");
@@ -66,7 +62,7 @@ const TabsBox: VFC<{ children: any }> = ({ children }) => {
         const el = ref.current;
         // the panel is its own window; this code runs in Steam's shared context, so use the element's window
         const win = el?.ownerDocument?.defaultView;
-        if (!IS_WINDOWS || !el || !win) return;
+        if (!el || !win) return;
         const fit = () => setHeight(`${Math.max(200, Math.floor(win.innerHeight - el.getBoundingClientRect().top))}px`);
         fit();
         const settle = win.setTimeout(fit, 300); // the title's font may load after the first layout
@@ -232,81 +228,6 @@ const GameTranslator: VFC<{ logic: GameTranslatorLogic }> = ({ logic }) => {
     );
 };
 
-// Activation Indicator component
-const HoldActivationIndicator: VFC<{ logic: GameTranslatorLogic }> = ({logic}) => {
-    const {settings} = useSettings();
-    const [progressInfo, setProgressInfo] = useState<ProgressInfo>({
-        active: false,
-        progress: 0,
-        forDismiss: false
-    });
-
-    useEffect(() => {
-        logger.debug('HoldActivationIndicator', 'useEffect mounting, registering progress listener');
-        let hideTimeout: ReturnType<typeof setTimeout> | null = null;
-
-        const handleProgress = (info: ProgressInfo) => {
-            // Clear any pending hide timeout
-            if (hideTimeout) {
-                clearTimeout(hideTimeout);
-                hideTimeout = null;
-            }
-
-            // Delay hiding when progress reaches 100% to allow overlay to take over UI composition
-            // This prevents Steam UI from flashing between progress bar and overlay
-            if (info.active && info.progress >= 1.0) {
-                // Keep showing at 100% briefly, then hide after overlay has initialized
-                setProgressInfo({
-                    active: true,
-                    progress: 1.0,
-                    forDismiss: info.forDismiss
-                });
-                hideTimeout = setTimeout(() => {
-                    setProgressInfo({
-                        active: false,
-                        progress: 0,
-                        forDismiss: info.forDismiss
-                    });
-                }, 600); // 600ms delay - covers screenshot capture time
-            } else {
-                setProgressInfo(info);
-            }
-        };
-
-        logic.onProgress(handleProgress);
-        return () => {
-            logic.offProgress(handleProgress);
-            if (hideTimeout) {
-                clearTimeout(hideTimeout);
-            }
-        };
-    }, [logic]);
-
-    // Generate appropriate text based on action and progress
-    const getActivationText = () => {
-        if (!progressInfo.active) return "";
-
-        const action = progressInfo.forDismiss ? "Dismiss" : "Translate";
-        const timeRequired = `${(progressInfo.forDismiss ? settings.holdTimeDismiss : settings.holdTimeTranslate) / 1000}s`;
-
-        return `Hold to ${action} (${timeRequired})`;
-    };
-
-    // Only show the indicator if the plugin is enabled
-    if (!settings.enabled) {
-        return null;
-    }
-
-    return (
-        <ActivationIndicator
-            visible={progressInfo.active}
-            progress={progressInfo.progress}
-            text={getActivationText()}
-            forDismiss={progressInfo.forDismiss}
-        />
-    );
-};
-
 // Main App wrapped with Settings provider
 const TranslatorApp: VFC<{ logic: GameTranslatorLogic }> = ({ logic }) => {
     return (
@@ -316,17 +237,16 @@ const TranslatorApp: VFC<{ logic: GameTranslatorLogic }> = ({ logic }) => {
     );
 };
 
-// Indicator wrapped with Settings provider
-const ActivationIndicatorWithSettings: VFC<{ logic: GameTranslatorLogic }> = ({ logic }) => {
-    return (
-        <SettingsProvider logic={logic}>
-            <HoldActivationIndicator logic={logic}/>
-        </SettingsProvider>
-    );
-};
+// Decky renders the plugin's panel (TranslatorApp) only while it is open in the side menu, but Ctrl+Alt+T needs the
+// languages, providers and keys in the logic from the start: this always-mounted component loads them (its
+// SettingsProvider reads the backend's settings into the logic) and draws nothing. Upstream got this as a side effect
+// of the controller hold indicator.
+const SettingsLoader: VFC<{ logic: GameTranslatorLogic }> = ({ logic }) => (
+    <SettingsProvider logic={logic}>{null}</SettingsProvider>
+);
 
-// plugin.json name; the Windows port has its own
-const PLUGIN_NAME = IS_WINDOWS ? "WinDecky Translator" : "Decky Translator";
+// plugin.json name
+const PLUGIN_NAME = "WinDecky Translator";
 
 // Header of the open plugin (Decky's titleView; by default Decky shows the name in a div with flex 0.9).
 // "WinDecky Translator" is a bit too wide for one line at Steam's title size, so the font shrinks just enough to fit.
@@ -358,46 +278,32 @@ export default definePlugin(() => {
     // Create logic instance
     const logic = new GameTranslatorLogic(imageState);
 
-    // Add image overlay as a global component (Windows: the backend draws it over the game window instead)
-    const stopForwarding = IS_WINDOWS ? forwardOverlayToBackend(imageState, logic.dismiss) : null;
-    const stopHotkey = IS_WINDOWS ? listenForHotkey(logic) : null;
-    const stopTrackingApps = IS_WINDOWS ? trackSteamApps() : null;
+    // The backend draws the overlay over the game window (py_modules/winport/overlay.py)
+    const stopForwarding = forwardOverlayToBackend(imageState, logic.dismiss);
+    const stopHotkey = listenForHotkey(logic);
+    const stopTrackingApps = trackSteamApps();
     // after a reload the side menu would keep showing the unloaded instance (deckyState.ts)
     const stopAdopting = adoptActivePlugin(PLUGIN_NAME,
         p => (p.content as { props?: { logic?: unknown } } | undefined)?.props?.logic === logic);
-    if (IS_WINDOWS) {
-        // a Steam UI reload leaves the backend running: hide a translation the old UI left on screen (and resume a
-        // game it paused), since this UI starts with none
-        call('native_overlay_update', { visible: false }).catch(() => { /* logged by the backend */ });
-        showBootProblems(PLUGIN_NAME);
-    }
-    if (!IS_WINDOWS) {
-        routerHook.addGlobalComponent("ImageOverlay", () => (
-            <ImageOverlay state={imageState} onDismiss={logic.dismiss}/>
-        ));
-    }
+    // a Steam UI reload leaves the backend running: hide a translation the old UI left on screen (and resume a game
+    // it paused), since this UI starts with none
+    call('native_overlay_update', { visible: false }).catch(() => { /* logged by the backend */ });
+    showBootProblems(PLUGIN_NAME);
 
-    // Add activation indicator as a global component
-    routerHook.addGlobalComponent("HoldActivationIndicator", () => (
-        <ActivationIndicatorWithSettings logic={logic}/>
-    ));
+    routerHook.addGlobalComponent("TranslatorSettingsLoader", () => <SettingsLoader logic={logic}/>);
 
     return {
         name: PLUGIN_NAME,
         title: <div className={staticClasses.Title}>{PLUGIN_NAME}</div>,
-        ...(IS_WINDOWS ? { titleView: <FitTitle text={PLUGIN_NAME} /> } : {}),
+        titleView: <FitTitle text={PLUGIN_NAME} />,
         content: <TranslatorApp logic={logic}/>,
         icon: <BsTranslate/>,
         onDismount() {
-            // Clean up resources
-            logic.cleanup();
-            cleanupAllFontDOM();
-            stopForwarding?.();
-            stopHotkey?.();
-            stopTrackingApps?.();
+            stopForwarding();
+            stopHotkey();
+            stopTrackingApps();
             stopAdopting();
-            routerHook.removeGlobalComponent("ImageOverlay");
-            routerHook.removeGlobalComponent("HoldActivationIndicator");
+            routerHook.removeGlobalComponent("TranslatorSettingsLoader");
         },
         alwaysRender: true
     };

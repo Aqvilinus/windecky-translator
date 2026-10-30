@@ -4,10 +4,8 @@ import { call, toaster } from "@decky/api";
 import { Router } from "@decky/ui";
 import { TextRecognizer, NetworkError, ApiKeyError, RateLimitError, ModelNotAvailableError } from "./TextRecognizer";
 import { TextTranslator } from "./TextTranslator";
-import { Input, InputMode, ActionType, ProgressInfo } from "./Input";
 import { ImageState } from "./Overlay";
 import { logger } from "./Logger";
-import { IS_WINDOWS } from "./windows";
 
 // Screenshot response interface
 export interface ScreenshotResponse {
@@ -21,11 +19,8 @@ export class GameTranslatorLogic {
     public imageState: ImageState;
     private textRecognizer: TextRecognizer;
     private textTranslator: TextTranslator;
-    private shortcutInput: Input; // Added shortcut input handler
-    private progressListeners: Array<(progressInfo: ProgressInfo) => void> = [];
     private enabled: boolean = true; // Add enabled state
     private confidenceThreshold: number = 0.6; // Default confidence threshold
-    private pauseGameOnOverlay: boolean = false;
     private currentRunId: number = 0;
 
     // Provider settings for upfront validation
@@ -38,61 +33,10 @@ export class GameTranslatorLogic {
         return this.imageState.isVisible();
     }
 
-    // Add public access to shortcutInput for diagnostics
-    public get shortcutInputHandler(): Input {
-        return this.shortcutInput;
-    }
-
     constructor(imageState: ImageState) {
         this.imageState = imageState;
         this.textRecognizer = new TextRecognizer();
         this.textTranslator = new TextTranslator();
-
-        // Initialize for hidraw-based button detection
-        this.shortcutInput = new Input();
-
-        // Set up listener for translate, dismiss, and toggle actions
-        this.shortcutInput.onShortcutPressed((actionType: ActionType) => {
-            // Only process inputs if the plugin is enabled
-            if (!this.enabled) return;
-
-            if (actionType === ActionType.DISMISS) {
-                this.dismiss();
-            } else if (actionType === ActionType.TOGGLE_TRANSLATIONS) {
-                // Toggle translations action
-                if (this.imageState.isVisible() && !this.imageState.isLoading()) {
-                    logger.debug('Translator', 'Toggling translation visibility');
-                    this.imageState.toggleTranslationsVisibility();
-                }
-            } else {
-                // Translate action
-                if (this.imageState.isVisible()) return;
-                if (this.isProcessing) return;
-                if (!this.canStartTranslation()) return;
-
-                // Pause first so the game freezes before the screenshot (Windows: the backend pauses the captured
-                // game when its translation appears, main.py native_overlay_update)
-                if (this.pauseGameOnOverlay && !IS_WINDOWS) {
-                    this.pauseCurrentGame().catch(err => logger.error('Translator', 'Pause failed', err));
-                }
-                this.takeScreenshotAndTranslate().catch(err => logger.error('Translator', 'Screenshot failed', err));
-            }
-        });
-
-        imageState.onStateChanged((visible, _, __, ___, ____, _____, ______, _______, ________) => {
-            this.shortcutInput.setOverlayVisible(visible);
-
-            if (!this.enabled) return;
-
-            if (this.pauseGameOnOverlay && !visible && !IS_WINDOWS) {  // Windows: the backend resumes on hide
-                this.resumeCurrentGame();
-            }
-        });
-
-        // Set up progress listener
-        this.shortcutInput.onProgress((progressInfo: ProgressInfo) => {
-            this.notifyProgressListeners(progressInfo);
-        });
 
         // Load enabled state from server
         this.loadInitialState();
@@ -104,67 +48,22 @@ export class GameTranslatorLogic {
             const result = await call<[], boolean>('get_enabled_state');
             this.enabled = !!result;
             logger.info('Translator', `Loaded initial enabled state: ${this.enabled}`);
-
-            if (this.shortcutInput) {
-                this.shortcutInput.setEnabled(this.enabled);
-            }
-
-            // If plugin starts disabled, stop the hidraw monitor that was auto-started
-            if (!this.enabled) {
-                logger.info('Translator', 'Plugin is disabled on startup, stopping hidraw monitor');
-                call('stop_hidraw_monitor').catch(error => {
-                    logger.error('Translator', 'Failed to stop hidraw monitor on startup', error);
-                });
-            }
         } catch (error) {
             logger.error('Translator', 'Failed to load initial state', error);
         }
     }
 
-    // Add method to enable/disable the plugin
+    // Switch the plugin on or off (SettingsContext saves the setting; the backend frees or takes Ctrl+Alt+T)
     setEnabled(enabled: boolean): void {
         this.enabled = enabled;
-
-        if (this.shortcutInput) {
-            this.shortcutInput.setEnabled(enabled);
-        }
-
-        // Save to server settings file
-        call('set_setting', 'enabled', enabled).catch(error => {
-            logger.error('Translator', 'Failed to save enabled state to server', error);
-        });
-
         if (!enabled) {
             this.dismiss();
-        }
-
-        // Stop or start the backend hidraw monitor based on enabled state
-        if (enabled) {
-            // Re-start hidraw monitor when re-enabling
-            call('start_hidraw_monitor').then(result => {
-                logger.info('Translator', `Hidraw monitor start result: ${JSON.stringify(result)}`);
-            }).catch(error => {
-                logger.error('Translator', 'Failed to start hidraw monitor', error);
-            });
-        } else {
-            // Stop hidraw monitor when disabling to save resources
-            call('stop_hidraw_monitor').then(result => {
-                logger.info('Translator', `Hidraw monitor stop result: ${JSON.stringify(result)}`);
-            }).catch(error => {
-                logger.error('Translator', 'Failed to stop hidraw monitor', error);
-            });
         }
     }
 
     // Add method to get enabled state
     isEnabled(): boolean {
         return this.enabled;
-    }
-
-    // Method to get full diagnostic information
-    getInputDiagnostics(): object | null {
-        if (!this.shortcutInput) return null;
-        return this.shortcutInput.getDiagnostics();
     }
 
     // New methods for confidence threshold
@@ -180,116 +79,6 @@ export class GameTranslatorLogic {
         return this.confidenceThreshold;
     }
 
-    setGroupingPower = (power: number): void => {
-        this.textRecognizer.setGroupingPower(power);
-    }
-
-    setPauseGameOnOverlay = (enabled: boolean): void => {
-        logger.debug('Translator', `Setting pauseGameOnOverlay to: ${enabled}`);
-        this.pauseGameOnOverlay = enabled;
-
-        // If overlay is currently visible and we're enabling this setting, pause the game
-        if (enabled && this.imageState.isVisible()) {
-            this.pauseCurrentGame();
-        }
-    }
-
-    // Method to get pause game on overlay state
-    getPauseGameOnOverlay = (): boolean => {
-        return this.pauseGameOnOverlay;
-    }
-
-    // Method to pause the current game
-    async pauseCurrentGame(): Promise<void> {
-        try {
-            // Get the current running app ID
-            const mainApp = Router.MainRunningApp;
-            if (!mainApp || !mainApp.appid) {
-                logger.debug('Translator', 'No game running to pause');
-                return;
-            }
-
-            // Use the pid_from_appid function to get the process ID
-            const pid = await call<[number], number>('pid_from_appid', Number(mainApp.appid));
-
-            if (pid) {
-                logger.info('Translator', `Pausing game with appid ${mainApp.appid}, pid ${pid}`);
-
-                // Call the pause function in the backend
-                const pauseResult = await call<[number], boolean>('pause', pid);
-                if (pauseResult) {
-                    logger.info('Translator', 'Game paused successfully');
-                } else {
-                    logger.error('Translator', 'Failed to pause game');
-                }
-            } else {
-                logger.error('Translator', 'Failed to get PID for game');
-            }
-        } catch (error) {
-            logger.error('Translator', 'Error pausing game', error);
-        }
-    }
-
-    // Method to resume the current game
-    async resumeCurrentGame(): Promise<void> {
-        try {
-            // Get the current running app ID
-            const mainApp = Router.MainRunningApp;
-            if (!mainApp || !mainApp.appid) {
-                logger.debug('Translator', 'No game running to resume');
-                return;
-            }
-
-            // Use the pid_from_appid function to get the process ID
-            const pid = await call<[number], number>('pid_from_appid', Number(mainApp.appid));
-
-            if (pid) {
-                logger.info('Translator', `Resuming game with appid ${mainApp.appid}, pid ${pid}`);
-
-                // Call the resume function in the backend
-                const resumeResult = await call<[number], boolean>('resume', pid);
-                if (resumeResult) {
-                    logger.info('Translator', 'Game resumed successfully');
-                } else {
-                    logger.error('Translator', 'Failed to resume game');
-                }
-            } else {
-                logger.error('Translator', 'Failed to get PID for game');
-            }
-        } catch (error) {
-            logger.error('Translator', 'Error resuming game', error);
-        }
-    }
-
-    // Methods for progress indicator
-    onProgress(callback: (progressInfo: ProgressInfo) => void): void {
-        this.progressListeners.push(callback);
-    }
-
-    offProgress(callback: (progressInfo: ProgressInfo) => void): void {
-        const index = this.progressListeners.indexOf(callback);
-        if (index !== -1) {
-            this.progressListeners.splice(index, 1);
-        }
-    }
-
-    private notifyProgressListeners(progressInfo: ProgressInfo): void {
-        for (const callback of this.progressListeners) {
-            callback(progressInfo);
-        }
-    }
-
-    // Clean up resources when plugin is unmounted
-    cleanup(): void {
-        if (this.shortcutInput) {
-            this.shortcutInput.unregister();
-        }
-
-        // Stop backend hidraw monitor
-        call('stop_hidraw_monitor').catch(error => {
-            logger.error('Translator', 'Failed to stop hidraw monitor', error);
-        });
-    }
 
     notify = async (message: string, duration: number = 1000, body?: string): Promise<void> => {
         toaster.toast({
@@ -305,7 +94,6 @@ export class GameTranslatorLogic {
         this.isProcessing = false;
         if (this.imageState.isVisible()) {
             this.imageState.hideImage();
-            this.shortcutInput.setOverlayVisible(false);
         }
     }
 
@@ -450,70 +238,8 @@ export class GameTranslatorLogic {
         return this.textTranslator.getTargetLanguage();
     }
 
-    // Method to set input mode
-    setInputMode = (mode: InputMode): void => {
-        this.shortcutInput.setInputMode(mode);
-    }
-
-    // Method to get current input mode
-    getInputMode = (): InputMode => {
-        return this.shortcutInput.getInputMode();
-    }
-
-    // Method to set translation hold time
-    setHoldTimeTranslate = (ms: number): void => {
-        if (this.shortcutInput) {
-            this.shortcutInput.setTranslateHoldTime(ms);
-        }
-    }
-
-    // Method to get translation hold time
-    getHoldTimeTranslate = (): number => {
-        return this.shortcutInput ? this.shortcutInput.getTranslateHoldTime() : 1000;
-    }
-
-    // Method to set dismiss hold time
-    setHoldTimeDismiss = (ms: number): void => {
-        if (this.shortcutInput) {
-            this.shortcutInput.setDismissHoldTime(ms);
-        }
-    }
-
-    // Method to get dismiss hold time
-    getHoldTimeDismiss = (): number => {
-        return this.shortcutInput ? this.shortcutInput.getDismissHoldTime() : 500;
-    }
-
-    // Method to set quick toggle enabled
-    setQuickToggleEnabled = (enabled: boolean): void => {
-        if (this.shortcutInput) {
-            this.shortcutInput.setQuickToggleEnabled(enabled);
-        }
-    }
-
-    // Method to get quick toggle enabled state
-    getQuickToggleEnabled = (): boolean => {
-        return this.shortcutInput ? this.shortcutInput.getQuickToggleEnabled() : false;
-    }
-
     setFontScale = (scale: number): void => {
         this.imageState.setFontScale(scale);
-    }
-
-    setAllowLabelGrowth = (allow: boolean): void => {
-        this.imageState.setAllowLabelGrowth(allow);
-    }
-
-    setTranslatedTextAlignment = (alignment: 'left' | 'right' | 'center' | 'justify'): void => {
-        this.imageState.setTranslatedTextAlignment(alignment);
-    }
-
-    setTranslatedTextFontFamily = (fontFamily: string): void => {
-        this.imageState.setTranslatedTextFontFamily(fontFamily);
-    }
-
-    setTranslatedTextFontStyle = (style: 'normal' | 'bold' | 'italic' | 'bolditalic'): void => {
-        this.imageState.setTranslatedTextFontStyle(style);
     }
 
     // Methods for provider settings (used for upfront API key validation)

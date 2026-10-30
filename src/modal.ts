@@ -5,12 +5,10 @@
 // which took the focus away from the game and kept it after the dialog closed. Here the dialog goes to the root
 // window of the active navigation context: the overlay over a game, Big Picture otherwise.
 import { getGamepadNavigationTrees, showModal as deckyShowModal } from '@decky/ui';
-import { IS_WINDOWS } from './windows';
 
 type ShowModalArgs = Parameters<typeof deckyShowModal>;
 
 function activeRootWindow(): Window | undefined {
-    if (!IS_WINDOWS) return undefined;
     try {
         const root = (getGamepadNavigationTrees() || []).find((t: any) =>
             t?.m_ID === 'GamepadUI_Full_Root' || /^GamepadUI_Overlay_.*_Root$/.test(t?.m_ID || ''));

@@ -15,7 +15,7 @@ import { useSettings } from "../SettingsContext";
 import { GameTranslatorLogic } from "../Translator";
 import { LLM_BACKEND_LABELS, llmModel } from "../llm";
 import { logger } from "../Logger";
-import { IS_WINDOWS, closeAllSideMenus } from "../windows";
+import { closeAllSideMenus } from "../windows";
 
 const StatusDot: VFC<{ ok: boolean }> = ({ ok }) => (
     <span style={{
@@ -101,7 +101,7 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
         if (overlayVisible) {
             logic.dismiss();
             Router.CloseSideMenus();
-            if (IS_WINDOWS) closeAllSideMenus();
+            closeAllSideMenus();
             return;
         }
         if (ocrNeedsDownload) {
@@ -115,16 +115,10 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
         }
         // Close menu first, then wait for UI to fully close before taking screenshot
         Router.CloseSideMenus();
-        if (IS_WINDOWS) {
-            // over a game the side panel is in the Steam overlay's window: close it there too and wait (windows.ts)
-            closeAllSideMenus()
-                .then(() => logic.takeScreenshotAndTranslate())
-                .catch(err => logger.error('TabMain', 'Screenshot failed', err));
-            return;
-        }
-        setTimeout(() => {
-            logic.takeScreenshotAndTranslate().catch(err => logger.error('TabMain', 'Screenshot failed', err));
-        }, 200);
+        // over a game the side panel is in the Steam overlay's window: close it there too and wait (windows.ts)
+        closeAllSideMenus()
+            .then(() => logic.takeScreenshotAndTranslate())
+            .catch(err => logger.error('TabMain', 'Screenshot failed', err));
     };
 
     const renderButtonContent = () => {

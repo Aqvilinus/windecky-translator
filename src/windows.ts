@@ -9,8 +9,6 @@ import type { MenuStore } from '@decky/ui/dist/modules/Router';
 import { ImageState } from './Overlay';
 import type { GameTranslatorLogic } from './Translator';
 
-export { IS_WINDOWS } from './platform';
-
 // The translate/close hotkey (py_modules/winport/hotkey.py HOTKEY)
 export const WINDOWS_HOTKEY = 'Ctrl+Alt+T';
 
