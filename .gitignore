@@ -33,6 +33,7 @@ py_modules/*
 Thumbs.db
 
 __pycache__/
+.venv/
 
 /.yalc
 yalc.lock

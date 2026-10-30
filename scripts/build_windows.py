@@ -5,15 +5,15 @@
 --version is the plugin version (semantic versioning, this project's own line starting at 1.0.0) and also the release
 tag, with no "v" prefix: release 1.0.0 is tagged 1.0.0. A local build can use any other name, e.g. dev.
 
-- plugin-dependencies.tar.gz: py_modules/ (requirements-windows.txt as cp314 win_amd64 wheels) and python314/ (portable
-  CPython 3.14 for Windows, python-build-standalone, SHA-256 pinned). Decky Loader downloads it with the plugin
+- plugin-dependencies.tar.gz: py_modules/ (the packages in uv.lock, cp314 win_amd64 wheels) and python314/ (portable
+  CPython 3.14 for Windows from python-build-standalone, downloaded by uv). Decky Loader downloads it with the plugin
   (package.json remote_binary, its hash checked) into bin/, main.py extracts it on the first start.
 - decky-translator-windows.zip: the plugin (folder decky-translator/), its package.json pointing remote_binary at
   https://github.com/<repo>/releases/download/<version>/plugin-dependencies.tar.gz with the archive's SHA-256.
   Install it in Decky's developer settings (Install Plugin from URL / from ZIP file).
 
 Runs on the windows-latest runner (.github/workflows/build-windows.yml) and locally (needs node + pnpm through
-corepack unless --skip-frontend). Uses only the standard library, plus pip.
+corepack unless --skip-frontend) and uv.
 """
 import argparse
 import hashlib
@@ -24,14 +24,11 @@ import shutil
 import subprocess
 import sys
 import tarfile
-import urllib.request
 import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-PYTHON_URL = ("https://github.com/astral-sh/python-build-standalone/releases/download/20261026/"
-              "cpython-3.14.10%2B20261026-x86_64-pc-windows-msvc-install_only_stripped.tar.gz")
-PYTHON_SHA256 = "c1876a9795d3a94ee49a1499a69cd91e26ca3e2829593f93fa6e4db90d05402b"
+PYTHON_VERSION = "3.14.10"  # the portable runtime of the workers
 
 DEPENDENCIES_NAME = "plugin-dependencies.tar.gz"
 ZIP_NAME = "decky-translator-windows.zip"
@@ -65,13 +62,12 @@ def build_frontend():
     run(pnpm + ["run", "build"], cwd=ROOT, shell=shell)
 
 
-def build_py_modules(target):
-    # requirements-windows.txt is the full lock (made from requirements-windows.in): every package pinned with its
-    # hashes, so nothing unpinned or altered gets into the archive
-    run([sys.executable, "-m", "pip", "install", "--disable-pip-version-check", "--no-cache-dir",
-         "--require-hashes", "--no-deps",
-         "-r", os.path.join(ROOT, "requirements-windows.txt"), "--target", target,
-         "--platform", "win_amd64", "--python-version", "3.14", "--implementation", "cp", "--only-binary=:all:"])
+def build_py_modules(target, work):
+    # uv.lock pins every package with its hashes, so nothing unpinned or altered gets into the archive
+    requirements = os.path.join(work, "requirements.txt")
+    run(["uv", "export", "--locked", "--no-dev", "--no-emit-project", "--quiet", "-o", requirements], cwd=ROOT)
+    run(["uv", "pip", "install", "--no-deps", "--require-hashes", "--no-build", "--target", target,
+         "--python-platform", "x86_64-pc-windows-msvc", "--python-version", "3.14", "-r", requirements])
     for dirpath, dirnames, filenames in os.walk(target, topdown=True):
         for d in [d for d in dirnames if d in STRIP_DIRS]:
             shutil.rmtree(os.path.join(dirpath, d))
@@ -80,6 +76,7 @@ def build_py_modules(target):
             if f.endswith((".pyc", ".pyi")):
                 os.remove(os.path.join(dirpath, f))
     shutil.rmtree(os.path.join(target, "bin"), ignore_errors=True)  # console-script launchers
+    os.remove(os.path.join(target, ".lock"))  # uv's install lock
     # RapidOCR's bundled models aren't used (the plugin downloads its own), but rapidocr 3 needs the folder
     models = os.path.join(target, "rapidocr", "models")
     shutil.rmtree(models, ignore_errors=True)
@@ -87,24 +84,19 @@ def build_py_modules(target):
     shutil.rmtree(os.path.join(target, "onnxruntime", "datasets"), ignore_errors=True)
 
 
-def fetch_python(target, cache_dir):
-    archive = os.path.join(cache_dir, "cpython-3.14-windows.tar.gz")
-    if not (os.path.exists(archive) and sha256_of(archive) == PYTHON_SHA256):
-        print(f"Downloading {PYTHON_URL}", flush=True)
-        urllib.request.urlretrieve(PYTHON_URL, archive)
-    if sha256_of(archive) != PYTHON_SHA256:
-        raise SystemExit("Python runtime checksum mismatch")
-    with tarfile.open(archive, "r:gz") as tar:
-        tar.extractall(target, filter="data")  # -> python314/python/python.exe
-    if not os.path.exists(os.path.join(target, "python", "python.exe")):
-        raise SystemExit("python.exe missing from the Python runtime archive")
+def fetch_python(target, work):
+    # uv downloads python-build-standalone's build and checks its SHA-256
+    installs = os.path.join(work, "python")
+    run(["uv", "python", "install", PYTHON_VERSION, "--install-dir", installs, "--no-bin", "--no-registry"])
+    shutil.copytree(os.path.join(installs, f"cpython-{PYTHON_VERSION}-windows-x86_64-none"),
+                    os.path.join(target, "python"))  # -> python314/python/python.exe
 
 
 def make_dependencies(work, out):
     deps = os.path.join(work, "deps")
     shutil.rmtree(deps, ignore_errors=True)
     os.makedirs(deps)
-    build_py_modules(os.path.join(deps, "py_modules"))
+    build_py_modules(os.path.join(deps, "py_modules"), work)
     fetch_python(os.path.join(deps, "python314"), work)
     path = os.path.join(out, DEPENDENCIES_NAME)
     with tarfile.open(path, "w:gz") as tar:
