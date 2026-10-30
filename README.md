@@ -32,4 +32,4 @@ In a game, open the Quick Access menu, go to the Decky tab, open **WinDecky Tran
 
 ## License
 
-[GNU GPL v3.0](LICENSE); third-party components are listed in [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES). Building and testing: [DEVELOPMENT.md](DEVELOPMENT.md).
+[GNU GPL v3.0](LICENSE); third-party components are listed in [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES). Building and testing: [CONTRIBUTING.md](CONTRIBUTING.md).
