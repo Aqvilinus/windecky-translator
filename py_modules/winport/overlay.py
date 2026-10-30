@@ -14,6 +14,7 @@ per-monitor DPI aware); CSS sizes from Overlay.tsx are multiplied by the monitor
 """
 import ctypes
 import logging
+import math
 import os
 import queue
 import threading
@@ -117,18 +118,19 @@ class MONITORINFO(ctypes.Structure):
 _fonts = {}
 
 
+def _first_font(names):
+    return next((p for p in (os.path.join(FONT_DIR, n) for n in names) if os.path.exists(p)), None)
+
+
+_FONT_FILES = {"latin": _first_font(FONT_LATIN), "cjk": _first_font(FONT_CJK), "hangul": _first_font(FONT_HANGUL)}
+
+
 def _font_file(text):
     if any(0xAC00 <= ord(c) <= 0xD7AF for c in text):
-        names = FONT_HANGUL
-    elif any(ord(c) >= 0x2E80 for c in text):
-        names = FONT_CJK
-    else:
-        names = FONT_LATIN
-    for n in names:
-        p = os.path.join(FONT_DIR, n)
-        if os.path.exists(p):
-            return p
-    return None
+        return _FONT_FILES["hangul"]
+    if any(ord(c) >= 0x2E80 for c in text):
+        return _FONT_FILES["cjk"]
+    return _FONT_FILES["latin"]
 
 
 def font_for(text, size):
@@ -195,24 +197,16 @@ def render(state, target, mon, scale, image=None):
 LINE_SPACING = 1.15
 FONT_PER_LINE = 0.95  # font size (em) per pixel of an OCR line box's height
 LABEL_ALPHA = 245     # nearly opaque, so the original text doesn't show through
+WRAP_SLACK = 1.15     # room lost at line ends when wrapping at word boundaries
 
 
-def _fit(text, width, height, max_size, min_size):
-    """Largest integer font size (<= max_size) whose wrapped text fits width x height, with its lines.
-    None if even min_size doesn't fit."""
-    best = None
-    lo, hi = int(min_size), int(max_size)
-    while lo <= hi:
-        mid = (lo + hi) // 2
-        font = font_for(text, mid)
-        lines = wrap(text, font, width)
-        widest = max((font.getlength(line) for line in lines), default=0)
-        if widest <= width and len(lines) * mid * LINE_SPACING <= height:
-            best = (mid, font, lines)
-            lo = mid + 1
-        else:
-            hi = mid - 1
-    return best
+def font_size_for(text, width, height, max_size, min_size):
+    """The largest font size at which the text fits width x height on 1 to 4 lines, from its width on one line (one
+    measurement: the width grows with the size) instead of trying sizes. At most max_size, the original line's size;
+    no smaller than min_size (a label that doesn't fit then grows)."""
+    em = max(font_for(text, 100).getlength(text) / 100, 1e-3)  # the text's width on one line per pixel of font size
+    size = max(min(height / (n * LINE_SPACING), width * n / (em * (1 if n == 1 else WRAP_SLACK))) for n in range(1, 5))
+    return int(max(min_size, min(size, max_size)))
 
 
 def _background(image, box):
@@ -283,8 +277,8 @@ def _draw_labels(d, regions, ox, oy, img_width, state, scale, image=None):
     aligns = auto_alignments(boxes, scale)
     group, line_px = paragraphs(regions, boxes)
 
-    def layout(i, max_size):
-        """(size, font, lines, room) of label i, at most max_size."""
+    def room(i):
+        """(text, width, height) label i may take."""
         x0, y0, x1, y1 = boxes[i]
         text = (regions[i].get("translatedText") or regions[i].get("text") or "").strip()
         n_lines = max(1, len([t for t in (regions[i].get("text") or "").split("\n") if t.strip()]))
@@ -296,26 +290,26 @@ def _draw_labels(d, regions, ox, oy, img_width, state, scale, image=None):
                 elif u1 <= x0:
                     left = max(left, u1 + pad)
         cx = (x0 + x1) / 2
-        room = {"left": right - x0, "right": x1 - left}.get(aligns[i], 2 * min(cx - left, right - cx))
-        width = room + 2 * pad - 4 * scale
+        space = {"left": right - x0, "right": x1 - left}.get(aligns[i], 2 * min(cx - left, right - cx))
+        width = space + 2 * pad - 4 * scale
         height = max(y1 - y0, n_lines * line_px[i]) + 2 * pad
-        smallest = max(8 * scale, max_size * 0.55)
-        fit = _fit(text, width, height, max_size, smallest)
-        if fit is None:  # too long even small: smallest size, the label grows downwards
-            font = font_for(text, int(smallest))
-            fit = (font.size, font, wrap(text, font, width))
-        return fit + (height,)
+        return text, width, height
 
     shown = [i for i, (r, b) in enumerate(zip(regions, boxes))
              if (r.get("translatedText") or r.get("text") or "").strip() and b[2] > b[0] and b[3] > b[1]]
+    rooms = {i: room(i) for i in shown}
     size = {}
     for i in shown:
-        own = layout(i, max(8 * scale, line_px[i] * FONT_PER_LINE * font_scale))[0]
+        max_size = max(8 * scale, line_px[i] * FONT_PER_LINE * font_scale)
+        own = font_size_for(*rooms[i], max_size, max(8 * scale, max_size * 0.55))
         size[group[i]] = min(size.get(group[i], own), own)
 
     for i in shown:
         r, (x0, y0, x1, y1), align = regions[i], boxes[i], aligns[i]
-        font_size, font, lines, height = layout(i, size[group[i]])
+        text, width, height = rooms[i]
+        font_size = size[group[i]]
+        font = font_for(text, font_size)
+        lines = wrap(text, font, width)  # more lines than fit: the label grows downwards
         line_h = font_size * LINE_SPACING
         label_w = max(x1 - x0 + 2 * pad, max(font.getlength(t) for t in lines) + 4 * scale)
         label_h = max(height, len(lines) * line_h)
