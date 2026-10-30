@@ -44,6 +44,10 @@ jobs:
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
           python-version: '3.14'
+          cache: 'pip'
+          cache-dependency-path: |
+            requirements-windows.txt
+            requirements-dev.txt
 
       - name: Get version
         id: version
@@ -58,13 +62,26 @@ jobs:
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Tests
+      # tests/README.md: everything below runs without Steam, Decky or a game, and with the network stubbed
+      - name: Install test dependencies
         shell: bash
         run: |
           corepack enable
           corepack pnpm install --frozen-lockfile
+          python -m pip install --disable-pip-version-check --require-hashes -r requirements-windows.txt -r requirements-dev.txt
+
+      - name: Frontend tests (emulated Steam and Decky, with the contract tests against main.py)
+        shell: bash
+        env:
+          PLUGIN_PYTHON: python
+        run: |
           corepack pnpm run typecheck
           corepack pnpm test
+
+      - name: Backend tests
+        shell: bash
+        run: |
+          python -m pytest
           python -m compileall -q main.py py_modules scripts
 
       - name: Build plugin and dependencies
