@@ -141,7 +141,8 @@ def is_steam_game(pid, procs=None):
     entry = procs.get(pid)
     if not entry or entry[1] in STEAM_PROCESSES:
         return False
-    instances = {inst for _, inst in _steam_apps.values() if inst}
+    apps = list(_steam_apps.values())  # a snapshot: the backend's event loop thread updates the dict
+    instances = {inst for _, inst in apps if inst}
     seen = set()
     created = process_created(pid)
     while pid not in seen:
@@ -152,20 +153,20 @@ def is_steam_game(pid, procs=None):
         p = procs.get(parent)
         parent_created = process_created(parent) if p else None
         if p is None or (parent_created and created and parent_created > created):
-            return _started_with_steam_app(entry[1], created)
+            return _started_with_steam_app(entry[1], created, apps)
         if p[1] == "steam.exe":
             return True
         pid, entry, created = parent, p, parent_created
     return False
 
 
-def _started_with_steam_app(root_exe, root_created):
+def _started_with_steam_app(root_exe, root_created, apps):
     """The process at the top of a cut chain: a game if a Steam app runs and the process started after it."""
-    if not _steam_apps or root_exe in ("explorer.exe", "svchost.exe", "services.exe", "wininit.exe"):
+    if not apps or root_exe in ("explorer.exe", "svchost.exe", "services.exe", "wininit.exe"):
         return False
     if not root_created:
         return False
-    since = min(t for t, _ in _steam_apps.values())
+    since = min(t for t, _ in apps)
     return since == 0 or root_created >= since - APP_START_MARGIN
 
 

@@ -14,7 +14,7 @@ import json
 import logging
 import os
 from ctypes import wintypes
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 from .hotkey import STEAM_PROCESSES, processes, is_steam_game, process_created
 
@@ -34,8 +34,10 @@ PROCESS_SUSPEND_RESUME = 0x0800
 
 STATE_FILE = os.path.join(os.environ.get("TEMP", "."), "decky-translator", "suspended.json")
 
-# game pid -> (pid, creation time) suspended for it (the game and its children), in suspend order
-_suspended: Dict[int, List[Tuple[int, int]]] = {}
+# game pid -> [pid, creation time, exe name] suspended for it (the game and its children), in suspend order
+_suspended: Dict[int, List[list]] = {}
+
+RESUME_TRIES = 3
 
 
 def game_pid(hwnd: Optional[int]) -> int:
@@ -101,7 +103,9 @@ def suspend(pid: int) -> bool:
     if pid == os.getpid() or not is_steam_game(pid):
         logger.warning(f"Not pausing process {pid}: not a game started by Steam")
         return False
-    done = [(p, process_created(p) or 0) for p in _tree(pid) if _call(ntdll.NtSuspendProcess, p)]
+    procs = processes()
+    done = [[p, process_created(p) or 0, procs.get(p, (0, ""))[1]]
+            for p in _tree(pid) if _call(ntdll.NtSuspendProcess, p)]
     if not done:
         logger.error(f"Could not pause process {pid}")
         return False
@@ -111,20 +115,51 @@ def suspend(pid: int) -> bool:
     return True
 
 
-def _resume_list(pids, check_created: bool) -> None:
+def _same_process(p: int, created: int, exe: str, procs) -> bool:
+    """Is pid p still the process that was suspended? By creation time; if that was unknown, by exe name."""
+    now = process_created(p)
+    if created:
+        return now == created
+    return now is not None and bool(exe) and procs.get(p, (0, ""))[1] == exe
+
+
+def _resume_list(pids, check_identity: bool) -> list:
+    """Resume the entries (last suspended first); returns those that are still suspended after a few tries.
+    check_identity: the list comes from an earlier run, so skip pids that now belong to another process."""
+    procs = processes() if check_identity else {}
+    failed = []
     for entry in reversed(pids):
-        p, created = (entry, 0) if isinstance(entry, int) else (int(entry[0]), int(entry[1]))
-        if check_created and (not created or process_created(p) != created):
+        if isinstance(entry, int):
+            entry = [entry, 0, ""]
+        p, created = int(entry[0]), int(entry[1])
+        exe = entry[2] if len(entry) > 2 else ""
+        if check_identity and not _same_process(p, created, exe, procs):
             continue  # gone, or the pid now belongs to another process
-        _call(ntdll.NtResumeProcess, p)
+        for _ in range(RESUME_TRIES):
+            if _call(ntdll.NtResumeProcess, p):
+                break
+            if process_created(p) is None:
+                break  # exited: nothing left to resume
+        else:
+            logger.error(f"Could not resume process {p} (error {ctypes.get_last_error()})")
+            failed.append(entry)
+    failed.reverse()  # back to suspend order
+    return failed
 
 
 def resume(pid: int) -> bool:
+    """Resume a paused game. A process that refuses stays listed (and in the state file), so the next resume or the
+    next plugin start tries again instead of leaving it frozen."""
     pids = _suspended.pop(pid, None)
     if pids is None:
         return False
-    _resume_list(pids, check_created=False)
+    failed = _resume_list(pids, check_identity=False)
+    if failed:
+        _suspended[pid] = failed
     _save()
+    if failed:
+        logger.error(f"Game {pid} is still partly paused ({len(failed)} processes)")
+        return False
     logger.info(f"Resumed game {pid}")
     return True
 
@@ -149,11 +184,16 @@ def resume_leftovers() -> None:
             left = {int(k): v for k, v in json.load(f).items()}
     except (OSError, ValueError, TypeError, AttributeError):
         return
+    _suspended.clear()
     for game, pids in left.items():
         try:
-            _resume_list(pids, check_created=True)
-            logger.warning(f"Resumed game {game}, left paused by an earlier run")
+            failed = _resume_list(pids, check_identity=True)
         except (TypeError, ValueError, IndexError) as e:
             logger.warning(f"Skipped a damaged paused-game entry: {e}")
-    _suspended.clear()
+            continue
+        if failed:
+            _suspended[game] = failed
+            logger.error(f"Game {game}, left paused by an earlier run, is still partly paused")
+        else:
+            logger.warning(f"Resumed game {game}, left paused by an earlier run")
     _save()

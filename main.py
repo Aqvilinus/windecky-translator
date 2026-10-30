@@ -1836,7 +1836,8 @@ class Plugin:
         if winprocess.any_suspended():
             winprocess.resume_all()
         if self._hotkey:
-            self._hotkey.hold(False, "pause")
+            # a process that refused to resume stays listed: keep Ctrl+Alt+T so the next dismiss tries again
+            self._hotkey.hold(winprocess.any_suspended(), "pause")
 
     async def set_steam_app(self, appid, running, instance_id=0, already_running=False):
         """Windows: Steam's app lifetime notifications (src/windows.ts), so games whose launcher exited still count."""
