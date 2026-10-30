@@ -1,9 +1,7 @@
 name: Build Windows
 
-# scripts/build_windows.py builds the plugin zip and
-# plugin-dependencies.tar.gz (Python 3.14 runtime + cp314 packages). Decky Loader downloads the archive with the
-# plugin (package.json remote_binary). A run with release_version publishes both as a draft GitHub release; the zip's
-# remote_binary URL points at that release.
+# Tests, then scripts/build_windows.py builds the plugin zip and plugin-dependencies.tar.gz.
+# A run with release_version publishes both as a draft GitHub release.
 
 on:
   push:
@@ -17,11 +15,9 @@ on:
         required: false
         type: string
 
-# Actions are pinned to commit SHAs (the comment names the release; Renovate updates both)
 permissions:
   contents: read
 
-# A newer push to the same branch or PR cancels the build in progress
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
@@ -84,7 +80,6 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          corepack enable
           uv run --locked python scripts/build_windows.py --version "$VERSION" --repo "$GITHUB_REPOSITORY" --out out
 
       - name: Upload plugin
