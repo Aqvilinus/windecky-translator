@@ -314,43 +314,22 @@ def main():
         except Exception as e:
             return {"ok": False, "error": f"Translation failed: {e}"}
 
-    # Main loop with idle timeout
-    import select
+    # Main loop with idle timeout. select() only takes sockets on Windows: the loop blocks in readline, and a timer
+    # thread ends an idle worker. (Reading stdin in a second thread instead blocks the main thread's own use of the
+    # stdin handle while that read is pending.) When the plugin goes away its end of the pipe closes, readline
+    # returns "" and the worker exits, so there's no orphan check.
+    import threading
 
-    if sys.platform == "win32":
-        # select() only takes sockets on Windows: the loop blocks in readline, and a timer thread ends an idle
-        # worker. (Reading stdin in a second thread instead blocks the main thread's own use of the stdin handle
-        # while that read is pending.) When the plugin goes away its end of the pipe closes, readline returns ""
-        # and the worker exits, so there's no orphan check.
-        import threading
+    def _idle_watch():
+        while True:
+            time.sleep(30)
+            if not PERSISTENT and time.monotonic() - last_activity > IDLE_TIMEOUT:
+                os._exit(0)
 
-        def _idle_watch():
-            while True:
-                time.sleep(30)
-                if not PERSISTENT and time.monotonic() - last_activity > IDLE_TIMEOUT:
-                    os._exit(0)
-
-        threading.Thread(target=_idle_watch, daemon=True).start()
+    threading.Thread(target=_idle_watch, daemon=True).start()
 
     while True:
-        # fix for leaking RAM
-        if sys.platform != "win32" and os.getppid() == 1:
-            break
-        if not PERSISTENT and time.monotonic() - last_activity > IDLE_TIMEOUT:
-            break
-
-        if sys.platform == "win32":
-            line = sys.stdin.readline()
-        else:
-            try:
-                ready, _, _ = select.select([sys.stdin], [], [], 30.0)
-            except (ValueError, OSError):
-                break
-
-            if not ready:
-                continue
-
-            line = sys.stdin.readline()
+        line = sys.stdin.readline()
         if not line:
             break
 

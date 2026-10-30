@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Subprocess OCR runner for Chrome Screen AI. Loads libchromescreenai.so via
+Subprocess OCR runner for Chrome Screen AI. Loads chrome_screen_ai.dll via
 ctypes, with the same JSON-line protocol used by rapidocr_subprocess.py.
 
   Oneshot: python chromescreenai_subprocess.py <image> <model_dir> <min_conf>
@@ -61,7 +61,7 @@ _ContentCb = ctypes.CFUNCTYPE(None, ctypes.c_char_p, ctypes.c_uint32, ctypes.c_v
 
 
 class ScreenAIEngine:
-    """Wraps libchromescreenai.so and PerformOCR."""
+    """Wraps chrome_screen_ai.dll and PerformOCR."""
 
     def __init__(self, model_dir):
         self.model_dir = model_dir
@@ -90,15 +90,13 @@ class ScreenAIEngine:
         self._size_cb = get_size
         self._content_cb = get_content
 
-        lib_name = 'chrome_screen_ai.dll' if sys.platform == 'win32' else 'libchromescreenai.so'
-        so_path = os.path.join(self.model_dir, lib_name)
-        if not os.path.exists(so_path):
-            raise FileNotFoundError(f"{lib_name} not found at {so_path}")
-        if sys.platform == 'win32':
-            os.add_dll_directory(self.model_dir)
+        lib_name = 'chrome_screen_ai.dll'
+        dll_path = os.path.join(self.model_dir, lib_name)
+        if not os.path.exists(dll_path):
+            raise FileNotFoundError(f"{lib_name} not found at {dll_path}")
+        os.add_dll_directory(self.model_dir)  # its own dependencies sit next to it
 
-        dll_mode = getattr(os, 'RTLD_LAZY', 1)
-        self.lib = ctypes.CDLL(so_path, mode=dll_mode)
+        self.lib = ctypes.CDLL(dll_path)
 
         self.lib.SetFileContentFunctions.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
         self.lib.SetFileContentFunctions.restype = None

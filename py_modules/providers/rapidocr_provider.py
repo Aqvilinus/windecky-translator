@@ -113,10 +113,7 @@ class RapidOCRProvider(OCRProvider):
                         to the legacy bundled bin/rapidocr/models path so direct
                         instantiation in tests still works.
         """
-        self._plugin_dir = plugin_dir or os.environ.get(
-            "DECKY_PLUGIN_DIR",
-            "/home/deck/homebrew/plugins/decky-translator"
-        )
+        self._plugin_dir = plugin_dir or os.environ.get("DECKY_PLUGIN_DIR", python_runtime.PLUGIN_DIR)
         self._models_dir = models_dir or os.path.join(self._plugin_dir, LEGACY_MODELS_DIR)
         self._min_confidence = max(0.0, min(1.0, min_confidence))
         self._box_thresh = 0.5  # Detection box threshold

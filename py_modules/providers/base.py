@@ -60,7 +60,6 @@ class TextRegion:
     rect: Dict[str, int]  # left, top, right, bottom
     confidence: float = 0.0
     is_dialog: bool = False
-    bg_color: Optional[List[int]] = None  # [R, G, B] average background color
     translated_text: Optional[str] = None  # Pre-translated text
 
     def to_dict(self) -> Dict:
@@ -71,8 +70,6 @@ class TextRegion:
             "confidence": self.confidence,
             "isDialog": self.is_dialog
         }
-        if self.bg_color is not None:
-            d["bgColor"] = self.bg_color
         if self.translated_text is not None:
             d["translatedText"] = self.translated_text
         return d

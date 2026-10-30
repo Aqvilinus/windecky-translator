@@ -324,8 +324,6 @@ def _draw_labels(d, regions, ox, oy, img_width, state, scale, image=None):
         ly = (y0 + y1) / 2 - label_h / 2 + oy  # centred on the box (a short line's box is lower than its text)
 
         bg = _background(image, (x0, y0, x1, y1)) if image is not None else None
-        if bg is None and isinstance(r.get("bgColor"), list) and len(r["bgColor"]) >= 3:
-            bg = tuple(r["bgColor"][:3])
         bg = bg or (0, 0, 0)
         fg = (20, 20, 20, 255) if 0.299 * bg[0] + 0.587 * bg[1] + 0.114 * bg[2] > 150 else (255, 255, 255, 255)
         d.rounded_rectangle((lx, ly, lx + label_w, ly + label_h), radius=max(1, int(3 * scale)), fill=bg + (LABEL_ALPHA,))

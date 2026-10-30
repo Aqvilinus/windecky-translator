@@ -7,14 +7,12 @@ import logging
 import json
 import os
 import struct
-import subprocess
 from datetime import datetime, date
 from typing import List
 
 import requests
 
 from .base import OCRProvider, ProviderType, TextRegion, NetworkError, RateLimitError
-from . import python_runtime
 
 
 def image_width(data: bytes) -> int:
@@ -103,10 +101,7 @@ class OCRSpaceProvider(OCRProvider):
         """
         self._api_key = api_key
         self._endpoint = "https://api.ocr.space/parse/image"
-        self._data_dir = data_dir or os.environ.get(
-            "DECKY_PLUGIN_SETTINGS_DIR",
-            "/home/deck/homebrew/settings"
-        )
+        self._data_dir = data_dir or os.environ.get("DECKY_PLUGIN_SETTINGS_DIR", "")
         self._usage_file = os.path.join(self._data_dir, "ocrspace_usage.json")
         logger.debug("OCRSpaceProvider initialized")
 
@@ -241,7 +236,7 @@ class OCRSpaceProvider(OCRProvider):
         return 1
 
     def _compress_in_process(self, image_data: bytes) -> bytes:
-        """The subprocess script's JPEG loop (quality, then scale) run here."""
+        """JPEG at falling quality, then falling scale, until it fits MAX_FILE_SIZE."""
         import io
         try:
             from PIL import Image
@@ -266,99 +261,11 @@ class OCRSpaceProvider(OCRProvider):
             return image_data
 
     def _compress_image(self, image_data: bytes) -> bytes:
-        """
-        Compress image to fit within OCR.space size limit (1MB).
-        Spawns a Python 3.13 subprocess for PIL access, since the Decky main
-        process runs Python 3.11 and can't load cp313 C extensions.
-        """
+        """Compress the image to fit OCR.space's size limit (1MB), with the Pillow in bin/py_modules."""
         if len(image_data) <= MAX_FILE_SIZE:
             return image_data
-
         logger.debug(f"Image size {len(image_data)} bytes exceeds limit, compressing...")
-
-        if python_runtime.IS_WINDOWS:
-            # Decky's own Python has Pillow here (bin/py_modules, cp314): no subprocess needed
-            return self._compress_in_process(image_data)
-
-        try:
-            plugin_dir = os.environ.get("DECKY_PLUGIN_DIR", "")
-            python_path = python_runtime.find_python(plugin_dir)
-            if not python_path:
-                logger.error(
-                    "Image compression unavailable: no Python 3.13 runtime found. "
-                    "Image will be sent uncompressed and likely rejected by OCR.space."
-                )
-                return image_data
-
-            script = """
-import sys, io
-from PIL import Image
-
-data = sys.stdin.buffer.read()
-img = Image.open(io.BytesIO(data))
-if img.mode in ('RGBA', 'P'):
-    img = img.convert('RGB')
-
-max_size = int(sys.argv[1])
-quality = 85
-scale = 1.0
-
-while True:
-    out = io.BytesIO()
-    if scale < 1.0:
-        new_size = (int(img.width * scale), int(img.height * scale))
-        img.resize(new_size, Image.Resampling.LANCZOS).save(out, format='JPEG', quality=quality, optimize=True)
-    else:
-        img.save(out, format='JPEG', quality=quality, optimize=True)
-    result = out.getvalue()
-    if len(result) <= max_size:
-        sys.stdout.buffer.write(result)
-        break
-    if quality > 50:
-        quality -= 10
-    elif scale > 0.5:
-        scale -= 0.1
-        quality = 85
-    else:
-        out = io.BytesIO()
-        new_size = (int(img.width * 0.5), int(img.height * 0.5))
-        img.resize(new_size, Image.Resampling.LANCZOS).save(out, format='JPEG', quality=40, optimize=True)
-        sys.stdout.buffer.write(out.getvalue())
-        break
-"""
-            env = os.environ.copy()
-            # Use plugin's py_modules for Pillow
-            plugin_dir = os.environ.get("DECKY_PLUGIN_DIR", "")
-            if plugin_dir:
-                bin_pm = os.path.join(plugin_dir, "bin", "py_modules")
-                root_pm = os.path.join(plugin_dir, "py_modules")
-                paths = [p for p in [bin_pm, root_pm] if os.path.exists(p)]
-                if paths:
-                    env['PYTHONPATH'] = os.pathsep.join(paths)
-            env['PYTHONNOUSERSITE'] = '1'
-
-            result = subprocess.run(
-                [python_path, '-S', '-c', script, str(MAX_FILE_SIZE)],
-                input=image_data,
-                capture_output=True,
-                timeout=30,
-                env=env,
-            )
-
-            if result.returncode != 0:
-                logger.error(f"Image compression subprocess failed: {result.stderr.decode()[:500]}")
-                return image_data
-
-            compressed = result.stdout
-            if not compressed:
-                logger.error("Image compression subprocess returned empty output")
-                return image_data
-            logger.debug(f"Compressed to {len(compressed)} bytes via subprocess")
-            return compressed
-
-        except Exception as e:
-            logger.error(f"Image compression failed: {e}")
-            return image_data
+        return self._compress_in_process(image_data)
 
     async def recognize(self, image_data: bytes, language: str = "auto") -> List[TextRegion]:
         """
