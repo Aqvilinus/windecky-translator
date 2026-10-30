@@ -5,7 +5,6 @@
 // backend, which took it.
 import { addEventListener, call, removeEventListener } from '@decky/api';
 import { Router } from '@decky/ui';
-import type { MenuStore } from '@decky/ui/dist/modules/Router';
 import { ImageState } from './Overlay';
 import type { GameTranslatorLogic } from './Translator';
 
@@ -83,15 +82,11 @@ export function trackSteamApps(): () => void {
     return () => reg?.unregister();
 }
 
-// Each Steam UI window (Big Picture, the overlay over each game) has a menu store of its own. @decky/ui types the
-// part it uses; Steam's stores also have these two.
-interface SideMenuStore extends MenuStore {
-    IsAnySideMenuVisible?(): boolean;
-    CloseSideMenus?(): void;
-}
+// Each Steam UI window (Big Picture, the overlay over each game) has a menu store of its own.
+type MenuStore = NonNullable<typeof Router.WindowStore>['SteamUIWindows'][number]['MenuStore'];
 
-function menuStores(): SideMenuStore[] {
-    return (Router.WindowStore?.SteamUIWindows || []).map(w => w?.MenuStore as SideMenuStore).filter(Boolean);
+function menuStores(): MenuStore[] {
+    return (Router.WindowStore?.SteamUIWindows || []).map(w => w?.MenuStore).filter(Boolean);
 }
 
 function anySideMenuOpen(stores = menuStores()): boolean {
