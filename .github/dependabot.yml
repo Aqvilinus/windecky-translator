@@ -1,0 +1,56 @@
+# Weekly update PRs; Build Windows runs on each of them (a pin without a cp314 win_amd64 wheel fails there).
+# requirements-windows.txt is the hashed lock made from requirements-windows.in (see the command at the top of the .in);
+# after merging an update, regenerate the lock if the PR changed only one of the two.
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels: ["dependencies"]
+    groups:
+      winrt:  # pywinrt projections are released together
+        patterns: ["winrt-*"]
+      ocr-runtime:  # share numpy's binary interface
+        patterns: ["numpy", "onnxruntime", "opencv-python-headless", "rapidocr", "ctranslate2", "sentencepiece"]
+      python-minor-patch:
+        update-types: ["minor", "patch"]
+        patterns: ["*"]
+    ignore:
+      - dependency-name: "py3langid"  # stays 0.3.0: 0.4.0 dropped LanguageIdentifier.from_pickled_model
+      - dependency-name: "protobuf"  # Chrome Screen AI's generated code is for 6.x
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "numpy"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "opencv-python-headless"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: "npm"  # reads pnpm-lock.yaml
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels: ["dependencies"]
+    groups:
+      frontend-minor-patch:
+        update-types: ["minor", "patch"]
+        patterns: ["*"]
+    ignore:
+      - dependency-name: "@types/react"  # Steam's client runs React 16
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-icons"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels: ["dependencies"]
+    groups:
+      actions:
+        patterns: ["*"]

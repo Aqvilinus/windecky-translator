@@ -1,0 +1,113 @@
+// Windows port (Decky Loader for Windows).
+// On SteamOS gamescope keeps Steam's UI, and with it the translation overlay, above the game. On Windows Big Picture
+// is a normal window behind the game, so the backend draws the overlay in a click-through window of its own
+// (py_modules/winport/overlay.py). This forwards every ImageState change to it; the screenshot itself stays in the
+// backend, which took it.
+import { addEventListener, call, removeEventListener } from '@decky/api';
+import { Router } from '@decky/ui';
+import type { MenuStore } from '@decky/ui/dist/modules/Router';
+import { ImageState } from './Overlay';
+import type { GameTranslatorLogic } from './Translator';
+
+export { IS_WINDOWS } from './platform';
+
+// The translate/close hotkey (py_modules/winport/hotkey.py HOTKEY)
+export const WINDOWS_HOTKEY = 'Ctrl+Alt+T';
+
+type StateListener = Parameters<ImageState['onStateChanged']>[0];
+
+// How often the side menus are checked while a translation is on screen
+const SIDE_MENU_CHECK_MS = 250;
+
+export function forwardOverlayToBackend(state: ImageState): () => void {
+    let menuTimer: ReturnType<typeof setInterval> | null = null;
+    let menuOpen = false;
+    const stopWatchingMenus = () => {
+        if (menuTimer) clearInterval(menuTimer);
+        menuTimer = null;
+        menuOpen = false;
+    };
+    // The side menu over a game is drawn into the game's window, under the overlay window: while one is open the
+    // still steps aside, and comes back when it closes
+    const watchMenus = () => {
+        if (menuTimer) return;
+        menuTimer = setInterval(() => {
+            const open = anySideMenuOpen();
+            if (open === menuOpen) return;
+            menuOpen = open;
+            call('native_overlay_suppress', open).catch(() => { /* the backend logs its own errors */ });
+        }, SIDE_MENU_CHECK_MS);
+    };
+
+    const onChange: StateListener = (
+        visible, _imageData, regions, loading, processingStep, processingDetail, processingIsError,
+        translationsVisible, fontScale,
+    ) => {
+        if (visible) watchMenus(); else stopWatchingMenus();
+        call('native_overlay_update', {
+            visible, regions, loading, processingStep, processingDetail, processingIsError,
+            translationsVisible, fontScale,
+        }).catch(() => { /* the backend logs its own errors */ });
+    };
+    state.onStateChanged(onChange);
+    return () => {
+        stopWatchingMenus();
+        state.offStateChanged(onChange);
+    };
+}
+
+// Ctrl+Alt+T in a game (py_modules/winport/hotkey.py): translate the screen, or dismiss the translation (or the
+// translation in progress) when it is up. Windows only gives XInput to the foreground app, so on most setups this
+// is the shortcut; a controller button can be mapped to it (OneXConsole, Steam Input).
+export function listenForHotkey(logic: GameTranslatorLogic): () => void {
+    const onHotkey = () => {
+        if (logic.imageState.isVisible()) logic.dismiss();
+        else closeAllSideMenus().then(() => logic.takeScreenshotAndTranslate());
+    };
+    addEventListener('translator_hotkey', onHotkey);
+    return () => removeEventListener('translator_hotkey', onHotkey);
+}
+
+// Steam's running apps -> the backend (py_modules/winport/hotkey.py set_steam_app). A game whose launcher exited has
+// no steam.exe among its ancestors any more; while Steam reports its app as running, a process started after it
+// still counts as the game (for Ctrl+Alt+T and the pause).
+export function trackSteamApps(): () => void {
+    const report = (appid: number, running: boolean, instance = 0, alreadyRunning = false) =>
+        call('set_steam_app', appid, running, instance, alreadyRunning).catch(() => { /* logged by the backend */ });
+    try {
+        for (const app of Router.RunningApps || []) if (app?.appid) report(Number(app.appid), true, 0, true);
+    } catch { /* no store yet */ }
+    const reg = SteamClient?.GameSessions?.RegisterForAppLifetimeNotifications?.(
+        n => report(n.unAppID, n.bRunning, n.nInstanceID));
+    return () => reg?.unregister();
+}
+
+// Each Steam UI window (Big Picture, the overlay over each game) has a menu store of its own. @decky/ui types the
+// part it uses; Steam's stores also have these two.
+interface SideMenuStore extends MenuStore {
+    IsAnySideMenuVisible?(): boolean;
+    CloseSideMenus?(): void;
+}
+
+function menuStores(): SideMenuStore[] {
+    return (Router.WindowStore?.SteamUIWindows || []).map(w => w?.MenuStore as SideMenuStore).filter(Boolean);
+}
+
+function anySideMenuOpen(stores = menuStores()): boolean {
+    return stores.some(s => { try { return !!s.IsAnySideMenuVisible?.(); } catch { return false; } });
+}
+
+// Close the side menus before a capture. Router.CloseSideMenus() acts on Big Picture's window only; over a game the
+// side panel belongs to the Steam overlay, a window of its own that Steam draws into the game, so it stayed open and
+// was captured and translated along with the game. Close them in every window, then wait until none shows a side
+// menu, plus the closing animation.
+export async function closeAllSideMenus(): Promise<void> {
+    const stores = menuStores();
+    let closed = false;
+    for (const s of stores) {
+        try { if (s.IsAnySideMenuVisible?.()) { s.CloseSideMenus?.(); closed = true; } } catch { /* not a menu window */ }
+    }
+    if (!closed) return;
+    for (let i = 0; i < 20 && anySideMenuOpen(stores); i++) await new Promise(r => setTimeout(r, 50));
+    await new Promise(r => setTimeout(r, 300));
+}

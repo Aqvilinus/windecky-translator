@@ -1,0 +1,55 @@
+{
+  "name": "decky-translator",
+  "version": "0.9.1",
+  "type": "module",
+  "description": "Translate anything on screen to your language. Works with any game or application - a great tool for language learning or enjoying untranslated games",
+  "scripts": {
+    "build": "shx rm -rf dist && rollup -c",
+    "watch": "rollup -c -w",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Aqvilinus/windecky-translator.git"
+  },
+  "keywords": [
+    "decky",
+    "plugin",
+    "translation",
+    "language-learning",
+    "steam-deck",
+    "deck"
+  ],
+  "author": "Aqvilinus",
+  "license": "GNU GPLv3",
+  "packageManager": "pnpm@12.16.1",
+  "bugs": {
+    "url": "https://github.com/Aqvilinus/windecky-translator/issues"
+  },
+  "homepage": "https://github.com/Aqvilinus/windecky-translator",
+  "devDependencies": {
+    "@decky/api": "^1.1.3",
+    "@decky/rollup": "^1.0.1",
+    "@decky/ui": "^4.11.1",
+    "@types/react": "16.14.0",
+    "@types/react-dom": "^19.1.2",
+    "@types/webpack": "^5.28.0",
+    "rollup": "^4.66.0",
+    "shx": "^0.3.4",
+    "tslib": "^2.4.0",
+    "typescript": "^5.6.0"
+  },
+  "dependencies": {
+    "qrcode.react": "^4.2.0",
+    "react-icons": "^4.4.0"
+  },
+  "pnpm": {
+    "peerDependencyRules": {
+      "ignoreMissing": [
+        "react",
+        "react-dom"
+      ]
+    }
+  },
+  "remote_binary": []
+}

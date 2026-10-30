@@ -1,0 +1,34 @@
+# Python packages of the Windows port (top-level; requirements-windows.txt is the full lock made from this).
+# Decky Loader for Windows runs plugins on its frozen Python 3.14; the on-device engines' workers run on the portable
+# Python 3.14 of the same archive. One cp314 set serves both. scripts/build_windows.py installs the lock into
+# plugin-dependencies.tar.gz (py_modules/), which Decky Loader downloads with the plugin (package.json remote_binary)
+# and main.py extracts into bin/.
+# After changing this file, regenerate the lock (every package pinned, with hashes) with:
+#   uv pip compile requirements-windows.in --python-platform x86_64-pc-windows-msvc --python-version 3.14
+#          --only-binary :all: --generate-hashes -o requirements-windows.txt
+requests==2.34.2
+urllib3==2.8.0
+Pillow==13.0.0
+# pywinrt v4: Windows.Graphics.Capture (screenshots), Windows.Media.Ocr (on-device OCR)
+winrt-runtime==4.0.3
+winrt-Windows.Foundation==4!10.0.28000.2705
+winrt-Windows.Foundation.Collections==4!10.0.28000.2705
+winrt-Windows.Globalization==4!10.0.28000.2705
+winrt-Windows.Graphics==4!10.0.28000.2705
+winrt-Windows.Graphics.Capture==4!10.0.28000.2705
+winrt-Windows.Graphics.Capture.Interop==4.0.0
+winrt-Windows.Graphics.DirectX==4!10.0.28000.2705
+winrt-Windows.Graphics.DirectX.Direct3D11==4!10.0.28000.2705
+winrt-Windows.Graphics.DirectX.Direct3D11.Interop==4.1.0
+winrt-Windows.Graphics.Imaging==4!10.0.28000.2705
+winrt-Windows.Media.Ocr==4!10.0.28000.2705
+winrt-Windows.Storage.Streams==4!10.0.28000.2705
+# On-device engines (worker subprocesses), as in upstream's requirements.txt
+protobuf==6.33.6                 # Chrome Screen AI results (gencode 6.33)
+rapidocr==3.10.0
+onnxruntime==1.31.1
+opencv-python-headless==5.0.0.93
+numpy==2.5.4
+ctranslate2==4.8.4               # offline NLLB translation
+sentencepiece==0.2.2
+py3langid==0.3.0               # 0.4.0 dropped LanguageIdentifier.from_pickled_model (ct2_translate_worker.py)
