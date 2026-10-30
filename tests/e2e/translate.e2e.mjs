@@ -2,7 +2,7 @@
 // translate shortcut, the real button in Steam's side menu, and what actually ends up on screen.
 //
 // The final smoke check before a release. What only this checks: Steam's side menu and Decky's plugin reload, and
-// the Windows parts CI replaces: RegisterHotKey with a game in front, the WGC capture of the game, the on-device OCR,
+// the Windows parts CI replaces: RegisterHotKey, the WGC capture of the game, the on-device OCR,
 // the overlay window drawn over the game.
 //
 //   pnpm test:e2e                     (E2E_APPID / E2E_WINDOW pick another game, default The Banner Saga)
@@ -27,7 +27,7 @@ const game = () => win32('state', WINDOW).target;
 async function focusGame() {
     const r = win32('focus', WINDOW);
     assert.ok(r.ok, `could not bring the game to the front: ${r.error}`);
-    await waitFor('Ctrl+Alt+T registered with the game in front', () => steam.hotkeyRegistered(), 5000, 200);
+    await waitFor('Ctrl+Alt+T registered', () => steam.hotkeyRegistered(), 5000, 200);
 }
 
 async function expectOverlay(visible, what, timeoutMs) {

@@ -54,7 +54,7 @@ export function forwardOverlayToBackend(state: ImageState, dismiss: () => void):
     };
 }
 
-// Ctrl+Alt+T in a game (py_modules/winport/hotkey.py): translate the screen, or dismiss the translation (or the
+// Ctrl+Alt+T (py_modules/winport/hotkey.py): translate the screen, or dismiss the translation (or the
 // translation in progress) when it is up. Windows only gives XInput to the foreground app, so on most setups this
 // is the shortcut; a controller button can be mapped to it (OneXConsole, Steam Input).
 export function listenForHotkey(logic: GameTranslatorLogic): () => void {
@@ -78,9 +78,9 @@ export async function showBootProblems(title: string): Promise<void> {
     for (const body of problems || []) toaster.toast({ title, body, duration: 10000 });
 }
 
-// Steam's running apps -> the backend (py_modules/winport/hotkey.py set_steam_app). A game whose launcher exited has
-// no steam.exe among its ancestors any more; while Steam reports its app as running, a process started after it
-// still counts as the game (for Ctrl+Alt+T and the pause).
+// Steam's running apps -> the backend (py_modules/winport/steam_games.py set_steam_app). A game whose launcher exited
+// has no steam.exe among its ancestors any more; while Steam reports its app as running, a process started after it
+// still counts as the game (for the pause).
 export function trackSteamApps(): () => void {
     const report = (appid: number, running: boolean, instance = 0, alreadyRunning = false) =>
         call('set_steam_app', appid, running, instance, alreadyRunning).catch(() => { /* logged by the backend */ });

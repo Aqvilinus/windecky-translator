@@ -8,8 +8,9 @@ only to the app in front, never to the plugin, so the shortcut is a keyboard hot
   capture.py  screenshot of the foreground window with Windows.Graphics.Capture (any app, any graphics API)
   overlay.py  the translation overlay as a click-through, never-activated, topmost layered window
   clipboard.py  text on the clipboard, for the Paste button of the key dialogs
-  hotkey.py   Ctrl+Alt+T as a system-wide hotkey while a game Steam started is in front; which processes are games
+  hotkey.py   Ctrl+Alt+T as a system-wide hotkey while the plugin is on
   process.py  Pause Game While Translating: suspend and resume the game's processes
+  steam_games.py  which processes are Steam games (for the pause)
 
 The process is made per-monitor DPI aware once (each Decky plugin backend is its own process), so window rectangles,
 captured frames and the overlay all use real screen pixels.

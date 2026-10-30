@@ -179,7 +179,7 @@ export class Steam {
         });
     }
 
-    // the backend has Ctrl+Alt+T registered (only while a Steam game is in front)
+    // the backend has Ctrl+Alt+T registered
     async hotkeyRegistered() {
         const s = await this.js(name => DeckyBackend.call('loader/call_plugin_method', name, 'get_windows_status'), NAME);
         return !!s?.hotkey?.registered;
