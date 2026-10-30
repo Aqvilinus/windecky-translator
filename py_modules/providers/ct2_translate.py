@@ -308,10 +308,7 @@ class CT2TranslateProvider(TranslationProvider):
 
     def __init__(self, model_manager: NLLBDownloader, plugin_dir: str = ""):
         self._model_manager = model_manager
-        self._plugin_dir = plugin_dir or os.environ.get(
-            "DECKY_PLUGIN_DIR",
-            "/home/deck/homebrew/plugins/decky-translator"
-        )
+        self._plugin_dir = plugin_dir or os.environ.get("DECKY_PLUGIN_DIR", python_runtime.PLUGIN_DIR)
         self._worker_process = None
         self._worker_lock = threading.Lock()
         self._loaded_model_dir = None
@@ -383,11 +380,10 @@ class CT2TranslateProvider(TranslationProvider):
 
                 response_line = python_runtime.readline_with_timeout(self._worker_process.stdout, timeout)
                 if response_line is None:
-                    if python_runtime.IS_WINDOWS:
-                        # its late reply would answer the next command: start over with a fresh worker
-                        self._worker_process.kill()
-                        self._worker_process = None
-                        self._loaded_model_dir = None
+                    # its late reply would answer the next command: start over with a fresh worker
+                    self._worker_process.kill()
+                    self._worker_process = None
+                    self._loaded_model_dir = None
                     return {"ok": False, "error": "Worker timed out"}
                 if not response_line:
                     return {"ok": False, "error": "Worker closed unexpectedly"}

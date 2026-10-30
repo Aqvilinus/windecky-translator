@@ -1,4 +1,4 @@
-# Fetches libchromescreenai.so + TFLite models from Google's CIPD server.
+# Fetches chrome_screen_ai.dll + TFLite models from Google's CIPD server.
 # Threading and progress shape mirror NLLBDownloader so the UI treats both alike.
 
 import hashlib
@@ -7,7 +7,6 @@ import logging
 import os
 import re
 import shutil
-import sys
 import threading
 import zipfile
 from typing import Dict, Optional
@@ -16,11 +15,8 @@ from .python_runtime import SCREENAI_LIBRARY
 
 logger = logging.getLogger(__name__)
 
-# Linux CIPD build is x86_64-only; no arch suffix needed. Steam Deck fits.
-CIPD_PACKAGE = "chromium/third_party/screen-ai/linux"
-# Windows port: the same package for Windows x64 (chrome_screen_ai.dll, ~75 MB zip)
-if sys.platform == "win32":
-    CIPD_PACKAGE = "chromium/third_party/screen-ai/windows-amd64"
+# Chrome's Screen AI component for Windows x64 (chrome_screen_ai.dll + TFLite models, an ~80 MB zip)
+CIPD_PACKAGE = "chromium/third_party/screen-ai/windows-amd64"
 LIBRARY = SCREENAI_LIBRARY
 # Accepts a tag/ref or a 64-char SHA256 digest; "latest" tracks Chrome Stable.
 CIPD_VERSION = "latest"
@@ -34,9 +30,7 @@ PRPC_PREFIX = b")]}'"
 SCREENAI_DIR_NAME = "screen_ai"
 
 # Shown in the UI before the real Content-Length is known.
-APPROX_SIZE_MB = 120
-if sys.platform == "win32":
-    APPROX_SIZE_MB = 80
+APPROX_SIZE_MB = 80
 
 # CIPD package nests everything under resources/ at the zip root.
 RESOURCES_SUBDIR = "resources"
@@ -277,13 +271,6 @@ class ScreenAIDownloader:
             for req in REQUIRED_FILES:
                 if not os.path.exists(os.path.join(staging_dir, req)):
                     raise Exception(f"Missing required file after extract: {req}")
-
-            so_path = os.path.join(staging_dir, RESOURCES_SUBDIR, LIBRARY)
-            if os.path.exists(so_path):
-                try:
-                    os.chmod(so_path, 0o755)
-                except OSError:
-                    pass
 
             if os.path.exists(self._target_dir):
                 shutil.rmtree(self._target_dir)

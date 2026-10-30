@@ -1,4 +1,4 @@
-# Local OCR via Chrome Screen AI. The .so and TFLite models are
+# Local OCR via Chrome Screen AI. The DLL and TFLite models are
 # fetched on demand from Google's CIPD server, not bundled in the plugin.
 
 import asyncio
@@ -33,7 +33,7 @@ _WORKER_ENV_STRIP = (
 
 
 class ChromeScreenAIProvider(OCRProvider):
-    """OCR provider backed by libchromescreenai.so. Oneshot subprocess by
+    """OCR provider backed by chrome_screen_ai.dll. Oneshot subprocess by
     default; persistent worker is opt-in for lower per-call latency."""
 
     # Engine auto-detects across 77+ scripts; we just advertise what the
@@ -50,11 +50,8 @@ class ChromeScreenAIProvider(OCRProvider):
         model_dir: str = "",
         min_confidence: float = DEFAULT_MIN_CONFIDENCE,
     ):
-        self._plugin_dir = plugin_dir or os.environ.get(
-            "DECKY_PLUGIN_DIR",
-            "/home/deck/homebrew/plugins/decky-translator",
-        )
-        # model_dir holds the .so and TFLite files; owned by ScreenAIDownloader.
+        self._plugin_dir = plugin_dir or os.environ.get("DECKY_PLUGIN_DIR", python_runtime.PLUGIN_DIR)
+        # model_dir holds the DLL and TFLite files; owned by ScreenAIDownloader.
         self._model_dir = model_dir
         self._min_confidence = max(0.0, min(1.0, min_confidence))
         self._init_error: Optional[str] = None
@@ -95,7 +92,7 @@ class ChromeScreenAIProvider(OCRProvider):
         if model_dir == self._model_dir:
             return
         self._model_dir = model_dir
-        # Worker holds an open .so handle from the old path; restart it.
+        # Worker holds an open DLL handle from the old path; restart it.
         if self._is_worker_alive():
             self.stop_worker()
             if self._persistent_mode:
