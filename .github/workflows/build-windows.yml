@@ -59,7 +59,7 @@ jobs:
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      # tests/README.md: everything below runs without Steam, Decky or a game, and with the network stubbed
+      # Everything below runs without Steam, Decky or a game, and with the network stubbed
       - name: Install test dependencies
         shell: bash
         run: |
