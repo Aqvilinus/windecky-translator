@@ -130,7 +130,7 @@ def test_google_rate_limit_falls_back_to_bing(backend, net):
     assert len(net.calls(harness.BING_URL)) == 1
     # Google stays paused for a while: the next translation goes to Bing directly
     net.dictionary["Neues Spiel"] = "New game!"
-    backend.call("translate_text", [{**regions[1], "text": "Neues Spiel"}], "en", "de")
+    backend.call("translate_text", [{**regions[1], "text": "Neues Spiel"}], "en", "auto")
     assert len(net.calls(harness.GOOGLE_URL)) == 1
 
 

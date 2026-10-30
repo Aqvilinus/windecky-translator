@@ -251,6 +251,7 @@ class Network:
         self.dictionary = dict(DICTIONARY)
         self.google_status = 200
         self.ocr_lines = word_boxes()
+        self.languages = ("auto", "en")  # (source, target) the translators expect; others are refused
 
     def __enter__(self):
         self.mock.__enter__()
@@ -271,12 +272,18 @@ class Network:
     def _google(self, request):
         if self.google_status != 200:
             return self.google_status, {}, "Too Many Requests"
+        query = parse_qs(request.url.split("?", 1)[1])
+        if (query["sl"][0], query["tl"][0]) != self.languages:
+            return 400, {}, f"unexpected languages {query['sl'][0]} -> {query['tl'][0]}"
         text = parse_qs(request.body)["q"][0]
         return 200, {}, json.dumps([[[translate_lines(text, self.dictionary), text, None, None]], None, "de"])
 
     def _bing(self, request):
         form = parse_qs(request.body)
         assert form["token"] == ["tok123"] and form["key"] == ["1700000000000"], form
+        src, tgt = self.languages
+        if (form["fromLang"][0], form["to"][0]) != ("auto-detect" if src == "auto" else src, tgt):
+            return 400, {}, json.dumps({"statusCode": 400})
         out = translate_lines(form["text"][0], self.dictionary)
         return 200, {}, json.dumps([{"detectedLanguage": {"language": "de"}, "translations": [{"text": out, "to": "en"}]}])
 

@@ -4,69 +4,33 @@
 // side menu over the translation, reload the plugin. What is checked: what reaches the backend (the overlay window
 // on Windows draws exactly what native_overlay_update sends) and what the side menu shows.
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { BUNDLE } from './buildPlugin';
-import { FakeDecky } from './decky';
+import type { FakeDecky } from './decky';
 import { FakeBackend } from './fakeBackend';
-import { startSteam, stopSteam, type FakeSteam, type SteamWindow } from './steam';
+import { GAME, NAME, Session, buttons, sleep, waitFor } from './session';
+import type { FakeSteam, SteamWindow } from './steam';
 
-const NAME = 'WinDecky Translator';
-const GAME = { appid: '237990', name: 'The Banner Saga' };
-
+let session: Session;
 let steam: FakeSteam;
 let decky: FakeDecky;
 let backend: FakeBackend;
 
-async function waitFor<T>(what: string, check: () => T | undefined | null | false, timeoutMs = 3000): Promise<T> {
-    const end = Date.now() + timeoutMs;
-    for (;;) {
-        const r = check();
-        if (r) return r;
-        if (Date.now() > end) throw new Error(`timed out waiting for ${what}`);
-        await new Promise(res => setTimeout(res, 20));
-    }
-}
-const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
-
-const overlayUpdates = () => decky.calls.filter(c => c.method === 'native_overlay_update').map(c => c.args[0]);
-const lastOverlay = () => overlayUpdates().at(-1);
-const callsOf = (method: string) => decky.calls.filter(c => c.method === method);
-
-function buttons(win: SteamWindow, text: string): HTMLButtonElement[] {
-    return [...win.element.querySelectorAll('button')].filter(b => b.textContent?.trim() === text);
-}
-
-// The plugin's main button in that window's side menu ("Translate" / "Close Overlay")
-const mainButton = (win: SteamWindow) => waitFor(`the plugin's button in ${win.name}`,
-    () => win.isSideMenuOpen && (buttons(win, 'Translate')[0] ?? buttons(win, 'Close Overlay')[0]));
-
-// Open the side menu in a window, on the plugin (Decky's list, then the plugin)
-async function openPluginInSideMenu(win: SteamWindow) {
-    win.setSideMenu(true);
-    const entry = await waitFor('the plugin in the side menu', () =>
-        win.element.querySelector('[data-decky-plugin]') || buttons(win, NAME)[0]);
-    if (entry instanceof HTMLButtonElement) entry.click();
-    return mainButton(win);
-}
-
-// A translation is on screen: the overlay window was sent the translated regions
-const translationShown = (what: string) => waitFor(what, () => {
-    const s = lastOverlay();
-    return s?.visible && !s.loading && s.regions?.length && s;
-}, 5000);
-
-const translationHidden = (what: string) => waitFor(what, () => lastOverlay()?.visible === false && lastOverlay());
+const overlayUpdates = () => session.overlayUpdates();
+const lastOverlay = () => session.lastOverlay();
+const callsOf = (method: string) => session.callsOf(method);
+const openPluginInSideMenu = (win: SteamWindow) => session.openPluginInSideMenu(win);
+// a translation is on screen now: the last overlay update shows the translated regions
+const translationShown = (what: string) =>
+    waitFor(what, () => { const l = lastOverlay(); return l?.visible && !l.loading && l.regions?.length && l; }, 5000);
+const translationHidden = (what: string) => session.translationHidden(what);
 
 beforeEach(async () => {
     backend = new FakeBackend();
-    steam = startSteam(() => decky.renderSideMenu());
-    decky = new FakeDecky(backend, BUNDLE, NAME);
-    await decky.loadPlugin();
+    session = await Session.start(backend);
+    ({ steam, decky } = session);
 });
 
 afterEach(() => {
-    decky.unload();
-    stopSteam();
-    document.body.innerHTML = '';
+    session.stop();
     expect(backend.unknownCalls, 'methods the fake backend does not know (add them to fakeBackend.ts)').toEqual([]);
 });
 
@@ -200,6 +164,7 @@ describe('plugin reload (store update, disable/enable)', () => {
         expect(backend.restarts).toBe(1);
         expect(decky.plugin).not.toBe(before);
         await waitFor('Decky to show the new instance in the side menu', () => decky.state._activePlugin === decky.plugin, 2000);
+        await session.sideMenuShowsCurrentPlugin(overlay);
         expect(decky.listenerCount('translator_hotkey')).toBe(1);  // the old instance stopped listening
 
         overlay.setSideMenu(false);
