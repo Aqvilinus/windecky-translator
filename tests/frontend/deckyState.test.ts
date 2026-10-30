@@ -1,4 +1,5 @@
-// src/deckyState.ts: after a reload Decky's side menu must show the new plugin instance, not the unloaded one.
+// src/deckyState.ts edge cases (timers, a missing Decky). The reload itself is tested end to end in
+// tests/integration/plugin.test.ts.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { adoptActivePlugin, type DeckyPluginEntry } from '../../src/deckyState';
 
@@ -17,28 +18,6 @@ function installDecky(plugins: DeckyPluginEntry[], active: DeckyPluginEntry | nu
 describe('adoptActivePlugin', () => {
     beforeEach(() => { vi.useFakeTimers(); });
     afterEach(() => { vi.useRealTimers(); delete (globalThis as { window?: unknown }).window; });
-
-    it('replaces the unloaded instance left open in the side menu', () => {
-        const oldInstance = { name: NAME, content: 'old' };
-        const newInstance = { name: NAME, content: 'new' };
-        const state = installDecky([oldInstance], oldInstance);  // the new one isn't registered yet
-        adoptActivePlugin(NAME, p => p.content === 'new');
-        vi.advanceTimersByTime(500);
-        expect(state.setActivePlugin).not.toHaveBeenCalled();
-        state._plugins = [newInstance];  // Decky registers the reloaded plugin
-        vi.advanceTimersByTime(200);
-        expect(state.setActivePlugin).toHaveBeenCalledWith(NAME);
-        expect(state._activePlugin).toBe(newInstance);
-    });
-
-    it('leaves another plugin open in the side menu alone', () => {
-        const other = { name: 'CSS Loader' };
-        const state = installDecky([{ name: NAME, content: 'new' }, other], other);
-        adoptActivePlugin(NAME, p => p.content === 'new');
-        vi.advanceTimersByTime(500);
-        expect(state.setActivePlugin).not.toHaveBeenCalled();
-        expect(state._activePlugin).toBe(other);
-    });
 
     it('does nothing when the side menu already shows this instance or nothing', () => {
         const current = { name: NAME, content: 'new' };
