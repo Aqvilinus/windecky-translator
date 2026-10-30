@@ -2,7 +2,6 @@
 import sys
 import unittest
 
-import _paths  # noqa: F401
 
 if sys.platform != "win32":
     raise unittest.SkipTest("winport is Windows-only")

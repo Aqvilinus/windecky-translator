@@ -2,7 +2,6 @@
 import json
 import unittest
 
-import _paths  # noqa: F401
 from providers.gemini_vision import _parse_json_response
 
 A = {"text": "Press } to skip [", "translated_text": "x", "box_2d": [1, 2, 3, 4]}

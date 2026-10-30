@@ -1,7 +1,6 @@
 """ProviderManager.configure: which OCR and translation providers the settings select."""
 import unittest
 
-import _paths  # noqa: F401
 from providers import ProviderManager
 
 

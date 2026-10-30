@@ -64,8 +64,6 @@ def import_main():
     """Import main.py once (it sets up logging and paths at import)."""
     if "main" in sys.modules:
         return sys.modules["main"]
-    if ROOT not in sys.path:
-        sys.path.insert(0, ROOT)
     return importlib.import_module("main")
 
 
