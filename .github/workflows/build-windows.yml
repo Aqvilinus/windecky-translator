@@ -17,7 +17,7 @@ on:
         required: false
         type: string
 
-# Actions are pinned to commit SHAs (the comment names the release; Dependabot updates both)
+# Actions are pinned to commit SHAs (the comment names the release; Renovate updates both)
 permissions:
   contents: read
 
