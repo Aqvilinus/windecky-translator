@@ -205,14 +205,6 @@ def test_hotkey_reaches_the_frontend(backend, main):
     assert main.test_events == [("translator_hotkey", ())]
 
 
-def test_steam_apps(backend):
-    from winport import steam_games
-    assert backend.call("set_steam_app", 237990, True, 1, False) is True
-    assert 237990 in steam_games._steam_apps
-    assert backend.call("set_steam_app", 237990, False, 1, False) is True
-    assert 237990 not in steam_games._steam_apps
-
-
 # ---------------------------------------------------------------- the real Windows OCR, where the runner has it
 def test_windows_ocr_reads_the_screen(start, windows):
     from providers.windows_ocr import WindowsOCRProvider

@@ -153,7 +153,7 @@ class FakeHotkey:
 
 
 class FakeProcesses:
-    """winport.process: the game's pause (NtSuspendProcess) recorded instead of done."""
+    """winport.pause: the game's pause (NtSuspendProcess) recorded instead of done."""
 
     def __init__(self):
         self.suspended = set()
@@ -208,7 +208,7 @@ class FakeWindows:
 
     def install(self, main):
         seams = {"capture_foreground": self.capture_foreground, "Overlay": self.overlay_cls,
-                 "Hotkey": self._make_hotkey, "winprocess": self.processes}
+                 "Hotkey": self._make_hotkey, "game_pause": self.processes}
         for name, value in seams.items():
             self._saved[name] = getattr(main, name)
             setattr(main, name, value)
@@ -327,7 +327,7 @@ class Backend:
         """_unload without closing main.py's log files (they belong to the module, which stays imported)."""
         p = self.plugin
         if p:
-            self.main.winprocess.resume_all()
+            self.main.game_pause.resume_all()
             if p._provider_manager:
                 p._provider_manager.shutdown()
             if p._translation_cache:

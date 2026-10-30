@@ -178,6 +178,16 @@ wheels = [
 ]
 
 [[package]]
+name = "psutil"
+version = "7.2.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/aa/c6/d1ddf4abb55e93cebc4f2ed8b5d6dbad109ecb8d63748dd2b20ab5e57ebe/psutil-7.2.2.tar.gz", hash = "sha256:0746f5f8d406af344fd547f1c8daa5f5c33dbc293bb8d6a16d80b4bb88f59372", size = 493740, upload-time = "2026-01-28T18:14:54.428Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/dd/2c/ff9bfb544f283ba5f83ba725a3c5fec6d6b10b8f27ac1dc641c473dc390d/psutil-7.2.2-cp314-cp314t-win_amd64.whl", hash = "sha256:c7663d4e37f13e884d13994247449e9f8f574bc4655d509c3b95e9ec9e2b9dc1", size = 141228, upload-time = "2026-01-28T18:15:18.385Z" },
+    { url = "https://files.pythonhosted.org/packages/b4/90/e2159492b5426be0c1fef7acba807a03511f97c5f86b3caeda6ad92351a7/psutil-7.2.2-cp37-abi3-win_amd64.whl", hash = "sha256:eb7e81434c8d223ec4a219b5fc1c47d0417b12be7ea866e24fb5ad6e84b3d988", size = 137737, upload-time = "2026-01-28T18:15:33.849Z" },
+]
+
+[[package]]
 name = "py3langid"
 version = "0.3.0"
 source = { registry = "https://pypi.org/simple" }
@@ -357,6 +367,7 @@ dependencies = [
     { name = "opencv-python-headless" },
     { name = "pillow" },
     { name = "protobuf" },
+    { name = "psutil" },
     { name = "py3langid" },
     { name = "rapidocr" },
     { name = "requests" },
@@ -391,6 +402,7 @@ requires-dist = [
     { name = "opencv-python-headless", specifier = "==5.0.0.93" },
     { name = "pillow", specifier = "==13.0.0" },
     { name = "protobuf", specifier = "==6.33.6" },
+    { name = "psutil", specifier = "==7.2.2" },
     { name = "py3langid", specifier = "==0.3.0" },
     { name = "rapidocr", specifier = "==3.10.0" },
     { name = "requests", specifier = "==2.34.2" },

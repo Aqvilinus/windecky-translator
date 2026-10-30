@@ -79,6 +79,11 @@ if ROOT_PY_MODULES_DIR not in sys.path:
 if os.path.exists(BIN_PY_MODULES_DIR) and BIN_PY_MODULES_DIR not in sys.path:
     sys.path.insert(0, BIN_PY_MODULES_DIR)
 
+# Decky's frozen Python has python314.dll but not python3.dll, which stable-ABI extensions (psutil) load: the bundled
+# runtime has it
+if os.path.isdir(os.path.join(BIN_PYTHON_DIR, "python")):
+    os.add_dll_directory(os.path.join(BIN_PYTHON_DIR, "python"))
+
 # Now import third-party libraries (after sys.path is configured)
 try:
     import decky_plugin  # Decky's legacy name for the plugin API module
@@ -218,7 +223,7 @@ except Exception as _e:
 logger.info(f"Decky Translator v{_plugin_version} starting")
 
 
-# The capture's name for the frontend (no file is written; suspended.json of winport/process.py lives here too)
+# The capture's name for the frontend (no file is written; suspended.json of winport/pause.py lives here too)
 SCREENSHOT_DIR = os.path.join(tempfile.gettempdir(), "decky-translator")
 # Windows: the screenshot's stand-in for the frontend (a 1x1 transparent PNG; the backend keeps the real one)
 PLACEHOLDER_PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
@@ -241,7 +246,11 @@ except Exception as _e:  # noqa: BLE001
     Overlay = None
     _BOOT_ERRORS.append(f"The translation overlay is unavailable: {_e}")
 from winport.hotkey import Hotkey  # ctypes only
-from winport import process as winprocess  # ctypes only
+try:
+    from winport import pause as game_pause
+except Exception as _e:  # noqa: BLE001
+    game_pause = None
+    _BOOT_ERRORS.append(f"Pause Game While Translating is unavailable: {_e}")
 for _error in _BOOT_ERRORS:
     logger.error(_error)
 
@@ -645,19 +654,13 @@ class Plugin:
     # so the screenshot shows it running) and everything paused is resumed when the translation is hidden, however
     # it was started (Ctrl+Alt+T, the side menu, a controller shortcut) and even if the game exited meanwhile.
     def _pause_captured_game(self):
-        pid = winprocess.game_pid((self._capture_target or {}).get("hwnd"))
+        pid = game_pause.game_pid((self._capture_target or {}).get("hwnd")) if game_pause else 0
         if pid:
-            winprocess.suspend(pid)
+            game_pause.suspend(pid)
 
     def _resume_paused_games(self):
-        if winprocess.any_suspended():
-            winprocess.resume_all()
-
-    async def set_steam_app(self, appid, running, instance_id=0, already_running=False):
-        """Steam's app lifetime notifications (src/windows.ts), so games whose launcher exited still count."""
-        from winport.steam_games import set_steam_app
-        set_steam_app(appid, bool(running), instance_id, bool(already_running))
-        return True
+        if game_pause and game_pause.any_suspended():
+            game_pause.resume_all()
 
     # Windows: Ctrl+Alt+T in a game (hotkey thread) -> the frontend translates or dismisses (src/windows.ts)
     def _emit(self, event, *args):
@@ -1086,7 +1089,8 @@ class Plugin:
         """Windows parts, first and each on its own: a failure anywhere else in the start must not leave a game paused
         by an earlier run or the shortcut dead."""
         try:
-            winprocess.resume_leftovers()
+            if game_pause:
+                game_pause.resume_leftovers()
         except Exception as e:
             logger.error(f"Could not resume games left paused: {e}")
         self._loop = asyncio.get_running_loop()
@@ -1250,7 +1254,7 @@ class Plugin:
     async def _unload(self):
         logger.info("Unloading plugin")
         try:
-            winprocess.resume_all()  # first: never leave a game paused
+            self._resume_paused_games()  # first: never leave a game paused
 
             if self._provider_manager:
                 self._provider_manager.shutdown()
