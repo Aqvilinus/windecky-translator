@@ -8,6 +8,7 @@ Everything but `tests/e2e` runs without Steam, Decky Loader or a game, and never
 | `tests/integration` | The built plugin (`dist/index.js`) in an emulated Steam + Decky Loader, driven like a user: Translate in the side menu over a game, Ctrl+Alt+T, a side menu opened over the translation, a plugin reload with the side menu open on it. Checks what reaches the backend and what the side menu shows. | CI, `pnpm test` |
 | `tests/integration/contract.test.ts` | The same frontend calling the real `main.py` (both halves for real: arguments and results each side reads). | CI, `pnpm test` with `PLUGIN_PYTHON` set |
 | `tests/backend` | `main.py` driven through the frontend's calls: settings, capture → OCR → translation → overlay drawing, the Google → Bing fallback, the cache, errors, the game pause, the hotkey event. | CI, `python -m pytest` |
+| `tests/python` | Unit tests of single Python modules (unittest style). | CI, `python -m pytest` |
 | `tests/frontend` | Unit tests: every backend method the frontend calls exists in `main.py`; `deckyState.ts` timer edge cases. | CI, `pnpm test` |
 | `tests/e2e` | The real device: Steam, Decky, The Banner Saga, real keys, real screenshots. The final smoke check before a release (what only it covers is at the top of `translate.e2e.mjs`). | device only, `pnpm test:e2e` |
 
