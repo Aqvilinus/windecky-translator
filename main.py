@@ -88,107 +88,11 @@ import decky  # Decky Loader's plugin API (typings/decky.pyi)
 from providers import ProviderManager, NetworkError, ApiKeyError, RateLimitError, OCRError, TranslationError
 from providers.base import close_session
 from providers.translation_cache import TranslationCache, PROVIDER_TIERS, normalize
+from plugin_core.secrets import SENSITIVE_SETTING_KEYS, UrlKeyRedactFilter, clean_api_key, display_key, mask_for_log
+from plugin_core.settings import PROVIDER_SETTINGS, SETTING_DEFAULTS, WORKER_SETTINGS, SettingsManager
 
 _processing_lock = False
 
-SENSITIVE_SETTING_KEYS = {
-    "groq_api_key",
-    "llm_custom_api_key",
-    "google_api_key",
-    "gemini_api_key",
-}
-
-# Every setting and its default: what get_all_settings answers, the only keys set_setting stores
-SETTING_DEFAULTS = {
-    "enabled": True,
-    "target_language": "en",
-    "input_language": "auto",
-    "ocr_provider": "chromescreenai",       # "chromescreenai", "windows_ocr", "ocrspace", "googlecloud", "gemini_vision"
-    "translation_provider": "freegoogle",   # "freegoogle", "googlecloud", "ct2" (offline NLLB) or "llm" (AI)
-    "google_api_key": "",                   # one Google Cloud key for Vision and Translation
-    "gemini_api_key": "",                   # Gemini Vision, and AI translation through Gemini
-    "gemini_model": "gemini-3.5-flash",     # Gemini Vision's model
-    "chromescreenai_persistent_mode": False,  # "Faster Recognition": the Screen AI worker stays up between requests
-    "ct2_persistent_mode": False,           # the same for the offline NLLB worker
-    "pause_game_on_overlay": False,
-    "translation_cache_enabled": True,
-    "debug_mode": False,
-    # used by the frontend only
-    "font_scale": 1.0,
-    "confidence_threshold": 0.6,
-    "custom_recognition_settings": False,
-    # AI translation (translation_provider "llm", providers/llm_translate.py)
-    "llm_backend": "gemini",                # "gemini", "groq" or "custom" (any OpenAI-compatible server)
-    "llm_gemini_model": "gemini-flash-lite-latest",
-    "llm_groq_model": "openai/gpt-oss-120b",
-    "llm_custom_model": "",
-    "llm_custom_url": "",                   # e.g. https://openrouter.ai/api/v1 or http://127.0.0.1:8081/v1
-    "groq_api_key": "",
-    "llm_custom_api_key": "",
-}
-# Settings the provider manager gets (_configure_providers) and those that decide which workers run (_sync_workers)
-PROVIDER_SETTINGS = {"ocr_provider", "translation_provider", "google_api_key", "gemini_api_key", "gemini_model",
-                     "llm_backend", "llm_gemini_model", "llm_groq_model", "llm_custom_model", "llm_custom_url",
-                     "groq_api_key", "llm_custom_api_key"}
-WORKER_SETTINGS = {"enabled", "ocr_provider", "translation_provider", "chromescreenai_persistent_mode",
-                   "ct2_persistent_mode"}
-
-
-def _mask_secret(value):
-    if not isinstance(value, str) or not value:
-        return value
-    if len(value) <= 4:
-        return "****"
-    return "*" * (len(value) - 4) + value[-4:]
-
-
-def display_key(value):
-    """An API key as the frontend gets it: the first 3 and last 4 characters ("AQ.…k3Fz"), never the whole key.
-    The frontend can call the backend from anything that reaches Decky's local websocket, so the keys stay here."""
-    if not isinstance(value, str) or not value:
-        return value
-    if len(value) < 12:
-        return "…" + value[-2:] if len(value) > 4 else "…"
-    return f"{value[:3]}…{value[-4:]}"
-
-
-def _mask_for_log(key, value):
-    return _mask_secret(value) if key in SENSITIVE_SETTING_KEYS else value
-
-
-_API_KEY_JUNK_RE = re.compile(r"[\s\u200b\u200c\u200d\u2060\ufeff]+")
-
-
-def _clean_api_key(value):
-    if not isinstance(value, str):
-        return value
-    return _API_KEY_JUNK_RE.sub("", value)
-
-
-_URL_KEY_RE = re.compile(r"(?i)\b((?:api)?key=|bearer\s+|x-goog-api-key['\"]?:\s*['\"]?)([A-Za-z0-9_.\-]{16,})")
-
-
-def _redact_url_keys(text):
-    return _URL_KEY_RE.sub(lambda m: f"{m.group(1)}{_mask_secret(m.group(2))}", text)
-
-
-def _may_hold_secret(text):
-    low = text.lower()
-    return "key" in low or "bearer" in low
-
-
-class UrlKeyRedactFilter(logging.Filter):
-    def filter(self, record):
-        try:
-            message = record.getMessage()  # msg % args, so a key passed as an argument is caught too
-        except Exception:  # noqa: BLE001 - a broken format string: logging reports it itself
-            return True
-        if _may_hold_secret(message):
-            record.msg, record.args = _redact_url_keys(message), None
-        return True
-
-
-_url_redact_filter = UrlKeyRedactFilter()
 
 
 # Decky sets these for each plugin backend
@@ -205,11 +109,10 @@ from logging.handlers import TimedRotatingFileHandler
 log_file = Path(DECKY_PLUGIN_LOG_DIR) / "decky-translator.log"
 log_file_handler = TimedRotatingFileHandler(log_file, when="midnight", backupCount=2, encoding="utf-8")
 log_file_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
-log_file_handler.addFilter(_url_redact_filter)
+log_file_handler.addFilter(UrlKeyRedactFilter())
 logger.handlers.clear()
 logger.addHandler(log_file_handler)
 logger.setLevel(logging.INFO)
-logging.getLogger("urllib3").addFilter(_url_redact_filter)
 logger.info(f"Configured rotating log file: {log_file}")
 
 try:
@@ -276,62 +179,6 @@ def answers_errors(fallback_code, fallback_message):
     return wrap
 
 
-class SettingsManager:
-    def __init__(self, name, settings_directory):
-        self.settings_path = os.path.join(settings_directory, f"{name}.json")
-        self.settings = {}
-        logger.debug(f"SettingsManager initialized with path: {self.settings_path}")
-
-    def read(self):
-        try:
-            if os.path.exists(self.settings_path):
-                with open(self.settings_path, 'r', encoding='utf-8') as f:
-                    loaded = json.load(f)
-                if not isinstance(loaded, dict):
-                    raise ValueError("settings file is not a JSON object")
-                self.settings = loaded
-                logger.debug(f"Settings loaded from {self.settings_path}")
-            else:
-                logger.warning(f"Settings file does not exist: {self.settings_path}")
-        except (ValueError, UnicodeDecodeError) as e:
-            # damaged file (e.g. a write cut off by a crash): keep what is in memory, and keep the
-            # damaged file aside instead of letting the next save replace it
-            logger.error(f"Settings file is damaged ({e}); kept as {self.settings_path}.damaged")
-            try:
-                os.replace(self.settings_path, self.settings_path + ".damaged")
-            except OSError:
-                pass
-        except Exception as e:
-            logger.error(f"Failed to read settings: {str(e)}")
-            logger.error(traceback.format_exc())
-
-    def _write(self):
-        """Write the settings atomically: a temporary file, flushed to disk, then renamed over the old one."""
-        os.makedirs(os.path.dirname(self.settings_path), exist_ok=True)
-        tmp = self.settings_path + ".tmp"
-        with open(tmp, 'w', encoding='utf-8') as f:
-            json.dump(self.settings, f, indent=4)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp, self.settings_path)
-
-    def set_setting(self, key, value):
-        try:
-            # re-read so manual edits to the file are not overwritten by stale memory
-            self.read()
-            self.settings[key] = value
-            self._write()
-            logger.debug(f"Saved setting {key}={_mask_for_log(key, value)}")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to save setting {key}: {str(e)}")
-            logger.error(traceback.format_exc())
-            return False
-
-    def get_setting(self, key, default=None):
-        return self.settings.get(key, default)
-
-
 class Plugin:
     _settings = None
     _pause_problems_shown: frozenset = frozenset()  # pause problems already shown to the user (_report_pause_problem)
@@ -357,13 +204,13 @@ class Plugin:
         if key in SENSITIVE_SETTING_KEYS and isinstance(value, str):
             if value and value == display_key(self._get(key) or ""):
                 return True  # the frontend saved the key it was shown (a dialog closed without a new key): unchanged
-            cleaned = _clean_api_key(value)
+            cleaned = clean_api_key(value)
             if cleaned != value:
                 logger.warning(f"{key} contained whitespace or invisible characters, "
                                f"cleaned (len {len(value)} -> {len(cleaned)})")
             value = cleaned
             logger.info(f"{key} set (len={len(value)})")
-        logger.debug(f"Setting {key} to: {_mask_for_log(key, value)}")
+        logger.debug(f"Setting {key} to: {mask_for_log(key, value)}")
         if not self._settings.set_setting(key, value):
             return False
         try:
