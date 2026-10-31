@@ -20,7 +20,7 @@ import queue
 import threading
 from ctypes import wintypes
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageStat
 
 logger = logging.getLogger(__name__)
 
@@ -214,20 +214,13 @@ def _background(image, box):
     if image is None:
         return None
     x0, y0, x1, y1 = (int(v) for v in box)
-    w, h = image.size
-    ring = [(max(0, x0 - 3), max(0, y0 - 3), min(w, x1 + 3), max(0, y0)),          # above
-            (max(0, x0 - 3), min(h, y1), min(w, x1 + 3), min(h, y1 + 3)),          # below
-            (max(0, x0 - 3), max(0, y0), max(0, x0), min(h, y1)),                  # left
-            (min(w, x1), max(0, y0), min(w, x1 + 3), min(h, y1))]                  # right
-    channels = ([], [], [])
-    for b in ring:
-        if b[2] > b[0] and b[3] > b[1]:
-            data = image.crop(b).convert("RGB").tobytes()  # (Image.getdata goes away in Pillow 14)
-            for c in range(3):
-                channels[c].extend(data[c::3])
-    if not channels[0]:
+    outer = (max(0, x0 - 3), max(0, y0 - 3), min(image.width, x1 + 3), min(image.height, y1 + 3))
+    crop = image.crop(outer).convert("RGB")
+    ring = Image.new("L", crop.size, 255)
+    ring.paste(0, (x0 - outer[0], y0 - outer[1], x1 - outer[0], y1 - outer[1]))  # the box itself is left out
+    if not ring.getbbox():  # the box covers the whole frame: no ring
         return None
-    return tuple(sorted(ch)[len(ch) // 2] for ch in channels)
+    return tuple(ImageStat.Stat(crop, ring).median)
 
 
 def auto_alignments(boxes, scale):

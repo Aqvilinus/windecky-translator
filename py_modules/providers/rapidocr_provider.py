@@ -3,7 +3,7 @@
 # Uses ONNX Runtime for fast inference with PaddleOCR models
 
 import asyncio
-import itertools
+import importlib.metadata
 import json
 import logging
 import os
@@ -28,7 +28,6 @@ LEGACY_MODELS_DIR = "bin/rapidocr/models"
 # OCR timeout in seconds (Steam Deck CPU can be slow)
 OCR_TIMEOUT_SECONDS = 120
 WORKER_READY_TIMEOUT_SECONDS = 60
-_request_ids = itertools.count(1)
 
 # Stripped from the worker's env so ONNX can use multiple threads. The
 # oneshot path needs to cap threads to avoid deadlocks in the asyncio loop;
@@ -299,30 +298,9 @@ class RapidOCRProvider(OCRProvider):
 
         info["available"] = self._check_availability()
 
-        # Get RapidOCR version from package metadata (no import needed)
-        # Check both locations: bin/py_modules (store install) and py_modules (dev install)
         try:
-            py_modules_paths = [
-                os.path.join(self._plugin_dir, 'bin', 'py_modules'),  # Store install
-                os.path.join(self._plugin_dir, 'py_modules'),         # Dev install
-            ]
-            for py_modules in py_modules_paths:
-                if not os.path.exists(py_modules):
-                    continue
-                # Look for rapidocr-*.dist-info/METADATA
-                for item in os.listdir(py_modules):
-                    if item.startswith('rapidocr-') and item.endswith('.dist-info'):
-                        metadata_file = os.path.join(py_modules, item, 'METADATA')
-                        if os.path.exists(metadata_file):
-                            with open(metadata_file, 'r', encoding='utf-8') as f:
-                                for line in f:
-                                    if line.startswith('Version:'):
-                                        info["version"] = line.split(':', 1)[1].strip()
-                                        break
-                        break
-                if info["version"]:
-                    break
-        except Exception:
+            info["version"] = importlib.metadata.version("rapidocr")  # without importing it
+        except importlib.metadata.PackageNotFoundError:
             pass
 
         # Check for bundled models
@@ -497,13 +475,10 @@ class RapidOCRProvider(OCRProvider):
             if not self.start_worker():
                 return None
 
-        temp_path = os.path.join(
-            tempfile.gettempdir(),
-            f"rapidocr_input_{os.getpid()}_{next(_request_ids)}.png"
-        )
-        try:
-            with open(temp_path, 'wb') as f:
-                f.write(image_data)
+        with tempfile.NamedTemporaryFile(prefix="rapidocr_input_", suffix=".png", delete_on_close=False) as image_file:
+            image_file.write(image_data)
+            image_file.close()  # the worker opens it by name; it is deleted when the block ends
+            temp_path = image_file.name
 
             lang_family = self.LANGUAGE_MAP.get(language, 'ch')
             request = {
@@ -554,117 +529,101 @@ class RapidOCRProvider(OCRProvider):
                 ))
             logger.debug(f"RapidOCR (worker): {len(text_regions)} regions in {elapsed:.2f}s")
             return text_regions
-        finally:
-            try:
-                if os.path.exists(temp_path):
-                    os.remove(temp_path)
-            except Exception:
-                pass
 
     def _recognize_oneshot(self, image_data: bytes, language: str) -> List[TextRegion]:
-        temp_image_path = None
-        try:
-            start_time = time.time()
-            logger.debug("RapidOCR: Starting oneshot subprocess OCR...")
-
-            # Save image to temp file
-            temp_image_path = os.path.join(
-                tempfile.gettempdir(),
-                f"rapidocr_input_{os.getpid()}_{next(_request_ids)}.png"
-            )
-            with open(temp_image_path, 'wb') as f:
-                f.write(image_data)
-
-            # Build environment with py_modules as ONLY Python path
-            # This ensures we use our bundled packages, not the standalone Python's
-            env = os.environ.copy()
-            # Use detected py_modules path (bin/py_modules for store, root for dev)
-            env['PYTHONPATH'] = self._py_modules_dir
-            # Disable user site-packages
-            env['PYTHONNOUSERSITE'] = '1'
-            # Ensure isolated mode-like behavior
-            env['PYTHONDONTWRITEBYTECODE'] = '1'
-            # Set threading environment variables
-            env['OMP_NUM_THREADS'] = '1'
-            env['MKL_NUM_THREADS'] = '1'
-            env['OPENBLAS_NUM_THREADS'] = '1'
-
-            # Run subprocess using system Python 3 (NOT sys.executable which is PluginLoader!)
-            if not self._python_path:
-                logger.error("RapidOCR: No Python interpreter available")
-                return []
-
-            lang_family = self.LANGUAGE_MAP.get(language, 'ch')
-
-            cmd = [
-                self._python_path,
-                '-S',  # Ignore site-packages from standalone Python
-                self._subprocess_script,
-                temp_image_path,
-                self._models_dir,
-                str(self._min_confidence),
-                str(self._box_thresh),
-                str(self._unclip_ratio),
-                lang_family,
-            ]
-            logger.debug(f"RapidOCR: Running subprocess: {' '.join(cmd)}")
-
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True, encoding='utf-8', errors='replace',
-                timeout=OCR_TIMEOUT_SECONDS,
-                env=env,
-                **python_runtime.popen_kwargs(),
-            )
-
-            elapsed = time.time() - start_time
-            logger.debug(f"RapidOCR: Subprocess completed in {elapsed:.2f}s")
-
-            if result.returncode != 0:
-                logger.error(f"RapidOCR: Subprocess error: {result.stderr}")
-                return []
-
-            # Parse JSON output
+        with tempfile.NamedTemporaryFile(prefix="rapidocr_input_", suffix=".png", delete_on_close=False) as image_file:
+            image_file.write(image_data)
+            image_file.close()  # the subprocess opens it by name; it is deleted when the block ends
+            temp_image_path = image_file.name
             try:
-                output = json.loads(result.stdout)
-            except json.JSONDecodeError as e:
-                logger.error(f"RapidOCR: Failed to parse output: {e}")
-                logger.error(f"RapidOCR: stdout: {result.stdout[:500]}")
-                return []
+                start_time = time.time()
+                logger.debug("RapidOCR: Starting oneshot subprocess OCR...")
 
-            # Log debug info if present
-            if output.get("debug"):
-                for dbg in output["debug"]:
-                    logger.debug(f"RapidOCR subprocess: {dbg}")
+                # Save image to temp file
 
-            if output.get("error"):
-                logger.error(f"RapidOCR: OCR error: {output['error']}")
-                return []
+                # Build environment with py_modules as ONLY Python path
+                # This ensures we use our bundled packages, not the standalone Python's
+                env = os.environ.copy()
+                # Use detected py_modules path (bin/py_modules for store, root for dev)
+                env['PYTHONPATH'] = self._py_modules_dir
+                # Disable user site-packages
+                env['PYTHONNOUSERSITE'] = '1'
+                # Ensure isolated mode-like behavior
+                env['PYTHONDONTWRITEBYTECODE'] = '1'
+                # Set threading environment variables
+                env['OMP_NUM_THREADS'] = '1'
+                env['MKL_NUM_THREADS'] = '1'
+                env['OPENBLAS_NUM_THREADS'] = '1'
 
-            # Convert to TextRegion objects
-            text_regions = []
-            for region in output.get("regions", []):
-                text_regions.append(TextRegion(
-                    text=region["text"],
-                    rect=region["rect"],
-                    confidence=region["confidence"],
-                    is_dialog=region.get("is_dialog", False),
-                ))
+                # Run subprocess using system Python 3 (NOT sys.executable which is PluginLoader!)
+                if not self._python_path:
+                    logger.error("RapidOCR: No Python interpreter available")
+                    return []
 
-            logger.debug(f"RapidOCR: Found {len(text_regions)} text regions in {elapsed:.2f}s")
-            return text_regions
+                lang_family = self.LANGUAGE_MAP.get(language, 'ch')
 
-        except subprocess.TimeoutExpired:
-            logger.error(f"RapidOCR: Subprocess timed out after {OCR_TIMEOUT_SECONDS}s")
-            return []
-        except Exception as e:
-            logger.error(f"RapidOCR OCR error: {e}", exc_info=True)
-            return []
-        finally:
-            # Clean up temp file
-            if temp_image_path and os.path.exists(temp_image_path):
+                cmd = [
+                    self._python_path,
+                    '-S',  # Ignore site-packages from standalone Python
+                    self._subprocess_script,
+                    temp_image_path,
+                    self._models_dir,
+                    str(self._min_confidence),
+                    str(self._box_thresh),
+                    str(self._unclip_ratio),
+                    lang_family,
+                ]
+                logger.debug(f"RapidOCR: Running subprocess: {' '.join(cmd)}")
+
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True, encoding='utf-8', errors='replace',
+                    timeout=OCR_TIMEOUT_SECONDS,
+                    env=env,
+                    **python_runtime.popen_kwargs(),
+                )
+
+                elapsed = time.time() - start_time
+                logger.debug(f"RapidOCR: Subprocess completed in {elapsed:.2f}s")
+
+                if result.returncode != 0:
+                    logger.error(f"RapidOCR: Subprocess error: {result.stderr}")
+                    return []
+
+                # Parse JSON output
                 try:
-                    os.remove(temp_image_path)
-                except Exception:
-                    pass
+                    output = json.loads(result.stdout)
+                except json.JSONDecodeError as e:
+                    logger.error(f"RapidOCR: Failed to parse output: {e}")
+                    logger.error(f"RapidOCR: stdout: {result.stdout[:500]}")
+                    return []
+
+                # Log debug info if present
+                if output.get("debug"):
+                    for dbg in output["debug"]:
+                        logger.debug(f"RapidOCR subprocess: {dbg}")
+
+                if output.get("error"):
+                    logger.error(f"RapidOCR: OCR error: {output['error']}")
+                    return []
+
+                # Convert to TextRegion objects
+                text_regions = []
+                for region in output.get("regions", []):
+                    text_regions.append(TextRegion(
+                        text=region["text"],
+                        rect=region["rect"],
+                        confidence=region["confidence"],
+                        is_dialog=region.get("is_dialog", False),
+                    ))
+
+                logger.debug(f"RapidOCR: Found {len(text_regions)} text regions in {elapsed:.2f}s")
+                return text_regions
+
+            except subprocess.TimeoutExpired:
+                logger.error(f"RapidOCR: Subprocess timed out after {OCR_TIMEOUT_SECONDS}s")
+                return []
+            except Exception as e:
+                logger.error(f"RapidOCR OCR error: {e}", exc_info=True)
+                return []
