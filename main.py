@@ -63,11 +63,6 @@ if _should_extract_dependencies():
         if os.path.exists(EXTRACTION_MARKER):
             os.remove(EXTRACTION_MARKER)
 
-# rapidocr 3 checks this dir exists at init time
-_RAPIDOCR_MODELS_PLACEHOLDER = os.path.join(BIN_PY_MODULES_DIR, "rapidocr", "models")
-if os.path.isdir(os.path.dirname(_RAPIDOCR_MODELS_PLACEHOLDER)):
-    os.makedirs(_RAPIDOCR_MODELS_PLACEHOLDER, exist_ok=True)
-
 # Add py_modules to path
 # Root py_modules always needed (contains providers/ source code)
 # bin/py_modules needed for store installs (pip packages from remote_binary)
@@ -307,17 +302,13 @@ class Plugin:
     _settings = None
     _input_language: str = "auto"  # Default to auto-detect
     _target_language: str = "en"
-    _rapidocr_confidence: float = 0.5  # RapidOCR-specific confidence threshold (0.0-1.0)
-    _rapidocr_box_thresh: float = 0.5  # RapidOCR detection box threshold (0.0-1.0)
-    _rapidocr_unclip_ratio: float = 1.6  # RapidOCR box expansion ratio (1.0-3.0)
-    _rapidocr_persistent_mode: bool = False  # Keep RapidOCR worker alive between requests
     _chromescreenai_persistent_mode: bool = False  # Keep Chrome Screen AI worker alive between requests
     _ct2_persistent_mode: bool = False  # Keep CT2/NLLB worker alive between requests
     _pause_game_on_overlay: bool = False  # Default to not pausing game on overlay
 
     # Provider system
     _provider_manager: ProviderManager = None
-    # "rapidocr" (RapidOCR), "ocrspace" (OCR.space), "googlecloud" (Google Cloud), "windows_ocr" (Windows only)
+    # "chromescreenai", "windows_ocr", "ocrspace", "googlecloud", "gemini_vision"
     _ocr_provider: str = "chromescreenai"
 
     # Windows: the translation overlay window, the window the last screenshot came from, the Ctrl+Alt+T hotkey
@@ -373,14 +364,11 @@ class Plugin:
                     self._hotkey.set_enabled(bool(value))
                 if self._provider_manager:
                     if value:
-                        if self._rapidocr_persistent_mode:
-                            self._provider_manager.resume_rapidocr_worker()
                         if self._chromescreenai_persistent_mode:
                             self._provider_manager.resume_chromescreenai_worker()
                         if self._ct2_persistent_mode:
                             self._provider_manager.resume_ct2_worker()
                     else:
-                        self._provider_manager.stop_rapidocr_worker()
                         self._provider_manager.stop_chromescreenai_worker()
                         self._provider_manager.stop_ct2_worker()
             elif key == "google_api_key":
@@ -394,29 +382,6 @@ class Plugin:
             elif key == "gemini_api_key":
                 self._gemini_api_key = value
                 self._configure_providers()
-            elif key == "rapidocr_confidence":
-                self._rapidocr_confidence = value
-                # Update provider manager with new confidence
-                if self._provider_manager:
-                    self._provider_manager.set_rapidocr_confidence(value)
-            elif key == "rapidocr_box_thresh":
-                self._rapidocr_box_thresh = value
-                if self._provider_manager:
-                    self._provider_manager.set_rapidocr_box_thresh(value)
-            elif key == "rapidocr_unclip_ratio":
-                self._rapidocr_unclip_ratio = value
-                if self._provider_manager:
-                    self._provider_manager.set_rapidocr_unclip_ratio(value)
-            elif key == "rapidocr_persistent_mode":
-                self._rapidocr_persistent_mode = bool(value)
-                if self._provider_manager:
-                    plugin_enabled = self._settings.get_setting("enabled", True)
-                    self._provider_manager.set_rapidocr_persistent_mode(
-                        self._rapidocr_persistent_mode,
-                        apply_to_provider=plugin_enabled,
-                    )
-                    if not plugin_enabled and not self._rapidocr_persistent_mode:
-                        self._provider_manager.stop_rapidocr_worker()
             elif key == "chromescreenai_persistent_mode":
                 self._chromescreenai_persistent_mode = bool(value)
                 if self._provider_manager:
@@ -447,13 +412,8 @@ class Plugin:
                 self._ocr_provider = value
                 self._configure_providers()
                 if self._provider_manager:
-                    # Don't leave the RapidOCR worker running when the user
-                    # switches providers; resume it if they switch back.
+                    # don't leave the Screen AI worker running for another engine; resume it on the way back
                     plugin_enabled = self._settings.get_setting("enabled", True)
-                    if value != "rapidocr":
-                        self._provider_manager.stop_rapidocr_worker()
-                    elif plugin_enabled:
-                        self._provider_manager.resume_rapidocr_worker()
                     if value != "chromescreenai":
                         self._provider_manager.stop_chromescreenai_worker()
                     elif plugin_enabled:
@@ -495,10 +455,6 @@ class Plugin:
                 "gemini_api_key": self._gemini_api_key,
                 "gemini_model": self._gemini_model,
                 "confidence_threshold": self._settings.get_setting("confidence_threshold", 0.6),
-                "rapidocr_confidence": self._settings.get_setting("rapidocr_confidence", 0.5),
-                "rapidocr_box_thresh": self._settings.get_setting("rapidocr_box_thresh", 0.5),
-                "rapidocr_unclip_ratio": self._settings.get_setting("rapidocr_unclip_ratio", 1.6),
-                "rapidocr_persistent_mode": self._settings.get_setting("rapidocr_persistent_mode", False),
                 "chromescreenai_persistent_mode": self._settings.get_setting("chromescreenai_persistent_mode", False),
                 "ct2_persistent_mode": self._settings.get_setting("ct2_persistent_mode", False),
                 "pause_game_on_overlay": self._settings.get_setting("pause_game_on_overlay", False),
@@ -708,9 +664,6 @@ class Plugin:
 
             if self._ocr_provider == "chromescreenai" and not self._provider_manager.is_chromescreenai_downloaded():
                 return {"error": "model_not_available", "message": "Chrome Screen AI engine not downloaded.\nDownload it in plugin settings"}
-
-            if self._ocr_provider == "rapidocr" and not self._provider_manager.is_rapidocr_models_downloaded():
-                return {"error": "model_not_available", "message": "RapidOCR model not downloaded.\nDownload it in plugin settings"}
 
             if self._ocr_provider == "windows_ocr" and self._input_language not in ("", "auto"):
                 from providers.windows_ocr import WindowsOCRProvider, plugin_code
@@ -1026,55 +979,6 @@ class Plugin:
             logger.error(f"Error deleting Chrome Screen AI files: {e}")
             return False
 
-    # -- RapidOCR model download API --
-
-    async def get_rapidocr_models_status(self):
-        try:
-            if not self._provider_manager:
-                return {"downloaded": False, "size": 0, "approx_size_mb": 75,
-                        "downloading": False, "progress": 0, "error": None}
-            return self._provider_manager.get_rapidocr_models_status()
-        except Exception as e:
-            logger.error(f"Error getting RapidOCR models status: {e}")
-            return {"downloaded": False, "size": 0, "approx_size_mb": 75,
-                    "downloading": False, "progress": 0, "error": str(e)}
-
-    async def download_rapidocr_models(self):
-        try:
-            if not self._provider_manager:
-                return False
-            return self._provider_manager.download_rapidocr_models()
-        except Exception as e:
-            logger.error(f"Error starting RapidOCR models download: {e}")
-            return False
-
-    async def cancel_rapidocr_models_download(self):
-        try:
-            if self._provider_manager:
-                self._provider_manager.cancel_rapidocr_models_download()
-            return True
-        except Exception as e:
-            logger.error(f"Error cancelling RapidOCR models download: {e}")
-            return False
-
-    async def clear_rapidocr_models_error(self):
-        try:
-            if self._provider_manager:
-                self._provider_manager.clear_rapidocr_models_error()
-            return True
-        except Exception as e:
-            logger.error(f"Error clearing RapidOCR models error: {e}")
-            return False
-
-    async def delete_rapidocr_models(self):
-        try:
-            if not self._provider_manager:
-                return False
-            return self._provider_manager.delete_rapidocr_models()
-        except Exception as e:
-            logger.error(f"Error deleting RapidOCR models: {e}")
-            return False
-
     def _start_windows(self):
         """Windows parts, first and each on its own: a failure anywhere else in the start must not leave a game paused
         by an earlier run or the shortcut dead."""
@@ -1158,7 +1062,7 @@ class Plugin:
                     self._translation_provider = "freegoogle"
                 self._settings.set_setting("translation_provider", self._translation_provider)
 
-            # Downloaded models (NLLB, Chrome Screen AI, RapidOCR) live in the settings folder, so they survive plugin
+            # Downloaded models (NLLB, Chrome Screen AI) live in the settings folder, so they survive plugin
             # updates
             models_dir = os.path.join(settingsDir, "decky-translator", "models")
             ct2_models_dir = os.path.join(models_dir, "nllb")
@@ -1181,17 +1085,8 @@ class Plugin:
                 translation_provider=self._translation_provider,
                 ct2_models_dir=ct2_models_dir,
                 screenai_models_dir=models_dir,
-                rapidocr_models_dir=models_dir,
             )
 
-            # Load and apply RapidOCR-specific settings
-            if self._settings.get_setting("custom_recognition_settings", False):
-                self._rapidocr_confidence = load_setting("rapidocr_confidence", self._rapidocr_confidence)
-                self._rapidocr_box_thresh = load_setting("rapidocr_box_thresh", self._rapidocr_box_thresh)
-                self._rapidocr_unclip_ratio = load_setting("rapidocr_unclip_ratio", self._rapidocr_unclip_ratio)
-            self._rapidocr_persistent_mode = bool(
-                load_setting("rapidocr_persistent_mode", self._rapidocr_persistent_mode)
-            )
             self._chromescreenai_persistent_mode = bool(
                 load_setting("chromescreenai_persistent_mode", self._chromescreenai_persistent_mode)
             )
@@ -1201,16 +1096,9 @@ class Plugin:
             for key in ("groq_api_key", "llm_custom_api_key"):
                 load_api_key(key)
             self._apply_llm_settings()
-            self._provider_manager.set_rapidocr_confidence(self._rapidocr_confidence)
-            self._provider_manager.set_rapidocr_box_thresh(self._rapidocr_box_thresh)
-            self._provider_manager.set_rapidocr_unclip_ratio(self._rapidocr_unclip_ratio)
             # Only spin up the worker if the plugin is enabled right now;
             # the preference is always stored so re-enable can pick it up.
             plugin_enabled_at_boot = self._settings.get_setting("enabled", True)
-            self._provider_manager.set_rapidocr_persistent_mode(
-                self._rapidocr_persistent_mode,
-                apply_to_provider=plugin_enabled_at_boot,
-            )
             self._provider_manager.set_chromescreenai_persistent_mode(
                 self._chromescreenai_persistent_mode,
                 apply_to_provider=plugin_enabled_at_boot

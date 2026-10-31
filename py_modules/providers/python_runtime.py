@@ -13,7 +13,7 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-# Must match the cpython ABI of the bundled C extensions (numpy, Pillow, onnxruntime, ctranslate2, sentencepiece)
+# Must match the cpython ABI of the bundled C extensions (numpy, Pillow, ctranslate2, sentencepiece)
 REQUIRED_PYTHON = (3, 14)
 
 BUNDLED_PYTHON_RELPATH = os.path.join("bin", "python314", "python", "python.exe")

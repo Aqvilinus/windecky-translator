@@ -14,7 +14,7 @@ class Configure(unittest.TestCase):
         self.assertEqual(self.prefs(), ("chromescreenai", "freegoogle"))
 
     def test_saved_choices_win(self):
-        self.assertEqual(self.prefs(ocr_provider="rapidocr", translation_provider="ct2"), ("rapidocr", "ct2"))
+        self.assertEqual(self.prefs(ocr_provider="ocrspace", translation_provider="ct2"), ("ocrspace", "ct2"))
 
     def test_google_cloud_ocr_without_saved_translation(self):
         self.assertEqual(self.prefs(ocr_provider="googlecloud"), ("googlecloud", "googlecloud"))

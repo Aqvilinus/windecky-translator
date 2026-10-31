@@ -88,8 +88,7 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
 
     const ocrNeedsDownload =
         !!providerStatus
-        && ((settings.ocrProvider === 'chromescreenai' && !providerStatus.chromescreenai_downloaded)
-            || (settings.ocrProvider === 'rapidocr' && !providerStatus.rapidocr_downloaded));
+        && settings.ocrProvider === 'chromescreenai' && !providerStatus.chromescreenai_downloaded;
 
     const translationNeedsDownload =
         settings.ocrProvider !== 'gemini_vision'
@@ -105,8 +104,7 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
             return;
         }
         if (ocrNeedsDownload) {
-            const target = settings.ocrProvider === 'rapidocr' ? 'rapidocr-action' : 'chromescreenai-action';
-            onNavigateToTab('translation', target);
+            onNavigateToTab('translation', 'chromescreenai-action');
             return;
         }
         if (translationNeedsDownload) {
@@ -170,32 +168,9 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                                         <span style={{ color: '#888' }}>Text Recognition:</span>
                                         <span style={{ marginLeft: '6px', fontWeight: 'bold' }}>
                                             {settings.ocrProvider === 'chromescreenai' ? 'On-Device' :
-                                             settings.ocrProvider === 'rapidocr' ? 'On-Device' :
                                              settings.ocrProvider === 'windows_ocr' ? 'On-Device (Windows)' :
                                              settings.ocrProvider === 'ocrspace' ? 'OCR.space' : 'Google Cloud'}
                                         </span>
-                                    </div>
-                                )}
-                                {settings.ocrProvider === 'rapidocr' && (
-                                    <div style={{ marginLeft: '22px', marginBottom: '6px' }}>
-                                        {providerStatus?.rapidocr_downloaded && (
-                                            <div style={{ color: '#666', fontSize: '10px' }}>
-                                                Installed model: RapidOCR{providerStatus?.rapidocr_info?.version ? ` v${providerStatus.rapidocr_info.version}` : ''}
-                                            </div>
-                                        )}
-                                        <div style={{ color: '#666', fontSize: '10px', display: 'flex', alignItems: 'center' }}>
-                                            {providerStatus?.rapidocr_downloading ? (
-                                                <>
-                                                    <InstallingDot />
-                                                    <span>Installing...</span>
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <StatusDot ok={!!providerStatus?.rapidocr_downloaded} />
-                                                    <span>{providerStatus?.rapidocr_downloaded ? 'Ready' : 'Not ready (Model not installed)'}</span>
-                                                </>
-                                            )}
-                                        </div>
                                     </div>
                                 )}
                                 {settings.ocrProvider === 'chromescreenai' && (

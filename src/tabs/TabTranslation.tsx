@@ -76,14 +76,6 @@ const selectLanguageOption = { label: "Select language...", data: "" };
 const languageLabel = (code: string) => (languageOptions.find(l => l.data === code)?.label || code).replace(/^\S+\s/, "");
 const outputLanguageOptions = languageOptions.filter(lang => lang.data !== "auto");
 
-// Languages RapidOCR able to work with
-const rapidocrLanguages = new Set([
-    'en', 'zh-CN', 'zh-TW', 'ja', 'ko',
-    'de', 'fr', 'es', 'it', 'pt', 'nl', 'no', 'pl', 'tr', 'ro', 'vi', 'fi', 'hr',
-    'cs', 'hu', 'sv', 'da',
-    'ru', 'uk', 'el', 'th', 'bg'
-]);
-
 function formatBytes(bytes: number): string {
     if (bytes < 1024) return bytes + ' B';
     if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + ' KB';
@@ -625,17 +617,6 @@ function useNllbModelStatus() {
     });
 }
 
-function useRapidOCRStatus() {
-    return useModelDownload({
-        getStatusCall: 'get_rapidocr_models_status',
-        downloadCall: 'download_rapidocr_models',
-        cancelCall: 'cancel_rapidocr_models_download',
-        deleteCall: 'delete_rapidocr_models',
-        clearErrorCall: 'clear_rapidocr_models_error',
-        defaultApproxMb: 75,
-    });
-}
-
 const ModelActionButton: VFC<{
     state: ModelDownloadState;
     actionRef?: RefObject<HTMLDivElement>;
@@ -730,11 +711,9 @@ interface TabTranslationProps {
 export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrolled }) => {
     const { settings, updateSetting } = useSettings();
     const chromescreenaiActionRef = useRef<HTMLDivElement>(null);
-    const rapidocrActionRef = useRef<HTMLDivElement>(null);
     const ct2ActionRef = useRef<HTMLDivElement>(null);
     const csai = useChromeScreenAIStatus();
     const nllb = useNllbModelStatus();
-    const rapidocr = useRapidOCRStatus();
     const [cacheEntries, setCacheEntries] = useState<number | null>(null);
     const [windowsOcrLanguages, setWindowsOcrLanguages] = useState<string[] | null>(null);
 
@@ -759,7 +738,6 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
     useEffect(() => {
         if (!scrollTarget) return;
         const ref = scrollTarget === 'chromescreenai-action' ? chromescreenaiActionRef
-                  : scrollTarget === 'rapidocr-action' ? rapidocrActionRef
                   : scrollTarget === 'ct2-action' ? ct2ActionRef
                   : null;
 
@@ -782,17 +760,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
         : languageOptions;
 
     const placeholderOption = settings.inputLanguage === '' ? [selectLanguageOption] : [];
-    const inputLanguageOptions = settings.ocrProvider === 'rapidocr'
-        ? [...placeholderOption, ...filteredLanguageOptions.filter(lang => rapidocrLanguages.has(lang.data))]
-        : [...placeholderOption, ...filteredLanguageOptions];
-
-    // Reset input language if it's not supported by the current OCR provider
-    useEffect(() => {
-        if (settings.initialized && settings.ocrProvider === 'rapidocr'
-            && settings.inputLanguage !== '' && !rapidocrLanguages.has(settings.inputLanguage)) {
-            updateSetting('inputLanguage', '', 'Input language');
-        }
-    }, [settings.initialized, settings.ocrProvider]);
+    const inputLanguageOptions = [...placeholderOption, ...filteredLanguageOptions];
 
     // When switching to CT2, if source is auto-detect, clear it so user picks a specific language
     useEffect(() => {
@@ -810,9 +778,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                         label="Input Language"
                         description={isCT2
                             ? "Source language (auto-detect not available for offline translation)"
-                            : settings.ocrProvider === 'rapidocr'
-                                ? "Source language for text recognition"
-                                : "Source language (Select auto-detect if unsure)"}
+                            : "Source language (Select auto-detect if unsure)"}
                         rgOptions={inputLanguageOptions}
                         selectedOption={settings.inputLanguage}
                         onChange={(option: any) => updateSetting('inputLanguage', option.data, 'Input language')}
@@ -846,19 +812,13 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                             <Dropdown
                                 rgOptions={[
                                     { label: <span style={{ display: "flex", alignItems: "center", height: "20px", lineHeight: "20px" }}><span>On-Device</span><span style={{ fontSize: "10px", opacity: 0.7, marginLeft: "4px", transform: "translateY(2px)" }}>(Windows OCR)</span></span>, data: "windows_ocr" },
-                                    { label: <span style={{ display: "flex", alignItems: "center", height: "20px", lineHeight: "20px" }}><span>On-Device</span><span style={{ fontSize: "10px", opacity: 0.7, marginLeft: "4px", transform: "translateY(2px)" }}>(RapidOCR)</span></span>, data: "rapidocr" },
                                     { label: <span style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", width: "100%", height: "20px", lineHeight: "20px" }}><span style={{ display: "flex", alignItems: "center" }}><span>On-Device</span><span style={{ fontSize: "10px", opacity: 0.7, marginLeft: "4px", transform: "translateY(2px)" }}>(Chrome)</span></span><span className="dt-recommended-tag" style={{ fontSize: "10px", color: "#9aa0a6", fontStyle: "italic" }}>★ recommended</span></span>, data: "chromescreenai" },
                                     { label: <span>OCR.space</span>, data: "ocrspace" },
                                     { label: <span style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", width: "100%", height: "20px", lineHeight: "20px" }}><span>Google Cloud</span><span className="dt-recommended-tag" style={{ fontSize: "10px", color: "#9aa0a6", fontStyle: "italic" }}>★ recommended</span></span>, data: "googlecloud" },
                                     { label: <span style={{ display: "flex", alignItems: "center", gap: "6px", height: "20px", lineHeight: "20px" }}>Gemini Vision <BsStars style={{ fontSize: "12px" }} /></span>, data: "gemini_vision" }
                                 ]}
                                 selectedOption={settings.ocrProvider}
-                                onChange={(option) => {
-                                    updateSetting('ocrProvider', option.data, 'OCR provider');
-                                    if (option.data === 'rapidocr' && settings.inputLanguage !== '' && !rapidocrLanguages.has(settings.inputLanguage)) {
-                                        updateSetting('inputLanguage', '', 'Input language');
-                                    }
-                                }}
+                                onChange={(option) => updateSetting('ocrProvider', option.data, 'OCR provider')}
                             />
                             </div>
                             {settings.ocrProvider === 'googlecloud' && (
@@ -920,9 +880,6 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                             {settings.ocrProvider === 'chromescreenai' && (
                                 <ModelActionButton state={csai} actionRef={chromescreenaiActionRef} />
                             )}
-                            {settings.ocrProvider === 'rapidocr' && (
-                                <ModelActionButton state={rapidocr} actionRef={rapidocrActionRef} />
-                            )}
                         </Focusable>
                     </Field>
                 </PanelSectionRow>
@@ -944,23 +901,6 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                         childrenLayout="below"
                     >
                         <div style={{ color: "#8b929a", fontSize: "12px", lineHeight: "1.6", paddingLeft: "4px", paddingTop: "4px" }}>
-                            {settings.ocrProvider === 'rapidocr' && (
-                                <>
-                                    <div style={{ display: "inline-flex", flexDirection: "column" }}>
-                                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                                            <img src={steamdeckLogo} alt="" style={{ height: "18px" }} />
-                                            <span style={{ fontWeight: "bold", color: "#dcdedf" }}>On-Device (RapidOCR)</span>
-                                        </div>
-                                        <ModelHeadingProgressBar state={rapidocr} />
-                                    </div>
-                                    <ModelStatusIndicator state={rapidocr} />
-                                    <ModelDownloadError state={rapidocr} />
-                                    <ProviderRating quality={1} speed={1} />
-                                    <div>- Offline and privacy-friendly text recognition</div>
-                                    <div>- Requires 75MB one-time model download</div>
-                                    <div>- Customizable parameters</div>
-                                </>
-                            )}
                             {settings.ocrProvider === 'chromescreenai' && (
                                 <>
                                     <div style={{ display: "inline-flex", flexDirection: "column" }}>
@@ -1050,19 +990,6 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                     </Field>
                 </PanelSectionRow>
 
-                {settings.ocrProvider === 'rapidocr' && (
-                    <PanelSectionRow>
-                        <ToggleField
-                            label="Faster Recognition"
-                            description="Keeps the recognition engine loaded in memory between translations"
-                            checked={settings.rapidocrPersistentMode}
-                            onChange={(value) => {
-                                updateSetting('rapidocrPersistentMode', value, 'Faster recognition');
-                            }}
-                        />
-                    </PanelSectionRow>
-                )}
-
                 {settings.ocrProvider === 'chromescreenai' && (
                     <PanelSectionRow>
                         <ToggleField
@@ -1076,7 +1003,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                     </PanelSectionRow>
                 )}
 
-                {settings.ocrProvider !== 'ocrspace' && settings.ocrProvider !== 'gemini_vision' && settings.ocrProvider !== 'chromescreenai' && settings.ocrProvider !== 'windows_ocr' && (
+                {settings.ocrProvider === 'googlecloud' && (
                     <PanelSectionRow>
                         <ToggleField
                             label="Customize Recognition"
@@ -1085,61 +1012,11 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                             onChange={(value) => {
                                 updateSetting('customRecognitionSettings', value, 'Custom recognition settings');
                                 if (!value) {
-                                    updateSetting('rapidocrConfidence', 0.5, 'RapidOCR confidence');
-                                    updateSetting('rapidocrBoxThresh', 0.5, 'RapidOCR box threshold');
-                                    updateSetting('rapidocrUnclipRatio', 1.6, 'RapidOCR unclip ratio');
                                     updateSetting('confidenceThreshold', 0.6, 'Text recognition confidence');
                                 }
                             }}
                         />
                     </PanelSectionRow>
-                )}
-
-                {settings.customRecognitionSettings && settings.ocrProvider === 'rapidocr' && (
-                    <>
-                        <PanelSectionRow>
-                            <SliderField
-                                value={settings.rapidocrConfidence ?? 0.5}
-                                max={1.0}
-                                min={0.0}
-                                step={0.05}
-                                label="Recognition Confidence"
-                                description="Higher = less noise but may miss text. Lower = more text but more errors"
-                                showValue={true}
-                                onChange={(value) => {
-                                    updateSetting('rapidocrConfidence', value, 'RapidOCR confidence');
-                                }}
-                            />
-                        </PanelSectionRow>
-                        <PanelSectionRow>
-                            <SliderField
-                                value={settings.rapidocrBoxThresh ?? 0.5}
-                                max={1.0}
-                                min={0.1}
-                                step={0.05}
-                                label="Detection Sensitivity"
-                                description="Lower = finds more text regions, better for small text. Higher = fewer regions, but more confident detections"
-                                showValue={true}
-                                onChange={(value) => {
-                                    updateSetting('rapidocrBoxThresh', value, 'RapidOCR box threshold');
-                                }}
-                            />
-                        </PanelSectionRow>
-                        <PanelSectionRow>
-                            <SliderField
-                                value={settings.rapidocrUnclipRatio ?? 1.6}
-                                max={3.0}
-                                min={1.0}
-                                step={0.1}
-                                label="Box Expansion"
-                                description="Higher = larger text boxes, helps capture full words. Lower = tighter boxes around text"
-                                showValue={true}
-                                onChange={(value) => {
-                                    updateSetting('rapidocrUnclipRatio', value, 'RapidOCR unclip ratio');
-                                }}
-                            />
-                        </PanelSectionRow>
-                    </>
                 )}
 
                 {settings.customRecognitionSettings && settings.ocrProvider === 'googlecloud' && (

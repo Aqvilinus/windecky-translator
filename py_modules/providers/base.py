@@ -45,7 +45,6 @@ class ProviderType(Enum):
     GOOGLE = "google"           # Google Cloud (requires API key)
     OCR_SPACE = "ocrspace"      # OCR.space (free, no key needed)
     FREE_GOOGLE = "freegoogle"  # Free Google Translate via deep-translator
-    RAPIDOCR = "rapidocr"       # Local RapidOCR via ONNX Runtime (no internet required)
     GEMINI_VISION = "gemini_vision"  # Gemini Vision (OCR + translation in one step)
     CT2 = "ct2"                 # CTranslate2 translation
     CHROME_SCREEN_AI = "chromescreenai"  # Chrome Screen AI
