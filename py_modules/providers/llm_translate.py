@@ -10,7 +10,7 @@ import re
 import time
 from typing import Dict, List, Optional
 
-from .base import (TranslationProvider, ProviderType, NetworkError, ApiKeyError, RateLimitError, Response,
+from .base import (TranslationProvider, NetworkError, ApiKeyError, RateLimitError, Response,
                    chunk_indices, error_message, fetch, probe, raise_for_api_error)
 from . import gemini_api
 from .free_translate import FreeTranslateProvider
@@ -153,15 +153,8 @@ class LLMTranslateProvider(TranslationProvider):
     def name(self) -> str:
         return {"gemini": "AI (Gemini)", "groq": "AI (Groq)", "custom": "AI (Custom)"}.get(self._backend, "AI")
 
-    @property
-    def provider_type(self) -> ProviderType:
-        return ProviderType.LLM
-
     def is_available(self, source_lang: str, target_lang: str) -> bool:
         return True  # the fallback chain always is
-
-    def get_supported_languages(self) -> List[str]:
-        return list(LANG_NAMES.keys())
 
     # -- requests --
 
@@ -259,9 +252,7 @@ class LLMTranslateProvider(TranslationProvider):
 
         missing = [i for i in order if results[i] is None]
         if missing:
-            fallback = await self._fallback._translate_lines([texts[i] for i in missing],
-                                                       self._fallback._map_language(source_lang),
-                                                       self._fallback._map_language(target_lang))
+            fallback = await self._fallback._translate_lines([texts[i] for i in missing], source_lang, target_lang)
             for i, t in zip(missing, fallback):
                 results[i] = t
                 if t is not None:
@@ -272,12 +263,6 @@ class LLMTranslateProvider(TranslationProvider):
         out = Translations(results)
         out.sources = sources
         return out
-
-    async def translate(self, text: str, source_lang: str, target_lang: str) -> str:
-        if not text or not text.strip():
-            return text
-        result = (await self._translate_lines([text], source_lang, target_lang))[0]
-        return result if result is not None else text
 
     async def translate_batch(self, texts: List[str], source_lang: str, target_lang: str) -> List[Optional[str]]:
         if not texts:

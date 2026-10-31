@@ -10,13 +10,12 @@ from PIL import ImageChops
 
 import harness
 
-PLACEHOLDER = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
 
 
 def overlay_state(regions, **kw):
     """What src/windows.ts sends for a shown translation."""
     return {"visible": True, "regions": regions, "loading": False, "processingStep": "", "processingDetail": "",
-            "processingIsError": False, "translationsVisible": True, "fontScale": 1.0, **kw}
+            "processingIsError": False, "fontScale": 1.0, **kw}
 
 
 def pixels(img):
@@ -76,8 +75,8 @@ def test_a_damaged_settings_file_is_kept_aside(start, tmp_path):
 def test_capture_ocr_translate_overlay(backend, windows, net):
     shot, regions, translated = translate_screen(backend)
 
-    # the capture stays in memory: the frontend gets a name and a placeholder image
-    assert shot["base64"] == PLACEHOLDER and shot["path"].endswith(".png") and "The Banner Saga" in shot["path"]
+    # the capture stays in memory: the frontend gets only a name
+    assert shot == {"path": shot["path"]} and shot["path"].endswith(".png") and "The Banner Saga" in shot["path"]
     assert windows.captures == 1 and not os.path.exists(shot["path"])
     assert [r["text"] for r in regions] == [t for t, _ in harness.SCREEN]
     for r, (_, (x, y)) in zip(regions, harness.SCREEN):
@@ -115,11 +114,6 @@ def test_overlay_draws_the_labels_over_the_text(backend, windows, net):
     lower = diff.crop((10, 220, shot.width - 10, shot.height - 10))
     assert max(pixels(lower)) < 10
 
-    # translations hidden (the toggle): the still without labels
-    backend.call("native_overlay_update", overlay_state(translated, translationsVisible=False))
-    hidden = ImageChops.difference(windows.overlay.image(), shot).convert("L")
-    assert max(pixels(hidden.crop((40, 40, 420, 80)))) < 10
-
 
 def test_google_rate_limit_falls_back_to_bing(backend, net):
     net.google_status = 429
@@ -130,6 +124,40 @@ def test_google_rate_limit_falls_back_to_bing(backend, net):
     net.dictionary["Neues Spiel"] = "New game!"
     backend.call("translate_text", [{**regions[1], "text": "Neues Spiel"}], "en", "auto")
     assert len(net.calls(harness.GOOGLE_URL)) == 1
+
+
+def test_a_translation_that_gives_nothing_back_is_an_error(backend, net, monkeypatch):
+    """Google refuses and Bing's answer is unusable: say so instead of showing the originals as if translated."""
+    net.google_status = 429
+    free = backend.plugin._provider_manager.get_translation_provider()
+
+    async def unusable(texts, src, tgt):
+        return [None] * len(texts)
+    monkeypatch.setattr(free._bing, "translate_lines", unusable)
+    shot = backend.call("take_screenshot", "Game")
+    regions = backend.call("recognize_text_file", shot["path"])
+    reply = backend.call("translate_text", regions, "en", "auto")
+    assert reply["error"] == "translation_failed" and "did not answer" in reply["message"]
+    assert backend.call("get_translation_cache_stats")["entries"] == 0
+
+
+def test_offline_translation_failures_are_errors(backend, monkeypatch):
+    from providers import TranslationError
+    from providers.ct2_translate import CT2TranslateProvider
+    provider = CT2TranslateProvider.__new__(CT2TranslateProvider)  # no worker, no model folder
+    with pytest.raises(TranslationError, match="source language"):
+        provider._translate_batch_sync(["Hallo"], "auto", "en")
+
+
+def test_a_broken_cache_does_not_stop_the_translation(backend, net, monkeypatch):
+    import sqlite3
+
+    def locked(*args):
+        raise sqlite3.OperationalError("database is locked")
+    monkeypatch.setattr(backend.plugin._translation_cache, "get_many", locked)
+    monkeypatch.setattr(backend.plugin._translation_cache, "put_many", locked)
+    _, _, translated = translate_screen(backend)
+    assert [r["translatedText"] for r in translated] == ["Welcome, traveller", "New game"]
 
 
 def test_translation_cache(start, net):
@@ -156,9 +184,54 @@ def test_no_network(backend, net):
     assert backend.call("translate_text", regions, "en", "auto") == {"error": "network_error", "message": "No internet connection"}
 
 
+def test_ocr_engine_failures_reach_the_frontend(backend, monkeypatch):
+    """A failing engine is reported with its reason, not as an empty result ("No text found")."""
+    from providers import OCRError
+    provider = backend.plugin._provider_manager.get_ocr_provider()
+
+    async def times_out(image, language="auto"):
+        raise OCRError("On-device OCR timed out after 120 s")
+    monkeypatch.setattr(provider, "recognize", times_out)
+    shot = backend.call("take_screenshot", "Game")
+    assert backend.call("recognize_text_file", shot["path"]) == {
+        "error": "ocr_failed", "message": "On-device OCR timed out after 120 s"}
+
+    async def crashes(image, language="auto"):
+        raise ValueError("bug")
+    monkeypatch.setattr(provider, "recognize", crashes)
+    shot = backend.call("take_screenshot", "Game")
+    assert backend.call("recognize_text_file", shot["path"])["error"] == "ocr_failed"
+
+
+def test_chrome_screen_ai_failures_raise(monkeypatch, tmp_path):
+    """The engine's own failures (crash, timeout, unreadable output) become OCRError with a reason."""
+    import subprocess
+    from providers import OCRError
+    from providers.chromescreenai_provider import ChromeScreenAIProvider
+    provider = ChromeScreenAIProvider(model_dir=str(tmp_path))
+    provider._python_path = "python.exe"
+
+    def run(result=None, error=None):
+        def fake(*args, **kwargs):
+            if error:
+                raise error
+            return result
+        monkeypatch.setattr(subprocess, "run", fake)
+
+    for result, error, reason in (
+        (subprocess.CompletedProcess([], 3, "", "access violation"), None, "exit code 3"),
+        (subprocess.CompletedProcess([], 0, "not json", ""), None, "unreadable"),
+        (subprocess.CompletedProcess([], 0, '{"error": "model failed to load"}', ""), None, "model failed to load"),
+        (None, subprocess.TimeoutExpired("python.exe", 120), "timed out"),
+    ):
+        run(result, error)
+        with pytest.raises(OCRError, match=reason):
+            provider._recognize_oneshot(b"png")
+
+
 def test_nothing_captured(backend, windows):
     windows.capture_image = None  # no foreground window
-    assert backend.call("take_screenshot", "Game") == {"path": "", "base64": ""}
+    assert backend.call("take_screenshot", "Game") == {"path": ""}
 
 
 def test_screenshot_files_outside_the_plugin_are_refused(backend, tmp_path):
@@ -181,11 +254,63 @@ def test_pause_game_while_translating(start, windows, net):
     assert windows.processes.suspended == set()
 
 
+def test_a_game_that_cannot_be_paused_is_reported_once(start, windows, net, main):
+    b = start({"pause_game_on_overlay": True})
+    _, _, translated = translate_screen(b)
+    windows.processes.suspend = lambda pid: False  # e.g. access denied
+
+    async def show_twice():
+        for _ in range(2):
+            b.plugin._overlay_visible = False
+            await b.plugin.native_overlay_update(overlay_state(translated))
+        await harness.asyncio.sleep(0.05)
+    b.run(show_twice())
+    assert [e for e in main.test_events if e[0] == "translator_problem"] == [
+        ("translator_problem", ("Pause Game While Translating: Windows didn't let the plugin pause this game "
+                                "(details in the plugin log)",))]
+
+
 def test_switching_the_plugin_off_resumes_a_paused_game(start, windows, net):
     b = start({"pause_game_on_overlay": True})
     _, _, translated = translate_screen(b)
     b.call("native_overlay_update", overlay_state(translated))
     b.call("set_setting", "enabled", False)
+    assert windows.processes.suspended == set()
+
+
+def test_a_taken_hotkey_is_reported(backend):
+    assert backend.call("get_boot_status") == []
+    backend.plugin._hotkey.error = 1409
+    [problem] = backend.call("get_boot_status")
+    assert "Ctrl+Alt+T is taken by another program" in problem
+
+
+def test_overlay_failures_reach_the_frontend(backend, windows, main):
+    backend.call("native_overlay_update", {"visible": False})  # creates the overlay
+    windows.overlay.on_error("draw failed: MemoryError()")
+
+    async def wait():
+        for _ in range(50):
+            if main.test_events:
+                return
+            await harness.asyncio.sleep(0.01)
+    backend.run(wait())
+    assert main.test_events == [("translator_problem", ("The translation overlay doesn't work: draw failed: MemoryError()",))]
+
+
+def test_hotkey_resumes_a_paused_game_even_without_the_frontend(start, windows, net):
+    b = start({"pause_game_on_overlay": True})
+    _, _, translated = translate_screen(b)
+    b.call("native_overlay_update", overlay_state(translated))
+    assert windows.processes.suspended == {harness.GAME_PID}
+
+    async def press():  # no frontend answers the event
+        t = threading.Thread(target=b.plugin._on_hotkey)  # the hotkey's own thread
+        t.start()
+        t.join()
+        await harness.asyncio.sleep(0.05)
+
+    b.run(press())
     assert windows.processes.suspended == set()
 
 

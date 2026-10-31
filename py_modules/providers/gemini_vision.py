@@ -1,6 +1,7 @@
 # providers/gemini_vision.py
 # Gemini Vision provider -- combined OCR + translation in a single API call
 
+import asyncio
 import base64
 import io
 import json
@@ -8,17 +9,16 @@ import logging
 import re
 from typing import List, Optional
 
-from PIL import Image
 
 from . import gemini_api
 from .base import (
     OCRProvider,
-    ProviderType,
     TextRegion,
     ApiKeyError,
     classify_google_error,
     probe,
     raise_for_api_error,
+    to_jpeg,
 )
 
 logger = logging.getLogger(__name__)
@@ -152,15 +152,8 @@ class GeminiVisionProvider(OCRProvider):
     def name(self) -> str:
         return "Gemini Vision"
 
-    @property
-    def provider_type(self) -> ProviderType:
-        return ProviderType.GEMINI_VISION
-
     def is_available(self, language: str = "auto") -> bool:
         return bool(self._api_key)
-
-    def get_supported_languages(self) -> List[str]:
-        return list(LANG_NAMES.keys())
 
     def _build_system_instruction(self) -> str:
         return (
@@ -194,7 +187,7 @@ class GeminiVisionProvider(OCRProvider):
             "system_instruction": {"parts": [{"text": self._build_system_instruction()}]},
             "contents": [{
                 "parts": [
-                    {"inline_data": {"mime_type": "image/png", "data": base64.b64encode(image_data).decode('utf-8')}},
+                    {"inline_data": {"mime_type": "image/jpeg", "data": base64.b64encode(image_data).decode('utf-8')}},
                     {"text": prompt},
                 ]
             }],
@@ -214,11 +207,12 @@ class GeminiVisionProvider(OCRProvider):
         if not self._api_key:
             raise ApiKeyError("Gemini API key not configured")
 
+        from PIL import Image  # Pillow is imported where it's used (see main.py _BOOT_ERRORS)
         img_width, img_height = Image.open(io.BytesIO(image_data)).size
 
         prompt = self._build_prompt(language, self._target_language)
 
-        response_text = await self._call_api(image_data, prompt)
+        response_text = await self._call_api(await asyncio.to_thread(to_jpeg, image_data), prompt)
 
         regions_data = _parse_json_response(response_text)
         if regions_data is None:

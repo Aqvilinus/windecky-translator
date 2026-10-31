@@ -24,7 +24,7 @@ import {
 import { BsTranslate } from "react-icons/bs";
 import { ImageState } from "./Overlay";
 import { GameTranslatorLogic } from "./Translator";
-import { forwardOverlayToBackend, listenForHotkey, showBootProblems } from "./windows";
+import { forwardOverlayToBackend, listenForHotkey, listenForProblems, showBootProblems } from "./windows";
 import { adoptActivePlugin } from "./deckyState";
 import { SettingsProvider, useSettings } from "./SettingsContext";
 import { logger } from "./Logger";
@@ -101,24 +101,7 @@ const GameTranslator: VFC<{ logic: GameTranslatorLogic }> = ({ logic }) => {
         setPendingScrollTarget(scrollTargetId ?? null);
     };
 
-    useEffect(() => {
-        // Don't poll overlay state if plugin is disabled
-        if (!settings.enabled) {
-            setOverlayVisible(false);
-            return;
-        }
-
-        const checkOverlayState = () => {
-            setOverlayVisible(logic.isOverlayVisible());
-        };
-
-        checkOverlayState();
-        const intervalId = setInterval(checkOverlayState, 500);
-
-        return () => {
-            clearInterval(intervalId);
-        };
-    }, [logic, settings.enabled]);
+    useEffect(() => logic.imageState.subscribe(s => setOverlayVisible(s.visible)), [logic]);
 
     const probeReachability = useCallback(async () => {
         const s = settingsRef.current;
@@ -281,6 +264,7 @@ export default definePlugin(() => {
     // The backend draws the overlay over the game window (py_modules/winport/overlay.py)
     const stopForwarding = forwardOverlayToBackend(imageState, logic.dismiss);
     const stopHotkey = listenForHotkey(logic);
+    const stopProblems = listenForProblems(PLUGIN_NAME);
     // after a reload the side menu would keep showing the unloaded instance (deckyState.ts)
     const stopAdopting = adoptActivePlugin(PLUGIN_NAME,
         p => (p.content as { props?: { logic?: unknown } } | undefined)?.props?.logic === logic);
@@ -300,9 +284,11 @@ export default definePlugin(() => {
         onDismount() {
             stopForwarding();
             stopHotkey();
+            stopProblems();
             stopAdopting();
             routerHook.removeGlobalComponent("TranslatorSettingsLoader");
         },
-        alwaysRender: true
+        // no alwaysRender: Decky then unmounts the panel when the side menu closes, which stops its status polling
+        // (a web request every 10 s) during the game
     };
 });

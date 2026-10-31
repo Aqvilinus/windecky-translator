@@ -6,36 +6,27 @@ export interface ErrorResponse {
     message: string;
 }
 
-export class NetworkError extends Error {
-    constructor(message: string) {
-        super(message);
-        this.name = 'NetworkError';
-    }
-}
-
-export class ApiKeyError extends Error {
-    constructor(message: string) {
-        super(message);
-        this.name = 'ApiKeyError';
-    }
-}
-
-export class RateLimitError extends Error {
-    constructor(message: string) {
-        super(message);
-        this.name = 'RateLimitError';
-    }
-}
-
-export class ModelNotAvailableError extends Error {
-    constructor(message: string) {
-        super(message);
-        this.name = 'ModelNotAvailableError';
-    }
-}
+// A failure the backend reported as {error, message}: the message is shown on the overlay
+export class BackendError extends Error {}
+export class NetworkError extends BackendError {}
+export class ApiKeyError extends BackendError {}
+export class RateLimitError extends BackendError {}
+export class ModelNotAvailableError extends BackendError {}
 
 function isErrorResponse(value: unknown): value is ErrorResponse {
     return typeof value === 'object' && value !== null && 'error' in value && 'message' in value;
+}
+
+// A backend reply that reports a failure ({error, message}) as the matching error; any other reply passes through
+export function throwIfBackendError<T>(response: T | ErrorResponse): T {
+    if (!isErrorResponse(response)) return response;
+    switch (response.error) {
+        case 'network_error': throw new NetworkError(response.message);
+        case 'api_key_error': throw new ApiKeyError(response.message);
+        case 'rate_limit_error': throw new RateLimitError(response.message);
+        case 'model_not_available': throw new ModelNotAvailableError(response.message);
+        default: throw new BackendError(response.message);  // ocr_failed, translation_failed
+    }
 }
 
 export interface TextRegion {
@@ -125,10 +116,6 @@ export class TextRecognizer {
 
     setConfidenceThreshold(threshold: number): void {
         this.confidenceThreshold = threshold;
-    }
-
-    getConfidenceThreshold(): number {
-        return this.confidenceThreshold;
     }
 
     // Phase 1: group OCR boxes that sit on the same horizontal line.
@@ -652,44 +639,14 @@ export class TextRecognizer {
     }
 
     async recognizeTextFile(imagePath: string): Promise<TextRegion[]> {
-        try {
-            const response = await call<[string], TextRegion[] | ErrorResponse>('recognize_text_file', imagePath);
-            if (response) {
-                if (isErrorResponse(response)) {
-                    const errorResponse = response as ErrorResponse;
-                    if (errorResponse.error === 'network_error') {
-                        throw new NetworkError(errorResponse.message);
-                    }
-                    if (errorResponse.error === 'api_key_error') {
-                        throw new ApiKeyError(errorResponse.message);
-                    }
-                    if (errorResponse.error === 'rate_limit_error') {
-                        throw new RateLimitError(errorResponse.message);
-                    }
-                    if (errorResponse.error === 'model_not_available') {
-                        throw new ModelNotAvailableError(errorResponse.message);
-                    }
-                    logger.error('TextRecognizer', `Error from backend: ${errorResponse.error} - ${errorResponse.message}`);
-                    return [];
-                }
+        const regions = throwIfBackendError(
+            await call<[string], TextRegion[] | ErrorResponse>('recognize_text_file', imagePath)) || [];
+        logger.info('TextRecognizer', `Got ${regions.length} regions from file-based OCR`);
 
-                const regions = response as TextRegion[];
-                logger.info('TextRecognizer', `Got ${regions.length} regions from file-based OCR`);
+        const mergedRegions = this.applyAutoGlue(regions);
+        const filteredRegions = this.filterUntranslatableText(mergedRegions);
+        logger.info('TextRecognizer', `After filtering, ${filteredRegions.length} regions remain`);
 
-                const mergedRegions = this.applyAutoGlue(regions);
-                const filteredRegions = this.filterUntranslatableText(mergedRegions);
-                logger.info('TextRecognizer', `After filtering, ${filteredRegions.length} regions remain`);
-
-                return filteredRegions;
-            }
-            logger.error('TextRecognizer', 'Failed to recognize text (file-based)');
-            return [];
-        } catch (error) {
-            if (error instanceof NetworkError || error instanceof ApiKeyError || error instanceof RateLimitError || error instanceof ModelNotAvailableError) {
-                throw error;
-            }
-            logger.error('TextRecognizer', 'Text recognition error (file-based)', error);
-            return [];
-        }
+        return filteredRegions;
     }
 }

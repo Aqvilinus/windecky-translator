@@ -14,7 +14,6 @@ per-monitor DPI aware); CSS sizes from Overlay.tsx are multiplied by the monitor
 """
 import ctypes
 import logging
-import math
 import os
 import queue
 import threading
@@ -164,9 +163,9 @@ def render(state, target, mon, scale, image=None):
     """The overlay image for the monitor rectangle mon = (left, top, width, height). image: the captured frame
     (PIL, capture pixels).
 
-    As in Overlay.tsx the overlay is a still: the captured frame covers the window, the translations sit on it, and a
-    thin border marks it (red: translations shown, amber: hidden). The game keeps running underneath unseen, so the
-    labels never go stale; the shortcut closes the still and shows the live game again."""
+    The overlay is a still: the captured frame covers the window, the translations sit on it, and a thin red border
+    marks it. The game keeps running underneath unseen, so the labels never go stale; the shortcut closes the still
+    and shows the live game again."""
     mx, my, mw, mh = mon
     img = Image.new("RGBA", (mw, mh), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
@@ -177,20 +176,13 @@ def render(state, target, mon, scale, image=None):
 
     if image is not None:
         img.paste(image, (ox, oy))
-        border = (244, 67, 54, 255) if state.get("translationsVisible", True) else (255, 193, 7, 255)
-        d.rectangle((ox, oy, ox + tw - 1, oy + th - 1), outline=border, width=max(1, int(scale)))
+        d.rectangle((ox, oy, ox + tw - 1, oy + th - 1), outline=(244, 67, 54, 255), width=max(1, int(scale)))
 
-    if state.get("translationsVisible", True) and regions and not loading:
+    if regions and not loading:
         _draw_labels(d, regions, ox, oy, tw, state, scale, image)
 
     if loading and state.get("processingStep"):
         _draw_pill(d, state, ox + int(20 * scale), oy + th - int(20 * scale), scale)
-    elif not state.get("translationsVisible", True) and not loading:
-        r = int(22 * scale)
-        cx, cy = ox + int(20 * scale) + r, oy + th - int(20 * scale) - r
-        d.ellipse((cx - r, cy - r, cx + r, cy + r), fill=(0, 0, 0, 178))
-        d.ellipse((cx - r // 2, cy - r // 3, cx + r // 2, cy + r // 3), outline=(255, 193, 7, 255), width=max(2, int(2 * scale)))
-        d.line((cx - r // 2, cy - r // 2, cx + r // 2, cy + r // 2), fill=(255, 193, 7, 255), width=max(2, int(2 * scale)))
     return img
 
 
@@ -298,7 +290,7 @@ def _draw_labels(d, regions, ox, oy, img_width, state, scale, image=None):
         size[group[i]] = min(size.get(group[i], own), own)
 
     for i in shown:
-        r, (x0, y0, x1, y1), align = regions[i], boxes[i], aligns[i]
+        (x0, y0, x1, y1), align = boxes[i], aligns[i]
         text, width, height = rooms[i]
         font_size = size[group[i]]
         font = font_for(text, font_size)
@@ -365,7 +357,9 @@ def _is_ghost_of(hwnd, target):
 class Overlay:
     """Owns the overlay window on its own thread; show()/hide() can be called from any thread."""
 
-    def __init__(self):
+    def __init__(self, on_error=None):
+        """on_error(message): called (on the overlay thread) when the overlay stops working, once per new error."""
+        self._on_error = on_error
         self._queue = queue.Queue()
         self._thread = None
         self._hwnd = None
@@ -376,7 +370,7 @@ class Overlay:
         self.error = None  # why the overlay can't be drawn (get_windows_status), None while it works
 
     def start(self):
-        if self._thread is None:
+        if self._thread is None or not self._thread.is_alive():  # first use, or the thread died: (re)start it
             self._thread = threading.Thread(target=self._run, name="translator-overlay", daemon=True)
             self._thread.start()
 
@@ -403,8 +397,9 @@ class Overlay:
         hinst = kernel32.GetModuleHandleW(None)
         wc = WNDCLASSW(lpfnWndProc=_WNDPROC, hInstance=hinst, lpszClassName=CLASS_NAME)
         user32.RegisterClassW(ctypes.byref(wc))  # fails harmlessly if a previous overlay thread registered it
-        self._hwnd = user32.CreateWindowExW(WS_EX_STYLE, CLASS_NAME, "Decky Translator", WS_POPUP, 0, 0, 1, 1,
+        self._hwnd = user32.CreateWindowExW(WS_EX_STYLE, CLASS_NAME, "WinDecky Translator", WS_POPUP, 0, 0, 1, 1,
                                             None, None, hinst, None)
+        self._shown = False  # a new window (this thread may replace one that died)
         if not self._hwnd:
             self._fail(f"could not create the overlay window (error {ctypes.get_last_error()})")
         msg = wintypes.MSG()
@@ -438,6 +433,8 @@ class Overlay:
                 while user32.PeekMessageW(ctypes.byref(msg), None, 0, 0, PM_REMOVE):
                     user32.TranslateMessage(ctypes.byref(msg))
                     user32.DispatchMessageW(ctypes.byref(msg))
+        except Exception as e:  # noqa: BLE001 - reported; the next show() starts a new thread
+            self._fail(f"the overlay thread stopped: {e!r}")
         finally:
             self._free_dib()
             user32.DestroyWindow(self._hwnd)
@@ -473,6 +470,8 @@ class Overlay:
         """Log a drawing failure once (until the overlay works again) and keep it for get_windows_status."""
         if error != self.error:
             logger.error("overlay: %s", error)
+            if self._on_error:
+                self._on_error(error)
         self.error = error
 
     def _dib_for(self, mw, mh, screen):

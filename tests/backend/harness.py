@@ -1,6 +1,6 @@
 """main.py without Decky Loader, Steam or a game: what the backend tests run it with.
 
-- Decky's module (decky / decky_plugin) is a stand-in with the directories in a temporary folder, a logger, and
+- Decky's module (decky) is a stand-in with the directories in a temporary folder, a logger, and
   emit() recording the events sent to the frontend.
 - The Windows parts behind main.py's own names are replaced: the capture returns a test image of a game screen, the
   overlay window records what it is told and draws it with the real winport.overlay.render (Pillow) into an image,
@@ -54,7 +54,6 @@ def install_decky(base_dir):
     mod.logger = logging.getLogger("decky-translator-test")
     mod.emit = emit
     sys.modules["decky"] = mod
-    sys.modules["decky_plugin"] = mod
     os.environ.update(DECKY_PLUGIN_SETTINGS_DIR=dirs["settings"], DECKY_PLUGIN_LOG_DIR=dirs["logs"],
                       DECKY_PLUGIN_DIR=ROOT, DECKY_HOME=dirs["home"], TEMP=dirs["runtime"])
     return mod, events
@@ -109,7 +108,8 @@ class FakeOverlay:
     """winport.overlay.Overlay: records show/hide and draws each shown state with the real render()."""
     instances = []
 
-    def __init__(self):
+    def __init__(self, on_error=None):
+        self.on_error = on_error
         self.shown = []        # (state, target) per show()
         self.hides = 0
         self.visible = False
@@ -141,12 +141,13 @@ class FakeHotkey:
         self.on_press = on_press
         self.enabled = None
         self.closed = False
+        self.error = None  # 1409: another program owns the combo
 
     def set_enabled(self, on):
         self.enabled = on
 
     def status(self):
-        return {"registered": bool(self.enabled), "hotkey": "Ctrl+Alt+T"}
+        return {"registered": bool(self.enabled) and not self.error, "hotkey": "Ctrl+Alt+T", "error": self.error}
 
     def close(self):
         self.closed = True

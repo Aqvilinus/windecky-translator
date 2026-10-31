@@ -17,6 +17,7 @@ import subprocess
 import sys
 import tarfile
 import zipfile
+from importlib.metadata import distributions
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -27,7 +28,7 @@ ZIP_NAME = "decky-translator-windows.zip"
 PLUGIN_FOLDER = "decky-translator"
 
 # What Decky's CLI puts in a plugin zip (no source maps, no frontend sources)
-PLUGIN_FILES = ["main.py", "plugin.json", "LICENSE", "README.md", "THIRD_PARTY_LICENSES"]
+PLUGIN_FILES = ["main.py", "plugin.json", "LICENSE", "README.md"]  # + THIRD_PARTY_LICENSES, completed by the build
 PLUGIN_DIRS = ["py_modules/providers", "py_modules/winport"]
 
 # Not needed at runtime (as upstream strips them)
@@ -76,6 +77,31 @@ def fetch_python(target, work):
                     os.path.join(target, "python"))  # -> python314/python/python.exe
 
 
+def license_of(meta):
+    """A package's license as its metadata states it: the SPDX expression, else a short License field, else the
+    trove classifiers."""
+    if meta.get("License-Expression"):
+        return meta["License-Expression"]
+    text = (meta.get("License") or "").strip()
+    if text and "\n" not in text and len(text) <= 40:
+        return text
+    classifiers = [c.split(" :: ")[-1] for c in meta.get_all("Classifier") or [] if c.startswith("License :: ")]
+    return ", ".join(classifiers) or "see its .dist-info folder"
+
+
+def third_party_licenses(py_modules):
+    """THIRD_PARTY_LICENSES: the hand-written part (runtime, frontend, downloads) and the Python packages actually
+    in the archive, read from their metadata, so the list can't fall behind uv.lock."""
+    with open(os.path.join(ROOT, "THIRD_PARTY_LICENSES"), encoding="utf-8") as f:
+        text = f.read().rstrip() + "\n\n"
+    packages = sorted(distributions(path=[py_modules]), key=lambda d: d.metadata["Name"].lower())
+    if not packages:
+        raise SystemExit(f"no packages found in {py_modules}")
+    for d in packages:
+        text += f"{d.metadata['Name']} {d.version}: {license_of(d.metadata)}\n"
+    return text
+
+
 def make_dependencies(work, out):
     deps = os.path.join(work, "deps")
     shutil.rmtree(deps, ignore_errors=True)
@@ -86,10 +112,10 @@ def make_dependencies(work, out):
     with tarfile.open(path, "w:gz") as tar:
         tar.add(os.path.join(deps, "py_modules"), arcname="py_modules")
         tar.add(os.path.join(deps, "python314"), arcname="python314")
-    return path
+    return path, third_party_licenses(os.path.join(deps, "py_modules"))
 
 
-def make_zip(out, version, repo, deps_sha):
+def make_zip(out, version, repo, deps_sha, licenses):
     with open(os.path.join(ROOT, "package.json"), encoding="utf-8") as f:
         package = json.load(f)
     package["version"] = version
@@ -101,6 +127,7 @@ def make_zip(out, version, repo, deps_sha):
     path = os.path.join(out, ZIP_NAME)
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr(f"{PLUGIN_FOLDER}/package.json", json.dumps(package, indent=2, ensure_ascii=False) + "\n")
+        z.writestr(f"{PLUGIN_FOLDER}/THIRD_PARTY_LICENSES", licenses)
         for name in PLUGIN_FILES:
             z.write(os.path.join(ROOT, name), f"{PLUGIN_FOLDER}/{name}")
         dist = os.path.join(ROOT, "dist")
@@ -137,9 +164,9 @@ def main():
     if not os.path.exists(os.path.join(ROOT, "dist", "index.js")):
         raise SystemExit("dist/index.js missing: build the frontend first")
 
-    deps = make_dependencies(work, args.out)
+    deps, licenses = make_dependencies(work, args.out)
     deps_sha = sha256_of(deps)
-    plugin_zip = make_zip(args.out, args.version, args.repo, deps_sha)
+    plugin_zip = make_zip(args.out, args.version, args.repo, deps_sha, licenses)
     print(f"{deps}: {os.path.getsize(deps) / 1e6:.1f} MB, sha256 {deps_sha}")
     print(f"{plugin_zip}: {os.path.getsize(plugin_zip) / 1e6:.1f} MB")
     if os.environ.get("GITHUB_STEP_SUMMARY"):  # shown on the workflow run's page

@@ -5,13 +5,12 @@
 // backend, which took it.
 import { addEventListener, call, removeEventListener, toaster } from '@decky/api';
 import { Router } from '@decky/ui';
-import { ImageState } from './Overlay';
+import { ImageState, OverlayState } from './Overlay';
 import type { GameTranslatorLogic } from './Translator';
+import { logger } from './Logger';
 
 // The translate/close hotkey (py_modules/winport/hotkey.py HOTKEY)
 export const WINDOWS_HOTKEY = 'Ctrl+Alt+T';
-
-type StateListener = Parameters<ImageState['onStateChanged']>[0];
 
 // How often the side menus are checked while a translation is on screen
 const SIDE_MENU_CHECK_MS = 250;
@@ -37,20 +36,13 @@ export function forwardOverlayToBackend(state: ImageState, dismiss: () => void):
         }, SIDE_MENU_CHECK_MS);
     };
 
-    const onChange: StateListener = (
-        visible, _imageData, regions, loading, processingStep, processingDetail, processingIsError,
-        translationsVisible, fontScale,
-    ) => {
-        if (visible) watchMenus(); else stopWatchingMenus();
-        call('native_overlay_update', {
-            visible, regions, loading, processingStep, processingDetail, processingIsError,
-            translationsVisible, fontScale,
-        }).catch(() => { /* the backend logs its own errors */ });
-    };
-    state.onStateChanged(onChange);
+    const unsubscribe = state.subscribe((s: OverlayState) => {
+        if (s.visible) watchMenus(); else stopWatchingMenus();
+        call('native_overlay_update', s).catch(() => { /* the backend logs its own errors */ });
+    });
     return () => {
         stopWatchingMenus();
-        state.offStateChanged(onChange);
+        unsubscribe();
     };
 }
 
@@ -60,7 +52,9 @@ export function forwardOverlayToBackend(state: ImageState, dismiss: () => void):
 export function listenForHotkey(logic: GameTranslatorLogic): () => void {
     const onHotkey = () => {
         if (logic.imageState.isVisible()) logic.dismiss();
-        else closeAllSideMenus().then(() => logic.takeScreenshotAndTranslate());
+        else closeAllSideMenus()
+            .then(() => logic.takeScreenshotAndTranslate())
+            .catch(err => logger.error('Hotkey', 'Translation failed', err));
     };
     addEventListener('translator_hotkey', onHotkey);
     return () => removeEventListener('translator_hotkey', onHotkey);
@@ -76,6 +70,14 @@ export async function showBootProblems(title: string): Promise<void> {
         return;  // the backend didn't load at all: Decky shows that itself
     }
     for (const body of problems || []) toaster.toast({ title, body, duration: 10000 });
+}
+
+// Problems the backend finds later (main.py emits translator_problem, e.g. the overlay window stopped working): a
+// toast each, instead of translations that silently never appear
+export function listenForProblems(title: string): () => void {
+    const onProblem = (body: string) => toaster.toast({ title, body, duration: 10000 });
+    addEventListener('translator_problem', onProblem);
+    return () => removeEventListener('translator_problem', onProblem);
 }
 
 // Each Steam UI window (Big Picture, the overlay over each game) has a menu store of its own. Steam's internals: the
@@ -95,6 +97,8 @@ function anySideMenuOpen(stores = menuStores()): boolean {
 // was captured and translated along with the game. Close them in every window, then wait until none shows a side
 // menu, plus the closing animation.
 export async function closeAllSideMenus(): Promise<void> {
+    // Big Picture's own menu; guarded like the stores below, so a Steam update that renames it doesn't break Translate
+    try { Router.CloseSideMenus?.(); } catch { /* the menu stores below still close theirs */ }
     const stores = menuStores();
     let closed = false;
     for (const s of stores) {

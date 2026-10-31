@@ -4,8 +4,7 @@ import {
     ButtonItem,
     PanelSection,
     PanelSectionRow,
-    ToggleField,
-    Router
+    ToggleField
 } from "@decky/ui";
 
 import { VFC } from "react";
@@ -99,8 +98,7 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
     const handleButtonClick = () => {
         if (overlayVisible) {
             logic.dismiss();
-            Router.CloseSideMenus();
-            closeAllSideMenus();
+            closeAllSideMenus().catch(err => logger.error('TabMain', 'Closing the side menu failed', err));
             return;
         }
         if (ocrNeedsDownload) {
@@ -111,9 +109,7 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
             onNavigateToTab('translation', 'ct2-action');
             return;
         }
-        // Close menu first, then wait for UI to fully close before taking screenshot
-        Router.CloseSideMenus();
-        // over a game the side panel is in the Steam overlay's window: close it there too and wait (windows.ts)
+        // close the side menu (in every Steam window) and wait until it is gone before taking the screenshot
         closeAllSideMenus()
             .then(() => logic.takeScreenshotAndTranslate())
             .catch(err => logger.error('TabMain', 'Screenshot failed', err));
@@ -137,7 +133,7 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                         label={settings.enabled ? "Plugin is enabled" : "Plugin is disabled"}
                         description="Toggle the functionality on or off"
                         checked={settings.enabled}
-                        onChange={(value) => updateSetting('enabled', value, 'Decky Translator')}
+                        onChange={(value) => updateSetting('enabled', value, 'WinDecky Translator')}
                     />
                 </PanelSectionRow>
 

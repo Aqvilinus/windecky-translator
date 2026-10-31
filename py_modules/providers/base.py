@@ -2,6 +2,7 @@
 # Abstract base classes for OCR and Translation providers
 
 import asyncio
+import io
 import json
 import logging
 from abc import ABC, abstractmethod
@@ -27,6 +28,24 @@ class ApiKeyError(Exception):
 class RateLimitError(Exception):
     """Raised when API rate limit is exceeded."""
     pass
+
+
+def to_jpeg(image_data: bytes) -> bytes:
+    """A screenshot as JPEG for the web OCR engines: about a tenth of the PNG (1.2 MB instead of 14.5 MB at 4K), so
+    the upload is seconds shorter and stays under Google's request size limits. Same width and height, so the boxes
+    the engines return need no scaling; quality 90 keeps small text sharp."""
+    from PIL import Image
+    out = io.BytesIO()
+    Image.open(io.BytesIO(image_data)).convert("RGB").save(out, format="JPEG", quality=90)
+    return out.getvalue()
+
+
+class OCRError(Exception):
+    """The OCR engine failed (which is not the same as finding no text); the message is shown to the user."""
+
+
+class TranslationError(Exception):
+    """The translation engine failed; the message is shown to the user."""
 
 
 def classify_google_error(status_code: int, body: str) -> str:
@@ -174,12 +193,6 @@ class OCRProvider(ABC):
         """Return the provider name."""
         pass
 
-    @property
-    @abstractmethod
-    def provider_type(self) -> ProviderType:
-        """Return the provider type enum."""
-        pass
-
     @abstractmethod
     async def recognize(self, image_data: bytes, language: str = "auto") -> List[TextRegion]:
         """
@@ -207,16 +220,6 @@ class OCRProvider(ABC):
         """
         pass
 
-    @abstractmethod
-    def get_supported_languages(self) -> List[str]:
-        """
-        Return list of supported language codes.
-
-        Returns:
-            List of ISO 639-1 language codes
-        """
-        pass
-
 
 class TranslationProvider(ABC):
     """Abstract base class for translation providers."""
@@ -225,27 +228,6 @@ class TranslationProvider(ABC):
     @abstractmethod
     def name(self) -> str:
         """Return the provider name."""
-        pass
-
-    @property
-    @abstractmethod
-    def provider_type(self) -> ProviderType:
-        """Return the provider type enum."""
-        pass
-
-    @abstractmethod
-    async def translate(self, text: str, source_lang: str, target_lang: str) -> str:
-        """
-        Translate text from source to target language.
-
-        Args:
-            text: Text to translate
-            source_lang: Source language code (or "auto" for detection)
-            target_lang: Target language code
-
-        Returns:
-            Translated text
-        """
         pass
 
     @abstractmethod
@@ -274,16 +256,6 @@ class TranslationProvider(ABC):
 
         Returns:
             True if the provider can handle this language pair
-        """
-        pass
-
-    @abstractmethod
-    def get_supported_languages(self) -> List[str]:
-        """
-        Return list of supported language codes.
-
-        Returns:
-            List of language codes
         """
         pass
 

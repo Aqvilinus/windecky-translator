@@ -10,9 +10,8 @@ import os
 from datetime import datetime, date
 from typing import List
 
-from PIL import Image
 
-from .base import OCRProvider, ProviderType, TextRegion, NetworkError, RateLimitError, fetch, probe
+from .base import OCRProvider, TextRegion, NetworkError, RateLimitError, fetch, probe
 
 
 logger = logging.getLogger(__name__)
@@ -190,17 +189,9 @@ class OCRSpaceProvider(OCRProvider):
     def name(self) -> str:
         return "OCR.space"
 
-    @property
-    def provider_type(self) -> ProviderType:
-        return ProviderType.OCR_SPACE
-
     def is_available(self, language: str = "auto") -> bool:
         """Check if OCR is available for the given language."""
         return language in self.SUPPORTED_LANGUAGES
-
-    def get_supported_languages(self) -> List[str]:
-        """Return list of supported language codes."""
-        return self.SUPPORTED_LANGUAGES.copy()
 
     def _get_ocr_language(self, language: str) -> str:
         """Map our language code to OCR.space language code."""
@@ -217,6 +208,7 @@ class OCRSpaceProvider(OCRProvider):
 
     def _compress_in_process(self, image_data: bytes) -> bytes:
         """JPEG at falling quality, then falling scale, until it fits MAX_FILE_SIZE."""
+        from PIL import Image  # Pillow is imported where it's used (see main.py _BOOT_ERRORS)
         try:
             img = Image.open(io.BytesIO(image_data))
             if img.mode != 'RGB':
@@ -259,6 +251,7 @@ class OCRSpaceProvider(OCRProvider):
         try:
             # Compress image if needed (off the event loop: a 4K JPEG loop takes a while). The compression may also
             # scale the image down; OCR.space's boxes are in the sent image's pixels, so they are scaled back.
+            from PIL import Image  # Pillow is imported where it's used (see main.py _BOOT_ERRORS)
             original_width = Image.open(io.BytesIO(image_data)).width
             image_data = await asyncio.to_thread(self._compress_image, image_data)
             sent = Image.open(io.BytesIO(image_data))
