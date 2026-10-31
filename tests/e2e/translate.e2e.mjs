@@ -120,10 +120,12 @@ describe(`${NAME} end to end`, { timeout: 240000 }, () => {
         await expectOverlay(true, 'after Ctrl+Alt+T', 15000);
         await expectTranslationInLog();
 
-        const { text } = await steam.openPluginInSideMenu();
+        await steam.openPluginInSideMenu();
         await expectOverlay(false, 'with the side menu open', 3000);
         assert.equal((await steam.pluginState()).visible, false, 'the frontend still has a translation up');
-        assert.equal(text, 'Translate', 'the side menu button');
+        // the menu is checked every 250 ms: right as it opens, the button may still say Close Overlay
+        await waitFor('the side menu button to offer Translate',
+            async () => (await steam.pluginButton())?.text === 'Translate', 3000, 200);
 
         await steam.closeSideMenus();
         await sleep(1500);
