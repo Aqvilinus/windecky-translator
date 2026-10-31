@@ -4,7 +4,7 @@
 import hashlib
 import logging
 import time
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from .base import (
     OCRProvider,
@@ -25,8 +25,9 @@ from .chromescreenai_provider import ChromeScreenAIProvider
 from .gemini_vision import GeminiVisionProvider
 from .ct2_translate import CT2TranslateProvider
 from .llm_translate import LLMTranslateProvider
-from .nllb_downloader import NLLBDownloader
-from .screenai_downloader import APPROX_SIZE_MB as SCREENAI_APPROX_MB, ScreenAIDownloader
+from .model_download import ModelDownload
+from .nllb_downloader import NLLBDownload
+from .screenai_downloader import ScreenAIDownload
 
 logger = logging.getLogger(__name__)
 
@@ -53,8 +54,6 @@ __all__ = [
     'ChromeScreenAIProvider',
     'GeminiVisionProvider',
     'CT2TranslateProvider',
-    'NLLBDownloader',
-    'ScreenAIDownloader',
     'ProviderManager',
 ]
 
@@ -89,12 +88,9 @@ class ProviderManager:
         self._chromescreenai_persistent_mode = False
         self._ct2_persistent_mode = False
 
-        # CT2 translation
-        self._ct2_models_dir = None
-        self._model_manager = None
-
-        # Created on first configure() that supplies screenai_models_dir.
-        self._screenai_downloader: Optional[ScreenAIDownloader] = None
+        # The models the user downloads in the settings, by kind: "nllb" (offline translation), "chromescreenai"
+        # (on-device OCR); configure() creates them with their folders
+        self.downloads: Dict[str, ModelDownload] = {}
 
         self._reachability_cache: dict = {}
 
@@ -121,12 +117,10 @@ class ProviderManager:
             translation_provider: Translation provider preference - "freegoogle", "googlecloud", or "ct2"
             ct2_models_dir: Directory for CT2 translation model storage
         """
-        if ct2_models_dir:
-            self._ct2_models_dir = ct2_models_dir
-            if not self._model_manager:
-                self._model_manager = NLLBDownloader(ct2_models_dir)
-        if screenai_models_dir and not self._screenai_downloader:
-            self._screenai_downloader = ScreenAIDownloader(screenai_models_dir)
+        if ct2_models_dir and "nllb" not in self.downloads:
+            self.downloads["nllb"] = NLLBDownload(ct2_models_dir)
+        if screenai_models_dir and "chromescreenai" not in self.downloads:
+            self.downloads["chromescreenai"] = ScreenAIDownload(screenai_models_dir)
         self._google_api_key = google_api_key
         self._gemini_api_key = gemini_api_key
 
@@ -230,8 +224,8 @@ class ProviderManager:
                 provider.set_target_language(self._gemini_target_language)
                 self._ocr_providers[provider_type] = provider
             elif provider_type == ProviderType.CHROME_SCREEN_AI:
-                model_dir = self._screenai_downloader.get_resources_dir() if self._screenai_downloader else ""
-                provider = ChromeScreenAIProvider(model_dir=model_dir)
+                screenai = self.downloads.get("chromescreenai")
+                provider = ChromeScreenAIProvider(model_dir=screenai.resources_dir if screenai else "")
                 if self._chromescreenai_persistent_mode:
                     provider.set_persistent_mode(True)
                 self._ocr_providers[provider_type] = provider
@@ -280,10 +274,8 @@ class ProviderManager:
                     self._google_api_key
                 )
             elif provider_type == ProviderType.CT2:
-                if self._model_manager:
-                    provider = CT2TranslateProvider(
-                        model_manager=self._model_manager
-                    )
+                if "nllb" in self.downloads:
+                    provider = CT2TranslateProvider(self.downloads["nllb"])
                     if self._ct2_persistent_mode:
                         provider.set_persistent_mode(True)
                     self._translation_providers[provider_type] = provider
@@ -370,16 +362,11 @@ class ProviderManager:
             status["llm_configured"] = llm.is_configured()
             status["llm_last_error"] = llm.last_error
 
-        status["nllb_downloaded"] = self.is_nllb_model_downloaded()
-        status["chromescreenai_downloaded"] = self.is_chromescreenai_downloaded()
-
-        nllb_dl = self._model_manager.get_download_status() if self._model_manager else {}
-        status["nllb_downloading"] = bool(nllb_dl.get("downloading"))
-        status["nllb_progress"] = float(nllb_dl.get("progress") or 0)
-
-        scai_dl = self._screenai_downloader.get_status() if self._screenai_downloader else {}
-        status["chromescreenai_downloading"] = bool(scai_dl.get("downloading"))
-        status["chromescreenai_progress"] = float(scai_dl.get("progress") or 0)
+        for kind in ("nllb", "chromescreenai"):
+            s = self.model_status(kind) or {}
+            status[f"{kind}_downloaded"] = bool(s.get("downloaded"))
+            status[f"{kind}_downloading"] = bool(s.get("downloading"))
+            status[f"{kind}_progress"] = float(s.get("progress") or 0)
 
         return status
 
@@ -445,85 +432,41 @@ class ProviderManager:
             logger.warning(f"Reachability probe failed for {provider}/{kind}: {e}")
             return False, f"Probe failed: {type(e).__name__}"
 
-    # -- NLLB model management --
+    # -- the downloadable models (self.downloads)
 
-    def is_nllb_model_downloaded(self):
-        if self._model_manager:
-            return self._model_manager.is_model_downloaded()
-        return False
+    def model_installed(self, kind: str) -> bool:
+        d = self.downloads.get(kind)
+        return bool(d and d.is_installed())
 
-    def get_nllb_model_status(self):
-        if not self._model_manager:
-            return {"downloaded": False, "size": 0, "downloading": False, "progress": 0, "error": None}
-        dl_status = self._model_manager.get_download_status()
-        return {
-            "downloaded": self._model_manager.is_model_downloaded(),
-            "size": self._model_manager.get_model_size(),
-            "approx_size_mb": self._model_manager.get_approx_size_mb(),
-            "downloading": dl_status["downloading"],
-            "progress": dl_status["progress"],
-            "error": dl_status["error"],
-        }
+    def model_status(self, kind: str) -> Optional[dict]:
+        d = self.downloads.get(kind)
+        return d.status() if d else None
 
-    def download_nllb_model(self):
-        if self._model_manager:
-            return self._model_manager.start_download()
-        return False
+    def download_model(self, kind: str) -> bool:
+        d = self.downloads.get(kind)
+        return bool(d and d.start())
 
-    def delete_nllb_model(self):
-        if not self._model_manager:
+    def cancel_model_download(self, kind: str) -> None:
+        if kind in self.downloads:
+            self.downloads[kind].cancel()
+
+    def clear_model_error(self, kind: str) -> None:
+        if kind in self.downloads:
+            self.downloads[kind].clear_error()
+
+    def delete_model(self, kind: str) -> bool:
+        """Delete a downloaded model, after stopping the engine that has it open."""
+        if kind not in self.downloads:
             return False
-        ct2 = self._translation_providers.get(ProviderType.CT2)
-        if ct2:
-            if ct2._loaded_model_dir == self._model_manager.get_model_dir():
+        if kind == "nllb":
+            ct2 = self._translation_providers.get(ProviderType.CT2)
+            if ct2:
                 ct2.unload_current_model()
-        return self._model_manager.delete_model()
-
-    def cancel_nllb_download(self):
-        if self._model_manager:
-            self._model_manager.cancel_download()
-
-    def clear_nllb_download_error(self):
-        if self._model_manager:
-            self._model_manager.clear_download_error()
-
-    # -- Chrome Screen AI download management --
-
-    def is_chromescreenai_downloaded(self) -> bool:
-        if self._screenai_downloader:
-            return self._screenai_downloader.is_installed()
-        return False
-
-    def get_chromescreenai_status(self) -> dict:
-        if not self._screenai_downloader:
-            return {
-                "downloaded": False, "size": 0, "approx_size_mb": SCREENAI_APPROX_MB,
-                "downloading": False, "progress": 0, "error": None,
-            }
-        return self._screenai_downloader.get_status()
-
-    def download_chromescreenai(self) -> bool:
-        if self._screenai_downloader:
-            return self._screenai_downloader.start_download()
-        return False
-
-    def cancel_chromescreenai_download(self) -> None:
-        if self._screenai_downloader:
-            self._screenai_downloader.cancel_download()
-
-    def clear_chromescreenai_error(self) -> None:
-        if self._screenai_downloader:
-            self._screenai_downloader.clear_error()
-
-    def delete_chromescreenai(self) -> bool:
-        if not self._screenai_downloader:
-            return False
-        provider = self._ocr_providers.get(ProviderType.CHROME_SCREEN_AI)
-        if provider:
-            provider.stop_worker()
-        # Drop the cached provider so it re-checks availability after delete.
-        self._ocr_providers.pop(ProviderType.CHROME_SCREEN_AI, None)
-        return self._screenai_downloader.delete()
+        elif kind == "chromescreenai":
+            screenai = self._ocr_providers.pop(ProviderType.CHROME_SCREEN_AI, None)  # rechecks availability later
+            if screenai:
+                screenai.stop_worker()
+        return self.downloads[kind].delete()
 
     def shutdown(self):
         ct2 = self._translation_providers.get(ProviderType.CT2)

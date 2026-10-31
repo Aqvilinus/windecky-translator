@@ -527,26 +527,22 @@ function formatApproxSize(mb: number): string {
     return `${Math.round(mb)} MB`;
 }
 
-function useModelDownload(opts: {
-    getStatusCall: string;
-    downloadCall: string;
-    cancelCall: string;
-    deleteCall: string;
-    clearErrorCall: string;
-    defaultApproxMb: number;
-}): ModelDownloadState {
+// A model the user downloads here (main.py get_model_status & co.): "nllb" or "chromescreenai"
+type ModelKind = 'nllb' | 'chromescreenai';
+
+function useModelDownload(kind: ModelKind, approxMb: number): ModelDownloadState {
     const [status, setStatus] = useState<any>({
-        downloaded: false, size: 0, approx_size_mb: opts.defaultApproxMb,
+        downloaded: false, size: 0, approx_size_mb: approxMb,
         downloading: false, progress: 0, error: null,
     });
     const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     const refresh = useCallback(async () => {
         try {
-            const s = await call<[], any>(opts.getStatusCall);
+            const s = await call<[ModelKind], any>('get_model_status', kind);
             if (s) setStatus(s);
         } catch (e) { /* ignore */ }
-    }, [opts.getStatusCall]);
+    }, [kind]);
 
     useEffect(() => { refresh(); }, []);
 
@@ -563,14 +559,14 @@ function useModelDownload(opts: {
     }, [status.downloading, refresh]);
 
     const handleDownload = async () => {
-        await call(opts.clearErrorCall);
-        const started = await call<[], boolean>(opts.downloadCall);
+        await call('clear_model_error', kind);
+        const started = await call<[ModelKind], boolean>('download_model', kind);
         if (started) {
             setStatus((prev: any) => ({ ...prev, downloading: true, progress: 0, error: null }));
         }
     };
-    const handleCancel = async () => { await call(opts.cancelCall); };
-    const handleDelete = async () => { await call(opts.deleteCall); refresh(); };
+    const handleCancel = async () => { await call('cancel_model_download', kind); };
+    const handleDelete = async () => { await call('delete_model', kind); refresh(); };
 
     const isDownloading = status.downloading;
     const isDownloaded = status.downloaded;
@@ -590,25 +586,11 @@ function useModelDownload(opts: {
 }
 
 function useChromeScreenAIStatus() {
-    return useModelDownload({
-        getStatusCall: 'get_chromescreenai_status',
-        downloadCall: 'download_chromescreenai',
-        cancelCall: 'cancel_chromescreenai_download',
-        deleteCall: 'delete_chromescreenai',
-        clearErrorCall: 'clear_chromescreenai_error',
-        defaultApproxMb: 80,  // py_modules/providers/screenai_downloader.py APPROX_SIZE_MB
-    });
+    return useModelDownload('chromescreenai', 80);  // until the backend answers (screenai_downloader.py)
 }
 
 function useNllbModelStatus() {
-    return useModelDownload({
-        getStatusCall: 'get_nllb_model_status',
-        downloadCall: 'download_nllb_model',
-        cancelCall: 'cancel_nllb_download',
-        deleteCall: 'delete_nllb_model',
-        clearErrorCall: 'clear_nllb_model_error',
-        defaultApproxMb: 1410,
-    });
+    return useModelDownload('nllb', 1410);
 }
 
 const ModelActionButton: VFC<{

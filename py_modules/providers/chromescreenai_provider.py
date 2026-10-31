@@ -49,7 +49,7 @@ class ChromeScreenAIProvider(OCRProvider):
         min_confidence: float = DEFAULT_MIN_CONFIDENCE,
     ):
         self._plugin_dir = plugin_dir or os.environ.get("DECKY_PLUGIN_DIR", python_runtime.PLUGIN_DIR)
-        # model_dir holds the DLL and TFLite files; owned by ScreenAIDownloader.
+        # model_dir holds the DLL and TFLite files (screenai_downloader.py ScreenAIDownload).
         self._model_dir = model_dir
         self._min_confidence = max(0.0, min(1.0, min_confidence))
         self._init_error: Optional[str] = None

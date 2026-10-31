@@ -88,7 +88,6 @@ import decky  # Decky Loader's plugin API (typings/decky.pyi)
 from providers import ProviderManager, NetworkError, ApiKeyError, RateLimitError, OCRError, TranslationError
 from providers.base import close_session
 from providers.translation_cache import TranslationCache, PROVIDER_TIERS, normalize
-from providers.screenai_downloader import APPROX_SIZE_MB as SCREENAI_APPROX_MB
 
 _processing_lock = False
 
@@ -620,7 +619,7 @@ class Plugin:
             logger.error("Provider manager not initialized")
             return []
 
-        if self._get("ocr_provider") == "chromescreenai" and not self._provider_manager.is_chromescreenai_downloaded():
+        if self._get("ocr_provider") == "chromescreenai" and not self._provider_manager.model_installed("chromescreenai"):
             return {"error": "model_not_available", "message": "Chrome Screen AI engine not downloaded.\nDownload it in plugin settings"}
 
         if self._get("ocr_provider") == "windows_ocr" and self._get("input_language") not in ("", "auto"):
@@ -823,101 +822,25 @@ class Plugin:
             logger.error(f"Error deleting translation cache entry: {e}")
             return {"success": False, "error": str(e)}
 
-    # -- NLLB model management API --
+    # -- the downloadable models, by kind: "nllb" (offline translation) or "chromescreenai" (on-device OCR) --
 
-    async def get_nllb_model_status(self):
-        try:
-            if not self._provider_manager:
-                return {"downloaded": False, "size": 0, "downloading": False, "progress": 0, "error": None}
-            return self._provider_manager.get_nllb_model_status()
-        except Exception as e:
-            logger.error(f"Error getting NLLB model status: {e}")
-            return {"downloaded": False, "size": 0, "downloading": False, "progress": 0, "error": str(e)}
+    async def get_model_status(self, kind):
+        """{downloaded, size, approx_size_mb, downloading, progress, error}, or None for an unknown kind."""
+        return self._provider_manager.model_status(kind) if self._provider_manager else None
 
-    async def download_nllb_model(self):
-        try:
-            if not self._provider_manager:
-                return False
-            return self._provider_manager.download_nllb_model()
-        except Exception as e:
-            logger.error(f"Error starting NLLB model download: {e}")
-            return False
+    async def download_model(self, kind):
+        return bool(self._provider_manager and self._provider_manager.download_model(kind))
 
-    async def delete_nllb_model(self):
-        try:
-            if not self._provider_manager:
-                return False
-            return self._provider_manager.delete_nllb_model()
-        except Exception as e:
-            logger.error(f"Error deleting NLLB model: {e}")
-            return False
+    async def cancel_model_download(self, kind):
+        if self._provider_manager:
+            self._provider_manager.cancel_model_download(kind)
 
-    async def cancel_nllb_download(self):
-        try:
-            if self._provider_manager:
-                self._provider_manager.cancel_nllb_download()
-            return True
-        except Exception as e:
-            logger.error(f"Error cancelling NLLB download: {e}")
-            return False
+    async def clear_model_error(self, kind):
+        if self._provider_manager:
+            self._provider_manager.clear_model_error(kind)
 
-    async def clear_nllb_model_error(self):
-        try:
-            if self._provider_manager:
-                self._provider_manager.clear_nllb_download_error()
-            return True
-        except Exception as e:
-            logger.error(f"Error clearing NLLB download error: {e}")
-            return False
-
-    # -- Chrome Screen AI download API --
-
-    async def get_chromescreenai_status(self):
-        try:
-            if not self._provider_manager:
-                return {"downloaded": False, "size": 0, "approx_size_mb": SCREENAI_APPROX_MB,
-                        "downloading": False, "progress": 0, "error": None}
-            return self._provider_manager.get_chromescreenai_status()
-        except Exception as e:
-            logger.error(f"Error getting Chrome Screen AI status: {e}")
-            return {"downloaded": False, "size": 0, "approx_size_mb": SCREENAI_APPROX_MB,
-                    "downloading": False, "progress": 0, "error": str(e)}
-
-    async def download_chromescreenai(self):
-        try:
-            if not self._provider_manager:
-                return False
-            return self._provider_manager.download_chromescreenai()
-        except Exception as e:
-            logger.error(f"Error starting Chrome Screen AI download: {e}")
-            return False
-
-    async def cancel_chromescreenai_download(self):
-        try:
-            if self._provider_manager:
-                self._provider_manager.cancel_chromescreenai_download()
-            return True
-        except Exception as e:
-            logger.error(f"Error cancelling Chrome Screen AI download: {e}")
-            return False
-
-    async def clear_chromescreenai_error(self):
-        try:
-            if self._provider_manager:
-                self._provider_manager.clear_chromescreenai_error()
-            return True
-        except Exception as e:
-            logger.error(f"Error clearing Chrome Screen AI error: {e}")
-            return False
-
-    async def delete_chromescreenai(self):
-        try:
-            if not self._provider_manager:
-                return False
-            return self._provider_manager.delete_chromescreenai()
-        except Exception as e:
-            logger.error(f"Error deleting Chrome Screen AI files: {e}")
-            return False
+    async def delete_model(self, kind):
+        return bool(self._provider_manager and self._provider_manager.delete_model(kind))
 
     def _start_windows(self):
         """Windows parts, first and each on its own: a failure anywhere else in the start must not leave a game paused

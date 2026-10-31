@@ -11,7 +11,7 @@ import unicodedata
 from typing import List, Optional
 
 from .base import TranslationError, TranslationProvider
-from .nllb_downloader import NLLB_LANG_MAP, NLLBDownloader
+from .nllb_downloader import NLLB_LANG_MAP, NLLBDownload
 from .language_detection import CJK_FAMILIES, dominant_family, flores_families
 from . import python_runtime
 
@@ -306,8 +306,8 @@ class CT2TranslateProvider(TranslationProvider):
 
     SUPPORTED_LANGUAGES = list(NLLB_LANG_MAP.keys())
 
-    def __init__(self, model_manager: NLLBDownloader, plugin_dir: str = ""):
-        self._model_manager = model_manager
+    def __init__(self, model: NLLBDownload, plugin_dir: str = ""):
+        self._model = model
         self._plugin_dir = plugin_dir or os.environ.get("DECKY_PLUGIN_DIR", python_runtime.PLUGIN_DIR)
         self._worker_process = None
         self._worker_lock = threading.Lock()
@@ -398,7 +398,7 @@ class CT2TranslateProvider(TranslationProvider):
 
     def _load_model(self) -> dict:
         """Load the NLLB model in the worker. Skips if already loaded."""
-        model_dir = self._model_manager.get_model_dir()
+        model_dir = self._model.target_dir
         if self._loaded_model_dir == model_dir:
             return {"ok": True}
 
@@ -416,7 +416,7 @@ class CT2TranslateProvider(TranslationProvider):
     def is_available(self, source_lang: str = "auto", target_lang: str = "en") -> bool:
         if source_lang == "auto":
             return False
-        return self._model_manager.is_model_downloaded()
+        return self._model.is_installed()
 
     async def translate_batch(
         self, texts: List[str], source_lang: str, target_lang: str
@@ -435,12 +435,12 @@ class CT2TranslateProvider(TranslationProvider):
         if source_lang == "auto":
             raise TranslationError("Offline translation needs a source language: select one in plugin settings")
 
-        src_nllb = self._model_manager.get_nllb_lang_code(source_lang)
-        tgt_nllb = self._model_manager.get_nllb_lang_code(target_lang)
+        src_nllb = NLLB_LANG_MAP.get(source_lang)
+        tgt_nllb = NLLB_LANG_MAP.get(target_lang)
         if not src_nllb or not tgt_nllb:
             raise TranslationError(f"Offline translation does not support {source_lang} -> {target_lang}")
 
-        if not self._model_manager.is_model_downloaded():
+        if not self._model.is_installed():
             raise TranslationError("Offline model not found. Download it in plugin settings")
 
         if not self._ensure_worker():
@@ -659,7 +659,7 @@ class CT2TranslateProvider(TranslationProvider):
     def _warmup_worker(self) -> None:
         if not self._persistent_mode:
             return
-        if not self._model_manager.is_model_downloaded():
+        if not self._model.is_installed():
             return
         # recycle existing worker so the env var takes effect.
         if self._worker_process and self._worker_process.poll() is None:
