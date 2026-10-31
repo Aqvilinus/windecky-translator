@@ -2,13 +2,14 @@
 # Gemini Vision provider -- combined OCR + translation in a single API call
 
 import base64
+import io
 import json
 import logging
 import re
-import struct
 from typing import List, Optional
 
 import requests
+from PIL import Image
 
 from . import gemini_api
 from .base import (
@@ -47,14 +48,6 @@ LANG_NAMES = {
     "da": "Danish", "no": "Norwegian", "cs": "Czech",
     "hu": "Hungarian", "he": "Hebrew", "hr": "Croatian",
 }
-
-
-def _get_png_dimensions(data: bytes) -> tuple:
-    """Extract width and height from a PNG file header."""
-    if len(data) < 24 or data[:4] != b'\x89PNG':
-        return 0, 0
-    width, height = struct.unpack('>II', data[16:24])
-    return width, height
 
 
 _SEPARATOR = re.compile(r'\s*,?\s*')
@@ -291,10 +284,7 @@ class GeminiVisionProvider(OCRProvider):
         if not self._api_key:
             raise ApiKeyError("Gemini API key not configured")
 
-        img_width, img_height = _get_png_dimensions(image_data)
-        if img_width == 0 or img_height == 0:
-            logger.error("Could not read image dimensions from PNG header")
-            return []
+        img_width, img_height = Image.open(io.BytesIO(image_data)).size
 
         prompt = self._build_prompt(language, self._target_language)
 

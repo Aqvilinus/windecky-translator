@@ -2,7 +2,6 @@
 # fetched on demand from Google's CIPD server, not bundled in the plugin.
 
 import asyncio
-import itertools
 import json
 import logging
 import os
@@ -21,7 +20,6 @@ logger = logging.getLogger(__name__)
 DEFAULT_MIN_CONFIDENCE = 0.5
 OCR_TIMEOUT_SECONDS = 120
 WORKER_READY_TIMEOUT_SECONDS = 60
-_request_ids = itertools.count(1)
 
 _WORKER_ENV_STRIP = (
     "OMP_NUM_THREADS",
@@ -309,13 +307,10 @@ class ChromeScreenAIProvider(OCRProvider):
             if not self.start_worker():
                 return None
 
-        temp_path = os.path.join(
-            tempfile.gettempdir(),
-            f"chromescreenai_input_{os.getpid()}_{next(_request_ids)}.png",
-        )
-        try:
-            with open(temp_path, 'wb') as f:
-                f.write(image_data)
+        with tempfile.NamedTemporaryFile(prefix="chromescreenai_input_", suffix=".png", delete_on_close=False) as image_file:
+            image_file.write(image_data)
+            image_file.close()  # the worker opens it by name; it is deleted when the block ends
+            temp_path = image_file.name
 
             request = {"type": "recognize", "image_path": temp_path}
             start = time.time()
@@ -359,84 +354,69 @@ class ChromeScreenAIProvider(OCRProvider):
                 ))
             logger.debug(f"Chrome Screen AI (worker): {len(regions)} regions in {elapsed:.2f}s")
             return regions
-        finally:
-            try:
-                if os.path.exists(temp_path):
-                    os.remove(temp_path)
-            except Exception:
-                pass
 
     def _recognize_oneshot(self, image_data: bytes) -> List[TextRegion]:
-        temp_path = None
-        try:
-            start = time.time()
-            temp_path = os.path.join(
-                tempfile.gettempdir(),
-                f"chromescreenai_input_{os.getpid()}_{next(_request_ids)}.png",
-            )
-            with open(temp_path, 'wb') as f:
-                f.write(image_data)
-
-            env = os.environ.copy()
-            env['PYTHONPATH'] = self._py_modules_dir
-            env['PYTHONNOUSERSITE'] = '1'
-            env['PYTHONDONTWRITEBYTECODE'] = '1'
-            env['OMP_NUM_THREADS'] = '1'
-            env['MKL_NUM_THREADS'] = '1'
-            env['OPENBLAS_NUM_THREADS'] = '1'
-
-            if not self._python_path:
-                logger.error("Chrome Screen AI: no Python interpreter")
-                return []
-
-            cmd = [
-                self._python_path, '-S', self._subprocess_script,
-                temp_path, self._model_dir, str(self._min_confidence),
-            ]
-            result = subprocess.run(
-                cmd, capture_output=True, text=True, encoding='utf-8', errors='replace',
-                timeout=OCR_TIMEOUT_SECONDS, env=env, **python_runtime.popen_kwargs(),
-            )
-            elapsed = time.time() - start
-            if result.returncode != 0:
-                logger.error(f"Chrome Screen AI subprocess error: {result.stderr}")
-                return []
-
+        with tempfile.NamedTemporaryFile(prefix="chromescreenai_input_", suffix=".png", delete_on_close=False) as image_file:
+            image_file.write(image_data)
+            image_file.close()  # the subprocess opens it by name; it is deleted when the block ends
+            temp_path = image_file.name
             try:
-                output = json.loads(result.stdout)
-            except json.JSONDecodeError as e:
-                logger.error(f"Chrome Screen AI: failed to parse output: {e}")
-                logger.error(f"stdout: {result.stdout[:500]}")
-                return []
+                start = time.time()
 
-            if output.get("debug"):
-                for d in output["debug"]:
-                    logger.debug(f"Chrome Screen AI subprocess: {d}")
+                env = os.environ.copy()
+                env['PYTHONPATH'] = self._py_modules_dir
+                env['PYTHONNOUSERSITE'] = '1'
+                env['PYTHONDONTWRITEBYTECODE'] = '1'
+                env['OMP_NUM_THREADS'] = '1'
+                env['MKL_NUM_THREADS'] = '1'
+                env['OPENBLAS_NUM_THREADS'] = '1'
 
-            if output.get("error"):
-                logger.error(f"Chrome Screen AI error: {output['error']}")
-                return []
+                if not self._python_path:
+                    logger.error("Chrome Screen AI: no Python interpreter")
+                    return []
 
-            regions = []
-            for r in output.get("regions", []):
-                regions.append(TextRegion(
-                    text=r["text"],
-                    rect=r["rect"],
-                    confidence=r["confidence"],
-                    is_dialog=r.get("is_dialog", False),
-                ))
-            logger.debug(f"Chrome Screen AI: {len(regions)} regions in {elapsed:.2f}s")
-            return regions
+                cmd = [
+                    self._python_path, '-S', self._subprocess_script,
+                    temp_path, self._model_dir, str(self._min_confidence),
+                ]
+                result = subprocess.run(
+                    cmd, capture_output=True, text=True, encoding='utf-8', errors='replace',
+                    timeout=OCR_TIMEOUT_SECONDS, env=env, **python_runtime.popen_kwargs(),
+                )
+                elapsed = time.time() - start
+                if result.returncode != 0:
+                    logger.error(f"Chrome Screen AI subprocess error: {result.stderr}")
+                    return []
 
-        except subprocess.TimeoutExpired:
-            logger.error(f"Chrome Screen AI: timed out after {OCR_TIMEOUT_SECONDS}s")
-            return []
-        except Exception as e:
-            logger.error(f"Chrome Screen AI error: {e}", exc_info=True)
-            return []
-        finally:
-            if temp_path and os.path.exists(temp_path):
                 try:
-                    os.remove(temp_path)
-                except Exception:
-                    pass
+                    output = json.loads(result.stdout)
+                except json.JSONDecodeError as e:
+                    logger.error(f"Chrome Screen AI: failed to parse output: {e}")
+                    logger.error(f"stdout: {result.stdout[:500]}")
+                    return []
+
+                if output.get("debug"):
+                    for d in output["debug"]:
+                        logger.debug(f"Chrome Screen AI subprocess: {d}")
+
+                if output.get("error"):
+                    logger.error(f"Chrome Screen AI error: {output['error']}")
+                    return []
+
+                regions = []
+                for r in output.get("regions", []):
+                    regions.append(TextRegion(
+                        text=r["text"],
+                        rect=r["rect"],
+                        confidence=r["confidence"],
+                        is_dialog=r.get("is_dialog", False),
+                    ))
+                logger.debug(f"Chrome Screen AI: {len(regions)} regions in {elapsed:.2f}s")
+                return regions
+
+            except subprocess.TimeoutExpired:
+                logger.error(f"Chrome Screen AI: timed out after {OCR_TIMEOUT_SECONDS}s")
+                return []
+            except Exception as e:
+                logger.error(f"Chrome Screen AI error: {e}", exc_info=True)
+                return []

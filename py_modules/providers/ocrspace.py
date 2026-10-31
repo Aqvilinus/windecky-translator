@@ -3,37 +3,18 @@
 
 import asyncio
 import base64
+import io
 import logging
 import json
 import os
-import struct
 from datetime import datetime, date
 from typing import List
 
 import requests
+from PIL import Image
 
 from .base import OCRProvider, ProviderType, TextRegion, NetworkError, RateLimitError
 
-
-def image_width(data: bytes) -> int:
-    """Pixel width of a PNG or JPEG from its header (0 if unknown); no Pillow needed (Decky's Linux Python has none)."""
-    if data[:8] == b'\x89PNG\r\n\x1a\n' and len(data) >= 24:
-        return struct.unpack('>I', data[16:20])[0]
-    if data[:2] == b'\xff\xd8':
-        i = 2
-        while i + 9 < len(data):
-            if data[i] != 0xFF:
-                i += 1
-                continue
-            marker = data[i + 1]
-            if marker in (0xD8, 0x01) or 0xD0 <= marker <= 0xD7:
-                i += 2
-                continue
-            length = struct.unpack('>H', data[i + 2:i + 4])[0]
-            if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):  # SOFn: height, then width
-                return struct.unpack('>H', data[i + 7:i + 9])[0]
-            i += 2 + length
-    return 0
 
 logger = logging.getLogger(__name__)
 
@@ -237,9 +218,7 @@ class OCRSpaceProvider(OCRProvider):
 
     def _compress_in_process(self, image_data: bytes) -> bytes:
         """JPEG at falling quality, then falling scale, until it fits MAX_FILE_SIZE."""
-        import io
         try:
-            from PIL import Image
             img = Image.open(io.BytesIO(image_data))
             if img.mode != 'RGB':
                 img = img.convert('RGB')
@@ -281,20 +260,15 @@ class OCRSpaceProvider(OCRProvider):
         try:
             # Compress image if needed (off the event loop: a 4K JPEG loop takes a while). The compression may also
             # scale the image down; OCR.space's boxes are in the sent image's pixels, so they are scaled back.
-            original_width = image_width(image_data)
+            original_width = Image.open(io.BytesIO(image_data)).width
             image_data = await asyncio.to_thread(self._compress_image, image_data)
-            sent_width = image_width(image_data)
-            box_scale = original_width / sent_width if original_width and sent_width else 1.0
+            sent = Image.open(io.BytesIO(image_data))
+            box_scale = original_width / sent.width
 
             # Encode image to base64
             image_base64 = base64.b64encode(image_data).decode('utf-8')
 
-            # Detect image type from magic bytes
-            file_type = 'image/png'
-            if image_data[:2] == b'\xff\xd8':
-                file_type = 'image/jpeg'
-            elif image_data[:4] == b'\x89PNG':
-                file_type = 'image/png'
+            file_type = Image.MIME[sent.format]  # image/png, or image/jpeg after compression
 
             # Get OCR language and engine
             ocr_language = self._get_ocr_language(language)

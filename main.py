@@ -164,21 +164,11 @@ def _may_hold_secret(text):
 class UrlKeyRedactFilter(logging.Filter):
     def filter(self, record):
         try:
-            if isinstance(record.msg, str) and _may_hold_secret(record.msg):
-                record.msg = _redact_url_keys(record.msg)
-            if record.args:
-                if isinstance(record.args, dict):
-                    record.args = {
-                        k: _redact_url_keys(v) if isinstance(v, str) and _may_hold_secret(v) else v
-                        for k, v in record.args.items()
-                    }
-                else:
-                    record.args = tuple(
-                        _redact_url_keys(a) if isinstance(a, str) and _may_hold_secret(a) else a
-                        for a in record.args
-                    )
-        except Exception:
-            pass
+            message = record.getMessage()  # msg % args, so a key passed as an argument is caught too
+        except Exception:  # noqa: BLE001 - a broken format string: logging reports it itself
+            return True
+        if _may_hold_secret(message):
+            record.msg, record.args = _redact_url_keys(message), None
         return True
 
 
