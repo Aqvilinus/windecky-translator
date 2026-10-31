@@ -10,10 +10,9 @@ import os
 from datetime import datetime, date
 from typing import List
 
-import requests
 from PIL import Image
 
-from .base import OCRProvider, ProviderType, TextRegion, NetworkError, RateLimitError
+from .base import OCRProvider, ProviderType, TextRegion, NetworkError, RateLimitError, fetch, probe
 
 
 logger = logging.getLogger(__name__)
@@ -285,18 +284,11 @@ class OCRSpaceProvider(OCRProvider):
                 'isTable': 'false',
             }
 
-            def do_request():
-                return requests.post(
-                    self._endpoint,
-                    data=payload,
-                    timeout=30.0
-                )
-
             # Track rate limit BEFORE making the request (API counts all attempts)
             self._track_rate_limit()
 
             logger.debug(f"Sending request to OCR.space (lang={ocr_language}, engine={engine})")
-            response = await asyncio.to_thread(do_request)
+            response = await fetch("POST", self._endpoint, data=payload, timeout=30)
 
             if response.status_code == 403:
                 # Rate limit exceeded
@@ -328,14 +320,7 @@ class OCRSpaceProvider(OCRProvider):
 
             return text_regions
 
-        except requests.exceptions.ConnectionError as e:
-            logger.error(f"OCR.space connection error: {e}")
-            raise NetworkError("No internet connection") from e
-        except requests.exceptions.Timeout as e:
-            logger.error(f"OCR.space timeout error: {e}")
-            raise NetworkError("Connection timed out") from e
-        except RateLimitError:
-            # Re-raise rate limit errors so they can be handled by the caller
+        except (RateLimitError, NetworkError):
             raise
         except Exception as e:
             logger.error(f"OCR.space error: {e}")
@@ -444,13 +429,5 @@ class OCRSpaceProvider(OCRProvider):
             return None
 
     async def test_network(self) -> tuple:
-        def _probe():
-            try:
-                requests.head("https://api.ocr.space/parse/image", timeout=4)
-                return True, ""
-            except (requests.ConnectionError, requests.Timeout):
-                return False, "Network unreachable"
-            except Exception as e:
-                return False, f"Probe failed: {type(e).__name__}"
-
-        return await asyncio.to_thread(_probe)
+        resp, error = await probe("HEAD", self._endpoint)
+        return resp is not None, error

@@ -1,10 +1,17 @@
 # providers/base.py
 # Abstract base classes for OCR and Translation providers
 
+import asyncio
+import json
+import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import List, Dict, Optional
 from enum import Enum
+
+import aiohttp  # Decky Loader's own: its server runs on it, so the plugin doesn't ship one
+
+logger = logging.getLogger(__name__)
 
 
 class NetworkError(Exception):
@@ -38,6 +45,62 @@ def classify_google_error(status_code: int, body: str) -> str:
     if status_code == 429:
         return "Rate limited"
     return f"API error ({status_code})"
+
+
+def raise_for_google_error(resp: "Response") -> None:
+    """A Google Cloud error the user has to act on (key, project, billing, quota) as ApiKeyError or RateLimitError;
+    any other is only logged."""
+    reason = classify_google_error(resp.status_code, resp.text)
+    logger.error(f"Google API error {resp.status_code} ({reason}): {resp.text[:500]}")
+    if reason == "Rate limited":
+        raise RateLimitError(reason)
+    if not reason.startswith("API error"):
+        raise ApiKeyError(reason)
+
+
+# -- HTTP for the web engines
+
+@dataclass
+class Response:
+    status_code: int
+    text: str
+    headers: dict
+
+    def json(self):
+        return json.loads(self.text)
+
+
+_session: Optional[aiohttp.ClientSession] = None
+
+
+async def fetch(method: str, url: str, timeout: float = 10, **kwargs) -> Response:
+    """One HTTP request through the engines' shared session (connections stay open between requests; a new TLS
+    handshake per request doubled the time of short ones). Connection failures and timeouts raise NetworkError."""
+    global _session
+    if _session is None or _session.closed:
+        _session = aiohttp.ClientSession()
+    try:
+        async with _session.request(method, url, timeout=aiohttp.ClientTimeout(total=timeout), **kwargs) as resp:
+            return Response(resp.status, await resp.text(), dict(resp.headers))
+    except asyncio.TimeoutError as e:
+        raise NetworkError("Connection timed out") from e
+    except aiohttp.ClientConnectionError as e:
+        raise NetworkError("No internet connection") from e
+
+
+async def close_session() -> None:
+    if _session is not None:
+        await _session.close()
+
+
+async def probe(method: str, url: str, **kwargs) -> tuple:
+    """A reachability probe: (response, "") or (None, why it failed)."""
+    try:
+        return await fetch(method, url, timeout=4, **kwargs), ""
+    except NetworkError:
+        return None, "Network unreachable"
+    except Exception as e:  # noqa: BLE001
+        return None, f"Probe failed: {type(e).__name__}"
 
 
 class ProviderType(Enum):

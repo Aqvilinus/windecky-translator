@@ -6,7 +6,6 @@ import os
 import threading
 
 import pytest
-import requests
 from PIL import ImageChops
 
 import harness
@@ -83,8 +82,8 @@ def test_capture_ocr_translate_overlay(backend, windows, net):
     assert [r["text"] for r in regions] == [t for t, _ in harness.SCREEN]
     for r, (_, (x, y)) in zip(regions, harness.SCREEN):
         assert abs(r["rect"]["left"] - x) <= 4 and abs(r["rect"]["top"] - y) <= 12
-    sent = net.calls(harness.OCRSPACE_URL)[0].request.body
-    assert "base64Image=data%3Aimage%2Fpng%3Bbase64" in sent  # the captured PNG went to OCR
+    sent = net.calls(harness.OCRSPACE_URL)[0][3]
+    assert sent["base64Image"].startswith("data:image/png;base64,")  # the captured PNG went to OCR
 
     assert [r["translatedText"] for r in translated] == ["Welcome, traveller", "New game"]
     assert len(net.calls(harness.GOOGLE_URL)) == 1  # one request for all lines
@@ -150,8 +149,7 @@ def test_translation_cache(start, net):
 
 
 def test_no_network(backend, net):
-    net.mock.replace(harness.responses.POST, harness.GOOGLE_URL, body=requests.ConnectionError("down"))
-    net.mock.replace(harness.responses.POST, harness.OCRSPACE_URL, body=requests.ConnectionError("down"))
+    net.down |= {harness.GOOGLE_URL, harness.OCRSPACE_URL}
     shot = backend.call("take_screenshot", "Game")
     assert backend.call("recognize_text_file", shot["path"]) == {"error": "network_error", "message": "No internet connection"}
     regions = [{"text": "Hallo Welt", "rect": {"left": 0, "top": 0, "right": 10, "bottom": 10}, "confidence": 1, "isDialog": False}]

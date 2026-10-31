@@ -6,8 +6,6 @@ name = "windecky-translator"
 version = "1.0.0"
 requires-python = "==3.14.*"
 dependencies = [
-    "requests==2.34.2",
-    "urllib3==2.8.0",
     "Pillow==13.0.0",
     "psutil==7.2.2",  # Pause Game While Translating: the game's processes (winport/pause.py)
     # pywinrt: Windows.Graphics.Capture (screenshots), Windows.Media.Ocr (on-device OCR)
@@ -32,7 +30,10 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["pytest==9.2.0", "responses==0.26.3"]
+dev = [
+    "aiohttp==3.14.5",  # Decky Loader's own (the plugin uses that one); the tests run without Decky
+    "pytest==9.2.0",
+]
 
 [tool.uv]
 package = false

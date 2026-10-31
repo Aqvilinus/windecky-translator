@@ -8,7 +8,6 @@ import logging
 import re
 from typing import List, Optional
 
-import requests
 from PIL import Image
 
 from . import gemini_api
@@ -20,11 +19,8 @@ from .base import (
     ApiKeyError,
     RateLimitError,
     classify_google_error,
+    probe,
 )
-
-# one session per module: connections are kept alive between requests (a new TLS handshake per
-# request doubled the time of short requests, e.g. 561 -> 258 ms to translate.googleapis.com)
-_http = requests.Session()
 
 logger = logging.getLogger(__name__)
 
@@ -180,7 +176,7 @@ class GeminiVisionProvider(OCRProvider):
         )
         return prompt
 
-    def _call_api(self, image_data: bytes, prompt: str) -> str:
+    async def _call_api(self, image_data: bytes, prompt: str) -> str:
         model = self._model
 
         image_b64 = base64.b64encode(image_data).decode('utf-8')
@@ -222,18 +218,8 @@ class GeminiVisionProvider(OCRProvider):
             }
         }
 
-        def send(url, body, hdrs):
-            try:
-                return _http.post(url, json=body, headers=hdrs, timeout=REQUEST_TIMEOUT)
-            except requests.ConnectionError as e:
-                # requests' message carries the URL and proxy details: log the type only, show a plain message
-                logger.warning(f"Gemini API unreachable: {type(e).__name__}")
-                raise NetworkError("Cannot reach Gemini API")
-            except requests.Timeout:
-                raise NetworkError("Gemini API request timed out")
-
         # retired model -> current alias, thinking setting the model rejects -> less (gemini_api.generate)
-        response, model = gemini_api.generate(self._api_key, model, payload, send)
+        response, model = await gemini_api.generate(self._api_key, model, payload, REQUEST_TIMEOUT)
 
         if response.status_code == 400:
             try:
@@ -279,8 +265,6 @@ class GeminiVisionProvider(OCRProvider):
             raise NetworkError("Unexpected response from Gemini API")
 
     async def recognize(self, image_data: bytes, language: str = "auto") -> List[TextRegion]:
-        import asyncio
-
         if not self._api_key:
             raise ApiKeyError("Gemini API key not configured")
 
@@ -288,7 +272,7 @@ class GeminiVisionProvider(OCRProvider):
 
         prompt = self._build_prompt(language, self._target_language)
 
-        response_text = await asyncio.to_thread(self._call_api, image_data, prompt)
+        response_text = await self._call_api(image_data, prompt)
 
         regions_data = _parse_json_response(response_text)
         if regions_data is None:
@@ -336,56 +320,22 @@ class GeminiVisionProvider(OCRProvider):
 
         return text_regions
 
-    def list_available_models(self) -> List[str]:
+    async def list_available_models(self) -> List[str]:
         """Fetch available flash models from Gemini API."""
         if not self._api_key:
             return []
-
-        models = [m for m in gemini_api.list_models(self._api_key) if "flash" in m]  # Flash models read images fast
+        # Flash models read images fast
+        models = [m for m in await gemini_api.list_models(self._api_key) if "flash" in m]
         logger.info(f"Available Gemini models: {models}")
         return models
 
-    async def verify_api_key(self) -> tuple:
-        """Quick check that the API key works. Returns (success, error_message)."""
-        import asyncio
-
-        if not self._api_key:
-            return False, "No API key configured"
-
-        def _check():
-            url = f"{gemini_api.API_URL}/{self._model}:generateContent"
-            payload = {
-                "contents": [{"parts": [{"text": "Reply with just the word: ok"}]}],
-                "generationConfig": {"maxOutputTokens": 10}
-            }
-            try:
-                resp = _http.post(url, json=payload, headers=gemini_api.headers(self._api_key), timeout=10)
-                if resp.status_code == 200:
-                    return True, ""
-                return False, classify_google_error(resp.status_code, resp.text)
-            except (requests.ConnectionError, requests.Timeout):
-                return False, "Network unreachable"
-            except Exception as e:
-                return False, f"Check failed: {type(e).__name__}"
-
-        return await asyncio.to_thread(_check)
-
     async def test_network(self) -> tuple:
-        import asyncio
-
         if not self._api_key:
             return False, "API key required"
-
-        def _probe():
-            try:
-                resp = _http.get(gemini_api.API_URL, params={"pageSize": 1}, headers=gemini_api.headers(self._api_key),
-                                 timeout=4)
-            except (requests.ConnectionError, requests.Timeout):
-                return False, "Network unreachable"
-            except Exception as e:
-                return False, f"Probe failed: {type(e).__name__}"
-            if resp.status_code == 200:
-                return True, ""
-            return False, classify_google_error(resp.status_code, resp.text)
-
-        return await asyncio.to_thread(_probe)
+        resp, error = await probe("GET", gemini_api.API_URL, params={"pageSize": 1},
+                                  headers=gemini_api.headers(self._api_key))
+        if resp is None:
+            return False, error
+        if resp.status_code == 200:
+            return True, ""
+        return False, classify_google_error(resp.status_code, resp.text)

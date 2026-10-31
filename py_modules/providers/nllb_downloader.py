@@ -6,6 +6,8 @@ import logging
 import os
 import shutil
 import threading
+import urllib.error
+import urllib.request
 from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
@@ -151,8 +153,6 @@ class NLLBDownloader:
 
     def _download_model(self):
         """Download model files from HuggingFace. Runs in background thread."""
-        import requests
-
         temp_dir = os.path.join(self._models_dir, f"{MODEL_DIR_NAME}.downloading")
         final_dir = self.get_model_dir()
 
@@ -170,42 +170,30 @@ class NLLBDownloader:
                 is_required = filename in REQUIRED_MODEL_FILES
 
                 try:
-                    resp = requests.get(url, stream=True, timeout=30)
-
-                    if resp.status_code == 404:
-                        if is_required:
-                            raise Exception(f"Required file not found: {filename}")
-                        continue
-                    elif resp.status_code == 429:
-                        raise Exception("Too many requests. Try again later.")
-                    elif resp.status_code != 200:
-                        if is_required:
-                            raise Exception(f"HTTP {resp.status_code} downloading {filename}")
-                        continue
-
-                    total_size = int(resp.headers.get('content-length', 0))
-                    downloaded = 0
-
-                    hasher = hashlib.sha256()
-                    with open(dest, 'wb') as f:
-                        for chunk in resp.iter_content(chunk_size=1024 * 256):
+                    with urllib.request.urlopen(url, timeout=30) as resp, open(dest, 'wb') as f:
+                        total_size = int(resp.headers.get('Content-Length') or 0)
+                        downloaded = 0
+                        hasher = hashlib.sha256()
+                        while chunk := resp.read(1024 * 256):
                             if self._download_cancel:
                                 raise Exception("Download cancelled")
                             f.write(chunk)
                             hasher.update(chunk)
                             downloaded += len(chunk)
-
                             if filename == "model.bin" and total_size > 0:
                                 with self._lock:
                                     self._download_progress = downloaded / total_size
-                    expected = FILE_SHA256.get(filename)
-                    if expected and hasher.hexdigest() != expected:
-                        raise Exception(f"{filename} is damaged or changed upstream (hash mismatch)")
-
-                except requests.ConnectionError:
+                except urllib.error.HTTPError as e:
+                    if e.code == 429:
+                        raise Exception("Too many requests. Try again later.")
+                    if is_required:
+                        raise Exception(f"HTTP {e.code} downloading {filename}")
+                    continue  # an optional file the repo doesn't have
+                except (urllib.error.URLError, TimeoutError):
                     raise Exception("Cannot reach model server. Check internet connection.")
-                except requests.Timeout:
-                    raise Exception("Download timed out. Check internet connection.")
+                expected = FILE_SHA256.get(filename)
+                if expected and hasher.hexdigest() != expected:
+                    raise Exception(f"{filename} is damaged or changed upstream (hash mismatch)")
 
             for req_file in REQUIRED_MODEL_FILES:
                 if not os.path.exists(os.path.join(temp_dir, req_file)):

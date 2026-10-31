@@ -5,10 +5,11 @@
 - The Windows parts behind main.py's own names are replaced: the capture returns a test image of a game screen, the
   overlay window records what it is told and draws it with the real winport.overlay.render (Pillow) into an image,
   the hotkey and the process pause record their calls.
-- HTTP goes through `responses` (requests): Google Translate, Bing and OCR.space answer from the stubs below; any
-  other request fails like a dead network, so no test can reach a real service.
+- HTTP: the engines' session is replaced (Network): Google Translate, Bing and OCR.space answer from the stubs below;
+  any other request fails like a dead network, so no test can reach a real service.
 """
 import asyncio
+import contextlib
 import importlib
 import json
 import logging
@@ -16,9 +17,8 @@ import os
 import socket
 import sys
 import types
-from urllib.parse import parse_qs
 
-import responses
+import aiohttp
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 GAME_HWND = 0x1234
@@ -233,57 +233,75 @@ def translate_lines(text, dictionary=DICTIONARY):
 
 
 class Network:
-    """responses.RequestsMock with the services' stubs; counts the calls per service."""
+    """Stands in for the engines' HTTP session (providers.base._session, which every request goes through) with the
+    services' stubs; records the calls. A request no stub answers, or to a service in `down`, fails like a dead
+    network."""
+
+    closed = False
 
     def __init__(self):
-        self.mock = responses.RequestsMock(assert_all_requests_are_fired=False)
         self.dictionary = dict(DICTIONARY)
         self.google_status = 200
         self.ocr_lines = word_boxes()
         self.languages = ("auto", "en")  # (source, target) the translators expect; others are refused
+        self.down = set()
+        self.log = []  # (method, url, params, data)
+        self.routes = {("POST", GOOGLE_URL): self._google, ("GET", GOOGLE_URL): lambda p, d: (200, '[[["ok","ok"]]]'),
+                       ("GET", BING_PAGE): lambda p, d: (200, BING_PAGE_HTML), ("POST", BING_URL): self._bing,
+                       ("POST", OCRSPACE_URL): self._ocrspace, ("HEAD", OCRSPACE_URL): lambda p, d: (200, "")}
 
     def __enter__(self):
-        self.mock.__enter__()
-        self.mock.add_callback(responses.POST, GOOGLE_URL, callback=self._google)
-        self.mock.add_callback(responses.GET, GOOGLE_URL, callback=lambda r: (200, {}, "[[[\"ok\",\"ok\"]]]"))
-        self.mock.add(responses.GET, BING_PAGE, body=BING_PAGE_HTML)
-        self.mock.add_callback(responses.POST, BING_URL, callback=self._bing)
-        self.mock.add_callback(responses.POST, OCRSPACE_URL, callback=self._ocrspace)
-        self.mock.add(responses.HEAD, OCRSPACE_URL, status=200)
+        from providers import base
+        self._base, self._saved = base, base._session
+        base._session = self
         return self
 
     def __exit__(self, *exc):
-        return self.mock.__exit__(*exc)
+        self._base._session = self._saved
 
     def calls(self, url):
-        return [c for c in self.mock.calls if c.request.url.split("?")[0] == url]
+        return [c for c in self.log if c[1] == url]
 
-    def _google(self, request):
+    @contextlib.asynccontextmanager
+    async def request(self, method, url, params=None, data=None, json=None, headers=None, timeout=None):
+        self.log.append((method, url, params or {}, data or {}))
+        handler = self.routes.get((method, url))
+        if url in self.down or handler is None:
+            raise aiohttp.ClientConnectionError(f"no network in the tests ({method} {url})")
+        status, body = handler(params or {}, data or {})
+        yield types.SimpleNamespace(status=status, headers={}, text=lambda: _text(body))
+
+    async def close(self):
+        pass
+
+    def _google(self, params, data):
         if self.google_status != 200:
-            return self.google_status, {}, "Too Many Requests"
-        query = parse_qs(request.url.split("?", 1)[1])
-        if (query["sl"][0], query["tl"][0]) != self.languages:
-            return 400, {}, f"unexpected languages {query['sl'][0]} -> {query['tl'][0]}"
-        text = parse_qs(request.body)["q"][0]
-        return 200, {}, json.dumps([[[translate_lines(text, self.dictionary), text, None, None]], None, "de"])
+            return self.google_status, "Too Many Requests"
+        if (params["sl"], params["tl"]) != self.languages:
+            return 400, f"unexpected languages {params['sl']} -> {params['tl']}"
+        text = data["q"]
+        return 200, json.dumps([[[translate_lines(text, self.dictionary), text, None, None]], None, "de"])
 
-    def _bing(self, request):
-        form = parse_qs(request.body)
-        assert form["token"] == ["tok123"] and form["key"] == ["1700000000000"], form
+    def _bing(self, params, form):
+        assert form["token"] == "tok123" and form["key"] == "1700000000000", form
         src, tgt = self.languages
-        if (form["fromLang"][0], form["to"][0]) != ("auto-detect" if src == "auto" else src, tgt):
-            return 400, {}, json.dumps({"statusCode": 400})
-        out = translate_lines(form["text"][0], self.dictionary)
-        return 200, {}, json.dumps([{"detectedLanguage": {"language": "de"}, "translations": [{"text": out, "to": "en"}]}])
+        if (form["fromLang"], form["to"]) != ("auto-detect" if src == "auto" else src, tgt):
+            return 400, json.dumps({"statusCode": 400})
+        out = translate_lines(form["text"], self.dictionary)
+        return 200, json.dumps([{"detectedLanguage": {"language": "de"}, "translations": [{"text": out, "to": "en"}]}])
 
-    def _ocrspace(self, request):
-        return 200, {}, json.dumps({"ParsedResults": [{"FileParseExitCode": 1, "TextOverlay": {"Lines": self.ocr_lines},
-                                                       "ParsedText": "\n".join(l["LineText"] for l in self.ocr_lines)}],
-                                    "OCRExitCode": 1, "IsErroredOnProcessing": False})
+    def _ocrspace(self, params, data):
+        return 200, json.dumps({"ParsedResults": [{"FileParseExitCode": 1, "TextOverlay": {"Lines": self.ocr_lines},
+                                                   "ParsedText": "\n".join(l["LineText"] for l in self.ocr_lines)}],
+                                "OCRExitCode": 1, "IsErroredOnProcessing": False})
+
+
+async def _text(body):
+    return body
 
 
 def block_sockets():
-    """Anything that bypasses requests (urllib, a websocket) must not reach the internet either."""
+    """Anything that bypasses the HTTP session (urllib, a websocket) must not reach the internet either."""
     real_connect = socket.socket.connect
 
     def connect(sock, address):

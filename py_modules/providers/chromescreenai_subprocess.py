@@ -170,7 +170,8 @@ def _load_image_rgba(image_path, max_dim):
 
 
 def _proto_to_regions(proto_bytes, scale_x, scale_y, min_confidence):
-    from providers.chromescreenai_protos.chrome_screen_ai_pb2 import VisualAnnotation
+    # from this script's folder, not the plugin's providers package (that runs in Decky's Python, with aiohttp)
+    from chromescreenai_protos.chrome_screen_ai_pb2 import VisualAnnotation
 
     ann = VisualAnnotation()
     ann.ParseFromString(proto_bytes)

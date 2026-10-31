@@ -1,19 +1,12 @@
 # providers/free_translate.py
 # Free translation using direct HTTP requests to Google Translate
 
-import asyncio
 import logging
 import time
 from typing import List, Optional
 
-import requests
-
-from .base import TranslationProvider, ProviderType, NetworkError, chunk_indices
+from .base import TranslationProvider, ProviderType, chunk_indices, fetch, probe
 from .bing_translate import BingTranslator
-
-# one session per module: connections are kept alive between requests (a new TLS handshake per
-# request doubled the time of short requests, e.g. 561 -> 258 ms to translate.googleapis.com)
-_http = requests.Session()
 
 GOOGLE_PAUSE_SECONDS = 15 * 60  # after a 429/403 from Google, use Bing for this long
 GOOGLE_BATCH_CHARS = 4500       # texts per POST, one per line
@@ -74,7 +67,7 @@ class FreeTranslateProvider(TranslationProvider):
         self._google_paused_until = time.time() + GOOGLE_PAUSE_SECONDS
         logger.warning(f"Google Translate rate-limited ({status}); using Bing for {GOOGLE_PAUSE_SECONDS // 60} min")
 
-    def _google_batch(self, texts: List[str], src: str, tgt: str) -> List[Optional[str]]:
+    async def _google_batch(self, texts: List[str], src: str, tgt: str) -> List[Optional[str]]:
         """All texts in as few POSTs as possible, one text per line; None where it failed (Bing fills those in)."""
         results: List[Optional[str]] = [None] * len(texts)
         chunks = chunk_indices(texts, GOOGLE_BATCH_CHARS, sep_chars=1)  # one text per line
@@ -83,13 +76,8 @@ class FreeTranslateProvider(TranslationProvider):
             if time.time() < self._google_paused_until:
                 break
             lines = [" ".join(texts[i].split()) for i in chunk]
-            try:
-                resp = _http.post(self.TRANSLATE_URL, params={'client': 'gtx', 'sl': src, 'tl': tgt, 'dt': 't'},
-                                     data={'q': "\n".join(lines)}, headers=headers, timeout=10.0)
-            except requests.exceptions.ConnectionError as e:
-                raise NetworkError("No internet connection") from e
-            except requests.exceptions.Timeout as e:
-                raise NetworkError("Connection timed out") from e
+            resp = await fetch("POST", self.TRANSLATE_URL, params={'client': 'gtx', 'sl': src, 'tl': tgt, 'dt': 't'},
+                               data={'q': "\n".join(lines)}, headers=headers)
             if resp.status_code in (403, 429):
                 self._pause_google(resp.status_code)
                 break
@@ -152,19 +140,17 @@ class FreeTranslateProvider(TranslationProvider):
 
         logger.debug(f"Translating: {src} -> {tgt}, text length: {len(text)}")
 
-        # Run translation in thread pool to not block event loop
-        result = (await asyncio.to_thread(self._translate_lines, [text], src, tgt))[0]
-
+        result = (await self._translate_lines([text], src, tgt))[0]
         return result if result is not None else text
 
-    def _translate_lines(self, texts: List[str], src: str, tgt: str) -> List[Optional[str]]:
+    async def _translate_lines(self, texts: List[str], src: str, tgt: str) -> List[Optional[str]]:
         """Google first (one request per batch), Bing for whatever Google didn't translate or while it is paused."""
         results: List[Optional[str]] = [None] * len(texts)
         if time.time() >= self._google_paused_until:
-            results = self._google_batch(texts, src, tgt)
+            results = await self._google_batch(texts, src, tgt)
         missing = [i for i, r in enumerate(results) if r is None and texts[i] and texts[i].strip()]
         if missing:
-            for i, t in zip(missing, self._bing.translate_lines([texts[i] for i in missing], src, tgt)):
+            for i, t in zip(missing, await self._bing.translate_lines([texts[i] for i in missing], src, tgt)):
                 results[i] = t
         return results
 
@@ -179,30 +165,17 @@ class FreeTranslateProvider(TranslationProvider):
         src = self._map_language(source_lang)
         tgt = self._map_language(target_lang)
         logger.debug(f"Batch translating {len(texts)} texts: {src} -> {tgt}")
-        results = await asyncio.to_thread(self._translate_lines, list(texts), src, tgt)
+        results = await self._translate_lines(list(texts), src, tgt)
         logger.debug(f"Batch translation complete: {len(results)} results")
         return results
 
     async def test_network(self) -> tuple:
-        def _probe():
-            params = {
-                "client": "gtx",
-                "sl": "en",
-                "tl": "en",
-                "dt": "t",
-                "q": "ok",
-            }
-            try:
-                resp = _http.get(self.TRANSLATE_URL, params=params, timeout=4)
-            except (requests.ConnectionError, requests.Timeout):
-                return False, "Network unreachable"
-            except Exception as e:
-                return False, f"Probe failed: {type(e).__name__}"
-            code = resp.status_code
-            if code == 200:
-                return True, ""
-            if code in (403, 429):
-                return False, "Rate limited"
-            return False, f"Service error ({code})"
-
-        return await asyncio.to_thread(_probe)
+        resp, error = await probe("GET", self.TRANSLATE_URL,
+                                  params={"client": "gtx", "sl": "en", "tl": "en", "dt": "t", "q": "ok"})
+        if resp is None:
+            return False, error
+        if resp.status_code == 200:
+            return True, ""
+        if resp.status_code in (403, 429):
+            return False, "Rate limited"
+        return False, f"Service error ({resp.status_code})"
