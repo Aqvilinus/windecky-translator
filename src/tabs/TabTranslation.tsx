@@ -602,7 +602,7 @@ function useChromeScreenAIStatus() {
         cancelCall: 'cancel_chromescreenai_download',
         deleteCall: 'delete_chromescreenai',
         clearErrorCall: 'clear_chromescreenai_error',
-        defaultApproxMb: 120,
+        defaultApproxMb: 80,  // py_modules/providers/screenai_downloader.py APPROX_SIZE_MB
     });
 }
 

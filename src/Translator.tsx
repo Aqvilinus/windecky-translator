@@ -283,13 +283,13 @@ export class GameTranslatorLogic {
         }
         if (!inputLang && !targetLang) {
             logger.warn('Translator', 'Cannot start translation: languages not configured');
-            this.notify("Output and Input languages are not set", 3000, "Please select them in the plugin settings");
+            this.notify("Input and output languages are not set", 3000, "Please select them in the plugin settings");
             return false;
         }
 
         if (inputLang !== 'auto' && inputLang === targetLang) {
             logger.warn('Translator', `Cannot start translation: input and output language are both ${inputLang}`);
-            this.notify("Input and output languages can not be the same", 3000, "Select change them in plugin settings");
+            this.notify("Input and output languages can't be the same", 3000, "Change one of them in the plugin settings");
             return false;
         }
 

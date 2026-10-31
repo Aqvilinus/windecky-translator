@@ -26,7 +26,7 @@ from .gemini_vision import GeminiVisionProvider
 from .ct2_translate import CT2TranslateProvider
 from .llm_translate import LLMTranslateProvider
 from .nllb_downloader import NLLBDownloader
-from .screenai_downloader import ScreenAIDownloader
+from .screenai_downloader import APPROX_SIZE_MB as SCREENAI_APPROX_MB, ScreenAIDownloader
 
 logger = logging.getLogger(__name__)
 
@@ -542,7 +542,7 @@ class ProviderManager:
     def get_chromescreenai_status(self) -> dict:
         if not self._screenai_downloader:
             return {
-                "downloaded": False, "size": 0, "approx_size_mb": 120,
+                "downloaded": False, "size": 0, "approx_size_mb": SCREENAI_APPROX_MB,
                 "downloading": False, "progress": 0, "error": None,
             }
         return self._screenai_downloader.get_status()

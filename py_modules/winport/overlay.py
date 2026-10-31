@@ -405,7 +405,7 @@ class Overlay:
         hinst = kernel32.GetModuleHandleW(None)
         wc = WNDCLASSW(lpfnWndProc=_WNDPROC, hInstance=hinst, lpszClassName=CLASS_NAME)
         user32.RegisterClassW(ctypes.byref(wc))  # fails harmlessly if a previous overlay thread registered it
-        self._hwnd = user32.CreateWindowExW(WS_EX_STYLE, CLASS_NAME, "Decky Translator", WS_POPUP, 0, 0, 1, 1,
+        self._hwnd = user32.CreateWindowExW(WS_EX_STYLE, CLASS_NAME, "WinDecky Translator", WS_POPUP, 0, 0, 1, 1,
                                             None, None, hinst, None)
         self._shown = False  # a new window (this thread may replace one that died)
         if not self._hwnd:

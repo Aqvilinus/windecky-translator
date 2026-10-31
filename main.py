@@ -51,15 +51,15 @@ def _should_extract_dependencies():
 
 if _should_extract_dependencies():
     try:
-        print(f"[Decky Translator] Extracting dependencies from {DEPENDENCIES_ARCHIVE}...")
+        print(f"[WinDecky Translator] Extracting dependencies from {DEPENDENCIES_ARCHIVE}...")
         with tarfile.open(DEPENDENCIES_ARCHIVE, "r:gz") as tar:
             tar.extractall(path=BIN_DIR, filter="data")  # no links or paths out of BIN_DIR (3.14's default too)
         # Create marker file to indicate successful extraction
         with open(EXTRACTION_MARKER, "w", encoding="utf-8") as f:
             f.write(f"Extracted at {datetime.now().isoformat()}\n")
-        print("[Decky Translator] Dependencies extracted successfully")
+        print("[WinDecky Translator] Dependencies extracted successfully")
     except Exception as e:
-        print(f"[Decky Translator] Failed to extract dependencies: {e}")
+        print(f"[WinDecky Translator] Failed to extract dependencies: {e}")
         # Remove marker if it exists, so we retry next time
         if os.path.exists(EXTRACTION_MARKER):
             os.remove(EXTRACTION_MARKER)
@@ -90,6 +90,7 @@ except ImportError:
 from providers import ProviderManager, NetworkError, ApiKeyError, RateLimitError, OCRError, TranslationError
 from providers.base import close_session
 from providers.translation_cache import TranslationCache, PROVIDER_TIERS, normalize
+from providers.screenai_downloader import APPROX_SIZE_MB as SCREENAI_APPROX_MB
 
 _processing_lock = False
 
@@ -207,7 +208,7 @@ try:
         _plugin_version = json.load(_pkg).get("version", "unknown")
 except Exception as _e:
     _plugin_version = "unknown"
-logger.info(f"Decky Translator v{_plugin_version} starting")
+logger.info(f"WinDecky Translator v{_plugin_version} starting")
 
 
 # The capture's name for the frontend (no file is written; suspended.json of winport/pause.py lives here too)
@@ -975,12 +976,12 @@ class Plugin:
     async def get_chromescreenai_status(self):
         try:
             if not self._provider_manager:
-                return {"downloaded": False, "size": 0, "approx_size_mb": 120,
+                return {"downloaded": False, "size": 0, "approx_size_mb": SCREENAI_APPROX_MB,
                         "downloading": False, "progress": 0, "error": None}
             return self._provider_manager.get_chromescreenai_status()
         except Exception as e:
             logger.error(f"Error getting Chrome Screen AI status: {e}")
-            return {"downloaded": False, "size": 0, "approx_size_mb": 120,
+            return {"downloaded": False, "size": 0, "approx_size_mb": SCREENAI_APPROX_MB,
                     "downloading": False, "progress": 0, "error": str(e)}
 
     async def download_chromescreenai(self):
