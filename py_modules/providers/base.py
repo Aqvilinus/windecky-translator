@@ -29,6 +29,10 @@ class RateLimitError(Exception):
     pass
 
 
+class OCRError(Exception):
+    """The OCR engine failed (which is not the same as finding no text); the message is shown to the user."""
+
+
 def classify_google_error(status_code: int, body: str) -> str:
     """Logging for a non-200 Google API response."""
     body = body or ""

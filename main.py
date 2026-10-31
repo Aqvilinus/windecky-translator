@@ -86,7 +86,7 @@ except ImportError:
     import decky as decky_plugin  # the current name, in case a Decky release drops the old one
 
 # Import provider system
-from providers import ProviderManager, NetworkError, ApiKeyError, RateLimitError
+from providers import ProviderManager, NetworkError, ApiKeyError, RateLimitError, OCRError
 from providers.base import close_session
 from providers.translation_cache import TranslationCache, PROVIDER_TIERS, normalize
 
@@ -697,10 +697,12 @@ class Plugin:
         except RateLimitError as e:
             logger.error(f"Rate limit during OCR: {e}")
             return {"error": "rate_limit_error", "message": str(e)}
-        except Exception as e:
-            logger.error(f"Text recognition error: {e}")
-            logger.error(traceback.format_exc())
-            return []
+        except OCRError as e:
+            logger.error(f"OCR failed: {e}")
+            return {"error": "ocr_failed", "message": str(e)}
+        except Exception:
+            logger.exception("Text recognition error")
+            return {"error": "ocr_failed", "message": "Text recognition failed (details in the plugin log)"}
 
     def _is_capture(self, image_path) -> bool:
         return bool(self._capture_target and image_path and image_path == self._capture_target.get("path"))

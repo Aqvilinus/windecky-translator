@@ -2,7 +2,7 @@
 
 import { call, toaster } from "@decky/api";
 import { Router } from "@decky/ui";
-import { TextRecognizer, NetworkError, ApiKeyError, RateLimitError, ModelNotAvailableError } from "./TextRecognizer";
+import { TextRecognizer, BackendError, NetworkError, ApiKeyError } from "./TextRecognizer";
 import { TextTranslator } from "./TextTranslator";
 import { ImageState } from "./Overlay";
 import { logger } from "./Logger";
@@ -186,34 +186,16 @@ export class GameTranslatorLogic {
 
             logger.error('Translator', 'Screenshot and translation error', error);
 
-            // Check if this is a network error
-            if (error instanceof NetworkError) {
-                const msg = error.message || "No internet connection";
-                this.imageState.updateProcessingStep(msg, true);
-                // Hide overlay after showing the error message
-                setTimeout(() => {
-                    if (!isCancelled()) this.imageState.hideImage();
-                }, 2500); // 2.5 seconds delay for network error
-            } else if (error instanceof ApiKeyError) {
-                this.imageState.updateProcessingStep(error.message || "Invalid API key", true);
-                // Hide overlay after showing the error message
-                setTimeout(() => {
-                    if (!isCancelled()) this.imageState.hideImage();
-                }, 2500); // 2.5 seconds delay for API key error
-            } else if (error instanceof ModelNotAvailableError) {
-                this.imageState.updateProcessingStep(error.message, true);
-                setTimeout(() => {
-                    if (!isCancelled()) this.imageState.hideImage();
-                }, 3000);
-            } else if (error instanceof RateLimitError) {
-                this.imageState.updateProcessingStep(error.message, true);
-                // Hide overlay after showing the error message
-                setTimeout(() => {
-                    if (!isCancelled()) this.imageState.hideImage();
-                }, 3000); // 3 seconds delay for rate limit error
-            } else {
-                this.imageState.hideImage();
-            }
+            // Every failure is shown on the overlay for a moment: the backend's reason, or a generic one
+            let message = "Translation failed";
+            if (error instanceof BackendError && error.message) message = error.message;
+            else if (error instanceof NetworkError) message = "No internet connection";
+            else if (error instanceof ApiKeyError) message = "Invalid API key";
+            const quick = error instanceof NetworkError || error instanceof ApiKeyError;
+            this.imageState.updateProcessingStep(message, true);
+            setTimeout(() => {
+                if (!isCancelled()) this.imageState.hideImage();
+            }, quick ? 2500 : 3000);
         }
         finally {
             if (!isCancelled()) {

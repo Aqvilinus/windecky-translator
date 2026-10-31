@@ -156,6 +156,51 @@ def test_no_network(backend, net):
     assert backend.call("translate_text", regions, "en", "auto") == {"error": "network_error", "message": "No internet connection"}
 
 
+def test_ocr_engine_failures_reach_the_frontend(backend, monkeypatch):
+    """A failing engine is reported with its reason, not as an empty result ("No text found")."""
+    from providers import OCRError
+    provider = backend.plugin._provider_manager.get_ocr_provider()
+
+    async def times_out(image, language="auto"):
+        raise OCRError("On-device OCR timed out after 120 s")
+    monkeypatch.setattr(provider, "recognize", times_out)
+    shot = backend.call("take_screenshot", "Game")
+    assert backend.call("recognize_text_file", shot["path"]) == {
+        "error": "ocr_failed", "message": "On-device OCR timed out after 120 s"}
+
+    async def crashes(image, language="auto"):
+        raise ValueError("bug")
+    monkeypatch.setattr(provider, "recognize", crashes)
+    shot = backend.call("take_screenshot", "Game")
+    assert backend.call("recognize_text_file", shot["path"])["error"] == "ocr_failed"
+
+
+def test_chrome_screen_ai_failures_raise(monkeypatch, tmp_path):
+    """The engine's own failures (crash, timeout, unreadable output) become OCRError with a reason."""
+    import subprocess
+    from providers import OCRError
+    from providers.chromescreenai_provider import ChromeScreenAIProvider
+    provider = ChromeScreenAIProvider(model_dir=str(tmp_path))
+    provider._python_path = "python.exe"
+
+    def run(result=None, error=None):
+        def fake(*args, **kwargs):
+            if error:
+                raise error
+            return result
+        monkeypatch.setattr(subprocess, "run", fake)
+
+    for result, error, reason in (
+        (subprocess.CompletedProcess([], 3, "", "access violation"), None, "exit code 3"),
+        (subprocess.CompletedProcess([], 0, "not json", ""), None, "unreadable"),
+        (subprocess.CompletedProcess([], 0, '{"error": "model failed to load"}', ""), None, "model failed to load"),
+        (None, subprocess.TimeoutExpired("python.exe", 120), "timed out"),
+    ):
+        run(result, error)
+        with pytest.raises(OCRError, match=reason):
+            provider._recognize_oneshot(b"png")
+
+
 def test_nothing_captured(backend, windows):
     windows.capture_image = None  # no foreground window
     assert backend.call("take_screenshot", "Game") == {"path": "", "base64": ""}

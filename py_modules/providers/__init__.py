@@ -14,6 +14,7 @@ from .base import (
     NetworkError,
     ApiKeyError,
     RateLimitError,
+    OCRError,
 )
 from .google_ocr import GoogleVisionProvider
 from .google_translate import GoogleTranslateProvider
@@ -42,6 +43,7 @@ __all__ = [
     'NetworkError',
     'ApiKeyError',
     'RateLimitError',
+    'OCRError',
     'GoogleVisionProvider',
     'GoogleTranslateProvider',
     'OCRSpaceProvider',
@@ -346,13 +348,10 @@ class ProviderManager:
             List of TextRegion objects
         """
         provider = self.get_ocr_provider()
-        if provider and provider.is_available(language):
-            provider_name = provider.name
-            logger.debug(f"Using {provider_name} for OCR")
-            return await provider.recognize(image_data, language)
-
-        logger.warning("No OCR provider available")
-        return []
+        if not provider or not provider.is_available(language):
+            raise OCRError(f"{provider.name if provider else 'The OCR engine'} is unavailable")
+        logger.debug(f"Using {provider.name} for OCR")
+        return await provider.recognize(image_data, language)
 
     async def translate_text(
         self,
