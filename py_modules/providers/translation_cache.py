@@ -150,6 +150,8 @@ class TranslationCache:
             self._conn.execute("DELETE FROM translations")
             self._conn.commit()
             self._conn.execute("VACUUM")
+            # the write-ahead log still holds the deleted lines until it is checkpointed: empty it too
+            self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         return count
 
     def stats(self):

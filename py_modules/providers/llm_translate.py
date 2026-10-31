@@ -219,7 +219,9 @@ class LLMTranslateProvider(TranslationProvider):
         reply = await (self._gemini_request if self._backend == "gemini" else self._openai_request)(system, user)
         result = _parse_translations(reply, len(texts))
         logger.info(f"{self.name} [{self.model}]: {len(texts)} texts in {time.time() - start:.2f}s"
-                    + ("" if result else f", unusable reply: {reply[:200]!r}"))
+                    + ("" if result else ", unusable reply"))
+        if not result:
+            logger.debug(f"{self.name} reply: {reply[:200]!r}")  # screen text: only with debug logging on
         return result
 
     async def _translate_lines(self, texts: List[str], source_lang: str, target_lang: str) -> List[Optional[str]]:

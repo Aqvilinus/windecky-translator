@@ -2,6 +2,7 @@
 # fetched on demand from Google's CIPD server, not bundled in the plugin.
 
 import asyncio
+import glob
 import json
 import logging
 import os
@@ -28,6 +29,18 @@ _WORKER_ENV_STRIP = (
     "VECLIB_MAXIMUM_THREADS",
     "NUMEXPR_NUM_THREADS",
 )
+
+
+INPUT_PREFIX = "chromescreenai_input_"  # the screenshot handed to the engine, a temporary file
+
+
+def _remove_leftover_inputs():
+    """Screenshots a crash left in the temp folder (normally each is deleted right after its OCR)."""
+    for path in glob.glob(os.path.join(tempfile.gettempdir(), INPUT_PREFIX + "*.png")):
+        try:
+            os.remove(path)
+        except OSError:
+            pass  # in use by another instance: it deletes its own
 
 
 class ChromeScreenAIProvider(OCRProvider):
@@ -57,6 +70,7 @@ class ChromeScreenAIProvider(OCRProvider):
 
         self._persistent_mode = False
         self._start_lock = threading.Lock()
+        _remove_leftover_inputs()
 
         # Prefer the extracted bin/py_modules copy (Decky Store install),
         # fall back to root py_modules in dev.
@@ -165,7 +179,7 @@ class ChromeScreenAIProvider(OCRProvider):
         """The persistent worker's answer; None if it isn't available (the caller falls back to a one-shot run)."""
         if not self._worker.alive and not self.start_worker():
             return None
-        with tempfile.NamedTemporaryFile(prefix="chromescreenai_input_", suffix=".png", delete_on_close=False) as image_file:
+        with tempfile.NamedTemporaryFile(prefix=INPUT_PREFIX, suffix=".png", delete_on_close=False) as image_file:
             image_file.write(image_data)
             image_file.close()  # the worker opens it by name; it is deleted when the block ends
             start = time.time()
@@ -180,7 +194,7 @@ class ChromeScreenAIProvider(OCRProvider):
         return regions
 
     def _recognize_oneshot(self, image_data: bytes) -> List[TextRegion]:
-        with tempfile.NamedTemporaryFile(prefix="chromescreenai_input_", suffix=".png", delete_on_close=False) as image_file:
+        with tempfile.NamedTemporaryFile(prefix=INPUT_PREFIX, suffix=".png", delete_on_close=False) as image_file:
             image_file.write(image_data)
             image_file.close()  # the subprocess opens it by name; it is deleted when the block ends
             temp_path = image_file.name

@@ -19,6 +19,10 @@ user32.CloseClipboard.restype = wintypes.BOOL
 kernel32.GlobalLock.argtypes = [wintypes.HGLOBAL]
 kernel32.GlobalLock.restype = wintypes.LPVOID
 kernel32.GlobalUnlock.argtypes = [wintypes.HGLOBAL]
+kernel32.GlobalSize.argtypes = [wintypes.HGLOBAL]
+kernel32.GlobalSize.restype = ctypes.c_size_t
+
+MAX_CHARS = 4096  # an API key or a server address; more is not what the Paste button is for
 
 
 def get_text() -> str:
@@ -37,7 +41,9 @@ def get_text() -> str:
         if not ptr:
             return ""
         try:
-            return ctypes.wstring_at(ptr)
+            # read no further than the block (its text should end in a NUL, but nothing guarantees it)
+            chars = min(kernel32.GlobalSize(handle) // ctypes.sizeof(ctypes.c_wchar), MAX_CHARS)
+            return ctypes.wstring_at(ptr, chars).split("\0", 1)[0]
         finally:
             kernel32.GlobalUnlock(handle)
     finally:
