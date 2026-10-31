@@ -17,6 +17,18 @@ function isErrorResponse(value: unknown): value is ErrorResponse {
     return typeof value === 'object' && value !== null && 'error' in value && 'message' in value;
 }
 
+// A backend reply that reports a failure ({error, message}) as the matching error; any other reply passes through
+export function throwIfBackendError<T>(response: T | ErrorResponse): T {
+    if (!isErrorResponse(response)) return response;
+    switch (response.error) {
+        case 'network_error': throw new NetworkError(response.message);
+        case 'api_key_error': throw new ApiKeyError(response.message);
+        case 'rate_limit_error': throw new RateLimitError(response.message);
+        case 'model_not_available': throw new ModelNotAvailableError(response.message);
+        default: throw new BackendError(response.message);  // ocr_failed, translation_failed
+    }
+}
+
 export interface TextRegion {
     text: string;
     rect: {
@@ -631,17 +643,8 @@ export class TextRecognizer {
     }
 
     async recognizeTextFile(imagePath: string): Promise<TextRegion[]> {
-        const response = await call<[string], TextRegion[] | ErrorResponse>('recognize_text_file', imagePath);
-        if (isErrorResponse(response)) {
-            switch (response.error) {
-                case 'network_error': throw new NetworkError(response.message);
-                case 'api_key_error': throw new ApiKeyError(response.message);
-                case 'rate_limit_error': throw new RateLimitError(response.message);
-                case 'model_not_available': throw new ModelNotAvailableError(response.message);
-                default: throw new BackendError(response.message);  // e.g. ocr_failed
-            }
-        }
-        const regions = response || [];
+        const regions = throwIfBackendError(
+            await call<[string], TextRegion[] | ErrorResponse>('recognize_text_file', imagePath)) || [];
         logger.info('TextRecognizer', `Got ${regions.length} regions from file-based OCR`);
 
         const mergedRegions = this.applyAutoGlue(regions);

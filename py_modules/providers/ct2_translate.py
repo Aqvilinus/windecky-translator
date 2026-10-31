@@ -10,7 +10,7 @@ import threading
 import unicodedata
 from typing import List, Optional
 
-from .base import TranslationProvider, ProviderType
+from .base import TranslationError, TranslationProvider, ProviderType
 from .nllb_downloader import NLLB_LANG_MAP, NLLBDownloader
 from .language_detection import CJK_FAMILIES, dominant_family, flores_families
 from . import python_runtime
@@ -444,22 +444,18 @@ class CT2TranslateProvider(TranslationProvider):
             return []
 
         if source_lang == "auto":
-            logger.error("CT2 translation does not support auto-detect")
-            return texts
+            raise TranslationError("Offline translation needs a source language: select one in plugin settings")
 
         src_nllb = self._model_manager.get_nllb_lang_code(source_lang)
         tgt_nllb = self._model_manager.get_nllb_lang_code(target_lang)
         if not src_nllb or not tgt_nllb:
-            logger.error(f"Unsupported language: {source_lang} or {target_lang}")
-            return texts
+            raise TranslationError(f"Offline translation does not support {source_lang} -> {target_lang}")
 
         if not self._model_manager.is_model_downloaded():
-            from .base import NetworkError
-            raise NetworkError("NLLB model not downloaded")
+            raise TranslationError("Offline model not found. Download it in plugin settings")
 
         if not self._ensure_worker():
-            logger.error("Could not start CT2 translation worker")
-            return texts
+            raise TranslationError("Offline translation could not start (details in the plugin log)")
 
         load_result = self._load_model()
         if not load_result.get("ok"):
@@ -467,10 +463,10 @@ class CT2TranslateProvider(TranslationProvider):
             logger.error(f"Failed to load NLLB model: {error}")
             self._kill_worker()
             if not self._ensure_worker():
-                return texts
+                raise TranslationError("Offline translation could not start (details in the plugin log)")
             load_result = self._load_model()
             if not load_result.get("ok"):
-                return texts
+                raise TranslationError(f"Offline model failed to load: {load_result.get('error', 'unknown error')}")
 
         slots = []
         lines_meta = []
@@ -577,8 +573,7 @@ class CT2TranslateProvider(TranslationProvider):
                 "tgt_lang": tgt_nllb,
             })
             if not result.get("ok"):
-                logger.error(f"Translation failed: {result.get('error')}")
-                return texts
+                raise TranslationError(f"Offline translation failed: {result.get('error')}")
 
             unique_translations = result.get("translations")
             if not isinstance(unique_translations, list) or len(unique_translations) != len(unique_fragments):
@@ -586,7 +581,7 @@ class CT2TranslateProvider(TranslationProvider):
                     f"Worker returned malformed response: expected {len(unique_fragments)} "
                     f"translations, got {len(unique_translations) if isinstance(unique_translations, list) else type(unique_translations).__name__}"
                 )
-                return texts
+                raise TranslationError("Offline translation gave an unreadable answer (details in the plugin log)")
             fallback_flags = result.get("fallbacks")
             if not isinstance(fallback_flags, list) or len(fallback_flags) != len(unique_fragments):
                 fallback_flags = [False] * len(unique_fragments)

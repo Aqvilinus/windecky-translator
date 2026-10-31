@@ -132,6 +132,29 @@ def test_google_rate_limit_falls_back_to_bing(backend, net):
     assert len(net.calls(harness.GOOGLE_URL)) == 1
 
 
+def test_a_translation_that_gives_nothing_back_is_an_error(backend, net, monkeypatch):
+    """Google refuses and Bing's answer is unusable: say so instead of showing the originals as if translated."""
+    net.google_status = 429
+    free = backend.plugin._provider_manager.get_translation_provider()
+
+    async def unusable(texts, src, tgt):
+        return [None] * len(texts)
+    monkeypatch.setattr(free._bing, "translate_lines", unusable)
+    shot = backend.call("take_screenshot", "Game")
+    regions = backend.call("recognize_text_file", shot["path"])
+    reply = backend.call("translate_text", regions, "en", "auto")
+    assert reply["error"] == "translation_failed" and "did not answer" in reply["message"]
+    assert backend.call("get_translation_cache_stats")["entries"] == 0
+
+
+def test_offline_translation_failures_are_errors(backend, monkeypatch):
+    from providers import TranslationError
+    from providers.ct2_translate import CT2TranslateProvider
+    provider = CT2TranslateProvider.__new__(CT2TranslateProvider)  # no worker, no model folder
+    with pytest.raises(TranslationError, match="source language"):
+        provider._translate_batch_sync(["Hallo"], "auto", "en")
+
+
 def test_translation_cache(start, net):
     b = start()
     _, regions, first = translate_screen(b)

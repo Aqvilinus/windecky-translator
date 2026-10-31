@@ -86,7 +86,7 @@ except ImportError:
     import decky as decky_plugin  # the current name, in case a Decky release drops the old one
 
 # Import provider system
-from providers import ProviderManager, NetworkError, ApiKeyError, RateLimitError, OCRError
+from providers import ProviderManager, NetworkError, ApiKeyError, RateLimitError, OCRError, TranslationError
 from providers.base import close_session
 from providers.translation_cache import TranslationCache, PROVIDER_TIERS, normalize
 
@@ -793,6 +793,9 @@ class Plugin:
             logger.info(f"Translation completed in {elapsed:.2f}s, {len(to_request)} new / {len(cached)} cached")
             for i, (src, dst) in enumerate(zip(to_request, requested)):
                 logger.debug(f"  [{i}] '{src}' -> '{dst}'")
+            if to_request and all(t is None for t in requested):
+                # nothing came back (the free services changed or refuse): say so instead of showing the originals
+                raise TranslationError("The translation service did not answer (details in the plugin log)")
 
             # Failed items come back as None. The AI provider reports per item whether the AI or its Google/Bing
             # fallback translated it; each is cached under its own engine's tier.
@@ -837,10 +840,12 @@ class Plugin:
         except RateLimitError as e:
             logger.error(f"Rate limit during translation: {e}")
             return {"error": "rate_limit_error", "message": str(e)}
-        except Exception as e:
-            logger.error(f"Translation error: {e}")
-            logger.error(traceback.format_exc())
-            return None
+        except TranslationError as e:
+            logger.error(f"Translation failed: {e}")
+            return {"error": "translation_failed", "message": str(e)}
+        except Exception:
+            logger.exception("Translation error")
+            return {"error": "translation_failed", "message": "Translation failed (details in the plugin log)"}
 
     async def get_enabled_state(self):
         return self._settings.get_setting("enabled", True) if self._settings else True

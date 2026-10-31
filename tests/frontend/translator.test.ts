@@ -39,6 +39,14 @@ describe('GameTranslatorLogic errors', () => {
         expect(steps.at(-1)).toEqual({ step: 'On-device OCR timed out after 120 s', isError: true });
     });
 
+    it('shows why translation failed', async () => {
+        replies.recognize_text_file = [{ text: 'Neues Spiel', rect: { left: 0, top: 0, right: 90, bottom: 20 }, confidence: 1 }];
+        replies.translate_text = { error: 'translation_failed', message: 'The translation service did not answer' };
+        const { logic, steps } = startTranslator();
+        await logic.takeScreenshotAndTranslate();
+        expect(steps.at(-1)).toEqual({ step: 'The translation service did not answer', isError: true });
+    });
+
     it('still says "No text found" when the screen has no text', async () => {
         replies.recognize_text_file = [];
         const { logic, steps } = startTranslator();

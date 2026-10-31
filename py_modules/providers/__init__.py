@@ -15,6 +15,7 @@ from .base import (
     ApiKeyError,
     RateLimitError,
     OCRError,
+    TranslationError,
 )
 from .google_ocr import GoogleVisionProvider
 from .google_translate import GoogleTranslateProvider
@@ -44,6 +45,7 @@ __all__ = [
     'ApiKeyError',
     'RateLimitError',
     'OCRError',
+    'TranslationError',
     'GoogleVisionProvider',
     'GoogleTranslateProvider',
     'OCRSpaceProvider',
@@ -374,13 +376,11 @@ class ProviderManager:
             return []
 
         provider = self.get_translation_provider()
-        if provider and provider.is_available(source_lang, target_lang):
-            provider_name = provider.name
-            logger.debug(f"Using {provider_name} for translation")
-            return await provider.translate_batch(texts, source_lang, target_lang)
-
-        logger.warning("No translation provider available")
-        return texts  # Return original texts as fallback
+        if not provider or not provider.is_available(source_lang, target_lang):
+            raise TranslationError(f"{provider.name if provider else 'The translator'} is unavailable for "
+                                   f"{source_lang} -> {target_lang}")
+        logger.debug(f"Using {provider.name} for translation")
+        return await provider.translate_batch(texts, source_lang, target_lang)
 
     def get_provider_status(self) -> dict:
         """
