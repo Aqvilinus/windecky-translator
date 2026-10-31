@@ -445,33 +445,29 @@ class Plugin:
             return False
 
     async def get_all_settings(self):
-        try:
-            settings = {
-                "target_language": self._target_language,
-                "input_language": self._input_language,
-                "enabled": self._settings.get_setting("enabled", True),
-                "ocr_provider": self._ocr_provider,
-                "translation_provider": self._translation_provider,
-                "google_api_key": self._google_api_key,
-                "gemini_api_key": self._gemini_api_key,
-                "gemini_model": self._gemini_model,
-                "confidence_threshold": self._settings.get_setting("confidence_threshold", 0.6),
-                "chromescreenai_persistent_mode": self._settings.get_setting("chromescreenai_persistent_mode", False),
-                "ct2_persistent_mode": self._settings.get_setting("ct2_persistent_mode", False),
-                "pause_game_on_overlay": self._settings.get_setting("pause_game_on_overlay", False),
-                "debug_mode": self._settings.get_setting("debug_mode", False),
-                "font_scale": self._settings.get_setting("font_scale", 1.0),
-                "custom_recognition_settings": self._settings.get_setting("custom_recognition_settings", False),
-                "translation_cache_enabled": self._translation_cache_enabled,
-                **{k: self._settings.get_setting(k, d) for k, d in LLM_SETTING_DEFAULTS.items()},
-            }
-            for k in SENSITIVE_SETTING_KEYS & settings.keys():
-                settings[k] = display_key(settings[k])
-            return settings
-        except Exception as e:
-            logger.error(f"Error getting all settings: {str(e)}")
-            logger.error(traceback.format_exc())
-            return {}
+        # no catch-all: a failure here rejects the frontend's call instead of answering {} (every setting unset)
+        settings = {
+            "target_language": self._target_language,
+            "input_language": self._input_language,
+            "enabled": self._settings.get_setting("enabled", True),
+            "ocr_provider": self._ocr_provider,
+            "translation_provider": self._translation_provider,
+            "google_api_key": self._google_api_key,
+            "gemini_api_key": self._gemini_api_key,
+            "gemini_model": self._gemini_model,
+            "confidence_threshold": self._settings.get_setting("confidence_threshold", 0.6),
+            "chromescreenai_persistent_mode": self._settings.get_setting("chromescreenai_persistent_mode", False),
+            "ct2_persistent_mode": self._settings.get_setting("ct2_persistent_mode", False),
+            "pause_game_on_overlay": self._settings.get_setting("pause_game_on_overlay", False),
+            "debug_mode": self._settings.get_setting("debug_mode", False),
+            "font_scale": self._settings.get_setting("font_scale", 1.0),
+            "custom_recognition_settings": self._settings.get_setting("custom_recognition_settings", False),
+            "translation_cache_enabled": self._translation_cache_enabled,
+            **{k: self._settings.get_setting(k, d) for k, d in LLM_SETTING_DEFAULTS.items()},
+        }
+        for k in SENSITIVE_SETTING_KEYS & settings.keys():
+            settings[k] = display_key(settings[k])
+        return settings
 
     def _apply_llm_settings(self):
         """AI translation settings -> the provider manager (on start and whenever one of them changes)."""
