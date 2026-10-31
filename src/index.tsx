@@ -303,6 +303,7 @@ export default definePlugin(() => {
             stopAdopting();
             routerHook.removeGlobalComponent("TranslatorSettingsLoader");
         },
-        alwaysRender: true
+        // no alwaysRender: Decky then unmounts the panel when the side menu closes, which stops its status polling
+        // (a web request every 10 s) during the game
     };
 });
