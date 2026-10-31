@@ -620,6 +620,10 @@ class Plugin:
             asyncio.run_coroutine_threadsafe(emit(event, *args), self._loop)
 
     def _on_hotkey(self):
+        # A paused game is resumed here too, not only when the frontend hides the translation: if Steam's UI hangs or
+        # is gone, Ctrl+Alt+T still unfreezes the game
+        if self._loop:
+            self._loop.call_soon_threadsafe(self._resume_paused_games)
         self._emit("translator_hotkey")
 
     async def get_windows_ocr_languages(self):

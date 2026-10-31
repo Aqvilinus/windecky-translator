@@ -257,6 +257,22 @@ def test_switching_the_plugin_off_resumes_a_paused_game(start, windows, net):
     assert windows.processes.suspended == set()
 
 
+def test_hotkey_resumes_a_paused_game_even_without_the_frontend(start, windows, net):
+    b = start({"pause_game_on_overlay": True})
+    _, _, translated = translate_screen(b)
+    b.call("native_overlay_update", overlay_state(translated))
+    assert windows.processes.suspended == {harness.GAME_PID}
+
+    async def press():  # no frontend answers the event
+        t = threading.Thread(target=b.plugin._on_hotkey)  # the hotkey's own thread
+        t.start()
+        t.join()
+        await harness.asyncio.sleep(0.05)
+
+    b.run(press())
+    assert windows.processes.suspended == set()
+
+
 def test_hotkey_reaches_the_frontend(backend, main):
     async def press():
         t = threading.Thread(target=backend.plugin._on_hotkey)  # the hotkey's own thread
