@@ -1,6 +1,7 @@
 # providers/gemini_vision.py
 # Gemini Vision provider -- combined OCR + translation in a single API call
 
+import asyncio
 import base64
 import io
 import json
@@ -19,6 +20,7 @@ from .base import (
     classify_google_error,
     probe,
     raise_for_api_error,
+    to_jpeg,
 )
 
 logger = logging.getLogger(__name__)
@@ -194,7 +196,7 @@ class GeminiVisionProvider(OCRProvider):
             "system_instruction": {"parts": [{"text": self._build_system_instruction()}]},
             "contents": [{
                 "parts": [
-                    {"inline_data": {"mime_type": "image/png", "data": base64.b64encode(image_data).decode('utf-8')}},
+                    {"inline_data": {"mime_type": "image/jpeg", "data": base64.b64encode(image_data).decode('utf-8')}},
                     {"text": prompt},
                 ]
             }],
@@ -218,7 +220,7 @@ class GeminiVisionProvider(OCRProvider):
 
         prompt = self._build_prompt(language, self._target_language)
 
-        response_text = await self._call_api(image_data, prompt)
+        response_text = await self._call_api(await asyncio.to_thread(to_jpeg, image_data), prompt)
 
         regions_data = _parse_json_response(response_text)
         if regions_data is None:

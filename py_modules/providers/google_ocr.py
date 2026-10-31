@@ -1,12 +1,13 @@
 # providers/google_ocr.py
 # Google Cloud Vision OCR provider
 
+import asyncio
 import base64
 import logging
 from typing import List
 
 from .base import (OCRProvider, ProviderType, TextRegion, NetworkError, ApiKeyError, RateLimitError,
-                   classify_google_error, fetch, probe, raise_for_google_error)
+                   classify_google_error, fetch, probe, raise_for_google_error, to_jpeg)
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +64,7 @@ class GoogleVisionProvider(OCRProvider):
 
         request_data = {
             "requests": [{
-                "image": {"content": base64.b64encode(image_data).decode('utf-8')},
+                "image": {"content": base64.b64encode(await asyncio.to_thread(to_jpeg, image_data)).decode('utf-8')},
                 "features": [{"type": "DOCUMENT_TEXT_DETECTION", "maxResults": 50}],
             }]
         }
