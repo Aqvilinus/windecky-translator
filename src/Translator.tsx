@@ -19,8 +19,7 @@ export class GameTranslatorLogic {
     public imageState: ImageState;
     private textRecognizer: TextRecognizer;
     private textTranslator: TextTranslator;
-    private enabled: boolean = true; // Add enabled state
-    private confidenceThreshold: number = 0.6; // Default confidence threshold
+    private enabled: boolean = true;  // until SettingsContext loads the setting
     private currentRunId: number = 0;
 
     // Provider settings for upfront validation
@@ -37,20 +36,6 @@ export class GameTranslatorLogic {
         this.imageState = imageState;
         this.textRecognizer = new TextRecognizer();
         this.textTranslator = new TextTranslator();
-
-        // Load enabled state from server
-        this.loadInitialState();
-    }
-
-    // Load initial state from server
-    private async loadInitialState() {
-        try {
-            const result = await call<[], boolean>('get_enabled_state');
-            this.enabled = !!result;
-            logger.info('Translator', `Loaded initial enabled state: ${this.enabled}`);
-        } catch (error) {
-            logger.error('Translator', 'Failed to load initial state', error);
-        }
     }
 
     // Switch the plugin on or off (SettingsContext saves the setting; the backend frees or takes Ctrl+Alt+T)
@@ -61,24 +46,9 @@ export class GameTranslatorLogic {
         }
     }
 
-    // Add method to get enabled state
-    isEnabled(): boolean {
-        return this.enabled;
-    }
-
-    // New methods for confidence threshold
     setConfidenceThreshold(threshold: number): void {
-        logger.debug('Translator', `Setting confidence threshold to: ${threshold}`);
-        this.confidenceThreshold = threshold;
-
-        // Update the textRecognizer with the new threshold
         this.textRecognizer.setConfidenceThreshold(threshold);
     }
-
-    getConfidenceThreshold(): number {
-        return this.confidenceThreshold;
-    }
-
 
     notify = async (message: string, duration: number = 1000, body?: string): Promise<void> => {
         toaster.toast({

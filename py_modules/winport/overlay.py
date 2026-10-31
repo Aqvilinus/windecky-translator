@@ -14,7 +14,6 @@ per-monitor DPI aware); CSS sizes from Overlay.tsx are multiplied by the monitor
 """
 import ctypes
 import logging
-import math
 import os
 import queue
 import threading
@@ -298,7 +297,7 @@ def _draw_labels(d, regions, ox, oy, img_width, state, scale, image=None):
         size[group[i]] = min(size.get(group[i], own), own)
 
     for i in shown:
-        r, (x0, y0, x1, y1), align = regions[i], boxes[i], aligns[i]
+        (x0, y0, x1, y1), align = boxes[i], aligns[i]
         text, width, height = rooms[i]
         font_size = size[group[i]]
         font = font_for(text, font_size)

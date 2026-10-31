@@ -118,10 +118,6 @@ export class TextRecognizer {
         this.confidenceThreshold = threshold;
     }
 
-    getConfidenceThreshold(): number {
-        return this.confidenceThreshold;
-    }
-
     // Phase 1: group OCR boxes that sit on the same horizontal line.
     // Checks: Y-center alignment, height compatibility, horizontal gap.
     // All thresholds relative to median line height -- never absolute pixels.

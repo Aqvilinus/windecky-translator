@@ -11,7 +11,7 @@ from datetime import datetime, date
 from typing import List
 
 
-from .base import OCRProvider, ProviderType, TextRegion, NetworkError, RateLimitError, fetch, probe
+from .base import OCRProvider, TextRegion, NetworkError, RateLimitError, fetch, probe
 
 
 logger = logging.getLogger(__name__)
@@ -189,17 +189,9 @@ class OCRSpaceProvider(OCRProvider):
     def name(self) -> str:
         return "OCR.space"
 
-    @property
-    def provider_type(self) -> ProviderType:
-        return ProviderType.OCR_SPACE
-
     def is_available(self, language: str = "auto") -> bool:
         """Check if OCR is available for the given language."""
         return language in self.SUPPORTED_LANGUAGES
-
-    def get_supported_languages(self) -> List[str]:
-        """Return list of supported language codes."""
-        return self.SUPPORTED_LANGUAGES.copy()
 
     def _get_ocr_language(self, language: str) -> str:
         """Map our language code to OCR.space language code."""

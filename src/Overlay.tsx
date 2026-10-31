@@ -161,8 +161,4 @@ export class ImageState {
     isVisible(): boolean {
         return this.visible;
     }
-
-    isLoading(): boolean {
-        return this.loading;
-    }
 }

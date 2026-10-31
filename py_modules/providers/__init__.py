@@ -402,8 +402,7 @@ class ProviderManager:
 
         # Add OCR.space usage stats if using ocrspace (OCR.space) provider
         if self._ocr_provider_preference == "ocrspace" and ocr_provider:
-            if hasattr(ocr_provider, 'get_usage_stats'):
-                status["ocr_usage"] = ocr_provider.get_usage_stats()
+            status["ocr_usage"] = ocr_provider.get_usage_stats()
 
         llm = self._translation_providers.get(ProviderType.LLM)
         if llm:
@@ -479,7 +478,7 @@ class ProviderManager:
             else:
                 return False, f"Unknown provider ({provider})"
 
-            if p is None or not hasattr(p, "test_network"):
+            if p is None:
                 return False, "Provider unavailable"
 
             return await p.test_network()
@@ -516,7 +515,7 @@ class ProviderManager:
         if not self._model_manager:
             return False
         ct2 = self._translation_providers.get(ProviderType.CT2)
-        if ct2 and hasattr(ct2, '_loaded_model_dir'):
+        if ct2:
             if ct2._loaded_model_dir == self._model_manager.get_model_dir():
                 ct2.unload_current_model()
         return self._model_manager.delete_model()
@@ -561,7 +560,7 @@ class ProviderManager:
         if not self._screenai_downloader:
             return False
         provider = self._ocr_providers.get(ProviderType.CHROME_SCREEN_AI)
-        if provider and hasattr(provider, 'stop_worker'):
+        if provider:
             provider.stop_worker()
         # Drop the cached provider so it re-checks availability after delete.
         self._ocr_providers.pop(ProviderType.CHROME_SCREEN_AI, None)
@@ -569,8 +568,8 @@ class ProviderManager:
 
     def shutdown(self):
         ct2 = self._translation_providers.get(ProviderType.CT2)
-        if ct2 and hasattr(ct2, 'shutdown'):
+        if ct2:
             ct2.shutdown()
         screenai = self._ocr_providers.get(ProviderType.CHROME_SCREEN_AI)
-        if screenai and hasattr(screenai, 'stop_worker'):
+        if screenai:
             screenai.stop_worker()

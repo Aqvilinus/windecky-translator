@@ -193,12 +193,6 @@ class OCRProvider(ABC):
         """Return the provider name."""
         pass
 
-    @property
-    @abstractmethod
-    def provider_type(self) -> ProviderType:
-        """Return the provider type enum."""
-        pass
-
     @abstractmethod
     async def recognize(self, image_data: bytes, language: str = "auto") -> List[TextRegion]:
         """
@@ -226,16 +220,6 @@ class OCRProvider(ABC):
         """
         pass
 
-    @abstractmethod
-    def get_supported_languages(self) -> List[str]:
-        """
-        Return list of supported language codes.
-
-        Returns:
-            List of ISO 639-1 language codes
-        """
-        pass
-
 
 class TranslationProvider(ABC):
     """Abstract base class for translation providers."""
@@ -244,27 +228,6 @@ class TranslationProvider(ABC):
     @abstractmethod
     def name(self) -> str:
         """Return the provider name."""
-        pass
-
-    @property
-    @abstractmethod
-    def provider_type(self) -> ProviderType:
-        """Return the provider type enum."""
-        pass
-
-    @abstractmethod
-    async def translate(self, text: str, source_lang: str, target_lang: str) -> str:
-        """
-        Translate text from source to target language.
-
-        Args:
-            text: Text to translate
-            source_lang: Source language code (or "auto" for detection)
-            target_lang: Target language code
-
-        Returns:
-            Translated text
-        """
         pass
 
     @abstractmethod
@@ -293,16 +256,6 @@ class TranslationProvider(ABC):
 
         Returns:
             True if the provider can handle this language pair
-        """
-        pass
-
-    @abstractmethod
-    def get_supported_languages(self) -> List[str]:
-        """
-        Return list of supported language codes.
-
-        Returns:
-            List of language codes
         """
         pass
 

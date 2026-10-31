@@ -42,13 +42,6 @@ class Logger {
         }
     }
 
-    /**
-     * Check if debug logging is enabled
-     */
-    isEnabled(): boolean {
-        return this._enabled;
-    }
-
     private log(level: LogLevel, component: string, message: string, ...args: any[]): void {
         // Always log errors, otherwise check if enabled
         if (!this._enabled && level !== LogLevel.ERROR) {

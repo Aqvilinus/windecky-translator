@@ -194,7 +194,7 @@ logger.info(f"Configured rotating log file: {log_file}")
 try:
     with open(os.path.join(PLUGIN_DIR, "package.json"), encoding="utf-8") as _pkg:
         _plugin_version = json.load(_pkg).get("version", "unknown")
-except Exception as _e:
+except (OSError, ValueError):
     _plugin_version = "unknown"
 logger.info(f"WinDecky Translator v{_plugin_version} starting")
 
@@ -863,9 +863,6 @@ class Plugin:
         except sqlite3.Error as e:
             logger.error(f"Translation cache unavailable: {e}")
             return None
-
-    async def get_enabled_state(self):
-        return self._settings.get_setting("enabled", True) if self._settings else True
 
     async def clear_translation_cache(self):
         try:

@@ -13,7 +13,6 @@ from typing import List, Optional
 from . import gemini_api
 from .base import (
     OCRProvider,
-    ProviderType,
     TextRegion,
     ApiKeyError,
     classify_google_error,
@@ -153,15 +152,8 @@ class GeminiVisionProvider(OCRProvider):
     def name(self) -> str:
         return "Gemini Vision"
 
-    @property
-    def provider_type(self) -> ProviderType:
-        return ProviderType.GEMINI_VISION
-
     def is_available(self, language: str = "auto") -> bool:
         return bool(self._api_key)
-
-    def get_supported_languages(self) -> List[str]:
-        return list(LANG_NAMES.keys())
 
     def _build_system_instruction(self) -> str:
         return (

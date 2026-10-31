@@ -12,7 +12,7 @@ import threading
 import time
 from typing import List, Optional
 
-from .base import OCRError, OCRProvider, ProviderType, TextRegion
+from .base import OCRError, OCRProvider, TextRegion
 from . import python_runtime
 
 logger = logging.getLogger(__name__)
@@ -82,31 +82,6 @@ class ChromeScreenAIProvider(OCRProvider):
     def name(self) -> str:
         return "Chrome Screen AI (Local)"
 
-    @property
-    def provider_type(self) -> ProviderType:
-        return ProviderType.CHROME_SCREEN_AI
-
-    def set_model_dir(self, model_dir: str) -> None:
-        if model_dir == self._model_dir:
-            return
-        self._model_dir = model_dir
-        # Worker holds an open DLL handle from the old path; restart it.
-        if self._is_worker_alive():
-            self.stop_worker()
-            if self._persistent_mode:
-                threading.Thread(target=self._warmup_worker, daemon=True).start()
-
-    def set_min_confidence(self, value: float) -> None:
-        v = max(0.0, min(1.0, value))
-        if v == self._min_confidence:
-            return
-        self._min_confidence = v
-        # Filtering is set in the worker init payload; restart to apply.
-        if self._is_worker_alive():
-            self.stop_worker()
-            if self._persistent_mode:
-                threading.Thread(target=self._warmup_worker, daemon=True).start()
-
     def _check_availability(self) -> bool:
         self._init_error = None
 
@@ -134,12 +109,6 @@ class ChromeScreenAIProvider(OCRProvider):
         if not self._check_availability():
             return False
         return language in self.SUPPORTED_LANGUAGES
-
-    def get_supported_languages(self) -> List[str]:
-        return self.SUPPORTED_LANGUAGES.copy()
-
-    def get_init_error(self) -> Optional[str]:
-        return self._init_error
 
     def set_persistent_mode(self, enabled: bool) -> None:
         enabled = bool(enabled)

@@ -10,7 +10,7 @@ import threading
 import unicodedata
 from typing import List, Optional
 
-from .base import TranslationError, TranslationProvider, ProviderType
+from .base import TranslationError, TranslationProvider
 from .nllb_downloader import NLLB_LANG_MAP, NLLBDownloader
 from .language_detection import CJK_FAMILIES, dominant_family, flores_families
 from . import python_runtime
@@ -413,21 +413,10 @@ class CT2TranslateProvider(TranslationProvider):
     def name(self) -> str:
         return "Offline (NLLB)"
 
-    @property
-    def provider_type(self) -> ProviderType:
-        return ProviderType.CT2
-
     def is_available(self, source_lang: str = "auto", target_lang: str = "en") -> bool:
         if source_lang == "auto":
             return False
         return self._model_manager.is_model_downloaded()
-
-    def get_supported_languages(self) -> List[str]:
-        return self.SUPPORTED_LANGUAGES.copy()
-
-    async def translate(self, text: str, source_lang: str, target_lang: str) -> str:
-        results = await self.translate_batch([text], source_lang, target_lang)
-        return results[0] if results else text
 
     async def translate_batch(
         self, texts: List[str], source_lang: str, target_lang: str

@@ -256,7 +256,6 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
             const result = await call<[string, any], boolean>('set_setting', backendKey, value);
 
             if (result) {
-                // if (label) logic.notify(`${label} updated successfully`);
                 return true;
             } else {
                 logic.notify(`Failed to update ${label || key}`, 2000);

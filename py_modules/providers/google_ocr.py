@@ -6,7 +6,7 @@ import base64
 import logging
 from typing import List
 
-from .base import (OCRProvider, ProviderType, TextRegion, NetworkError, ApiKeyError, RateLimitError,
+from .base import (OCRProvider, TextRegion, NetworkError, ApiKeyError, RateLimitError,
                    classify_google_error, fetch, probe, raise_for_google_error, to_jpeg)
 
 logger = logging.getLogger(__name__)
@@ -35,17 +35,9 @@ class GoogleVisionProvider(OCRProvider):
     def name(self) -> str:
         return "Google Cloud Vision"
 
-    @property
-    def provider_type(self) -> ProviderType:
-        return ProviderType.GOOGLE
-
     def is_available(self, language: str = "auto") -> bool:
         """Check if OCR is available."""
         return bool(self._api_key) and language in self.SUPPORTED_LANGUAGES
-
-    def get_supported_languages(self) -> List[str]:
-        """Return list of supported language codes."""
-        return self.SUPPORTED_LANGUAGES.copy()
 
     async def recognize(self, image_data: bytes, language: str = "auto") -> List[TextRegion]:
         """
