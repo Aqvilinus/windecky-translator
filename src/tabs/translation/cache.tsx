@@ -2,7 +2,7 @@
 import { ModalRoot, DialogButton, Focusable } from "@decky/ui";
 import { VFC, useState, useEffect, useRef } from "react";
 import { OCR_ENGINE_LABELS, TRANSLATION_ENGINE_LABELS } from "../../providers";
-import { call } from "@decky/api";
+import { backend } from "../../backend";
 import { HiTrash, HiXCircle, HiExclamationTriangle } from "react-icons/hi2";
 import { languageOptions } from "./languages";
 
@@ -40,7 +40,7 @@ export const CacheEntriesModal: VFC<{ closeModal?: () => void; onCleared?: () =>
     };
 
     useEffect(() => {
-        call<[number], any[]>('get_translation_cache_entries', CACHE_ENTRY_LIMIT)
+        backend.getTranslationCacheEntries(CACHE_ENTRY_LIMIT)
             .then((rows) => setEntries(rows || []))
             .catch(() => setEntries([]));
     }, []);
@@ -80,7 +80,7 @@ export const CacheEntriesModal: VFC<{ closeModal?: () => void; onCleared?: () =>
     }, [entries, filter, page]);
 
     const removeEntry = async (e: any) => {
-        await call<[string, string, string], any>('delete_translation_cache_entry', e.sourceLang, e.targetLang, e.source);
+        await backend.deleteTranslationCacheEntry(e.sourceLang, e.targetLang, e.source);
         setEntries(prev => prev ? prev.filter(x => !(x.sourceLang === e.sourceLang && x.targetLang === e.targetLang && x.source === e.source)) : prev);
     };
 
@@ -91,7 +91,7 @@ export const CacheEntriesModal: VFC<{ closeModal?: () => void; onCleared?: () =>
             return;
         }
         setConfirmClear(false);
-        await call<[], any>('clear_translation_cache');
+        await backend.clearTranslationCache();
         setEntries([]);
         onCleared?.();
     };

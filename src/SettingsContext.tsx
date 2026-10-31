@@ -1,6 +1,6 @@
 // src/SettingsContext.tsx
 import React, { createContext, useContext, useEffect, useReducer } from 'react';
-import { call } from '@decky/api';
+import { backend, BackendSettings } from './backend';
 import { GameTranslatorLogic } from './Translator';
 import { logger } from './Logger';
 import { LLM_DEFAULT_MODELS } from './llm';
@@ -78,9 +78,6 @@ const initialSettings: Settings = {
     llmCustomApiKey: "",
 };
 
-// main.py get_all_settings
-type BackendSettings = Record<string, any>;
-
 // Settings the backend stores (initialized is the panel's own)
 type SavedSettings = Omit<Settings, 'initialized'>;
 
@@ -139,7 +136,7 @@ function applyToLogic(logic: GameTranslatorLogic, key: keyof SavedSettings, valu
 // renders the panel, and with it SettingsProvider, only while the panel is open, but Ctrl+Alt+T works from the start.
 export async function loadSettingsIntoLogic(logic: GameTranslatorLogic): Promise<SavedSettings | null> {
     try {
-        const settings = settingsFromBackend(await call<[], BackendSettings>('get_all_settings'));
+        const settings = settingsFromBackend(await backend.getAllSettings());
         for (const key of SAVED_KEYS) applyToLogic(logic, key, settings[key]);
         logger.logObject('SettingsContext', 'Settings', settings);
         return settings;
@@ -199,7 +196,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
         });
         applyToLogic(logic, key, value);
         try {
-            if (await call<[string, any], boolean>('set_setting', BACKEND_KEYS[key], value)) return true;
+            if (await backend.setSetting(BACKEND_KEYS[key], value)) return true;
         } catch (error) {
             logger.error('SettingsContext', `Failed to update ${key}`, error);
         }

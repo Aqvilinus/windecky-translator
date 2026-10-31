@@ -3,7 +3,7 @@
 import { PanelSection, PanelSectionRow, Dropdown, DropdownItem, SliderField, ToggleField, ButtonItem, DialogButton, Field, Focusable } from "@decky/ui";
 import { showModal } from "../modal";
 import { VFC, useState, useEffect, useRef, useCallback } from "react";
-import { call } from "@decky/api";
+import { backend } from "../backend";
 import { useSettings } from "../SettingsContext";
 import { LLM_DEFAULT_MODELS, LLM_KEY_SETTING, LLM_MODEL_SETTING, llmConfigured, llmModel } from "../llm";
 import { HiKey, HiLockClosed, HiInformationCircle } from "react-icons/hi2";
@@ -36,12 +36,12 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
 
     useEffect(() => {
         if (settings.ocrProvider !== 'windows_ocr') return;
-        call<[], string[]>('get_windows_ocr_languages').then(setWindowsOcrLanguages).catch(() => setWindowsOcrLanguages([]));
+        backend.getWindowsOcrLanguages().then(setWindowsOcrLanguages).catch(() => setWindowsOcrLanguages([]));
     }, [settings.ocrProvider]);
 
     const refreshCacheStats = useCallback(async () => {
         try {
-            const stats = await call<[], { entries: number }>('get_translation_cache_stats');
+            const stats = await backend.getTranslationCacheStats();
             setCacheEntries(stats?.entries ?? 0);
         } catch {
             setCacheEntries(null);
@@ -203,7 +203,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                 {settings.ocrProvider === 'gemini_vision' && (
                     <ModelPicker
                         label="Gemini Model"
-                        listModels={() => call<[], string[]>('get_gemini_models')}
+                        listModels={() => backend.getGeminiModels()}
                         fallback={knownGeminiModels}
                         knownOnly={true}
                         canList={!!settings.geminiApiKey}
@@ -484,7 +484,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                         <ModelPicker
                             label="AI Model"
                             source={settings.llmBackend}
-                            listModels={(backend) => call<[string], string[]>('get_llm_models', backend)}
+                            listModels={(llm) => backend.getLlmModels(llm)}
                             fallback={(LLM_DEFAULT_MODELS[settings.llmBackend] || []).map(modelOption)}
                             placeholder="Select model..."
                             selectedModel={llmModel(settings)}

@@ -1,6 +1,6 @@
-import { call } from "@decky/api";
+import { backend } from "./backend";
 import { logger } from "./Logger";
-import { ErrorResponse, throwIfBackendError } from "./errors";
+import { throwIfBackendError } from "./errors";
 
 export interface TextRegion {
     text: string;
@@ -613,7 +613,7 @@ export class TextRecognizer {
 
     async recognizeTextFile(imagePath: string): Promise<TextRegion[]> {
         const regions = throwIfBackendError(
-            await call<[string], TextRegion[] | ErrorResponse>('recognize_text_file', imagePath)) || [];
+            await backend.recognizeTextFile(imagePath)) || [];
         logger.info('TextRecognizer', `Got ${regions.length} regions from file-based OCR`);
 
         const mergedRegions = this.applyAutoGlue(regions);

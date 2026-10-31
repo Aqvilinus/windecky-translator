@@ -1,7 +1,7 @@
 // The key and server dialogs of the translation settings
 import { ModalRoot, DialogButton, TextField, Focusable } from "@decky/ui";
 import { VFC, useState, useEffect, useRef } from "react";
-import { call } from "@decky/api";
+import { backend } from "../../backend";
 import { displayKey } from "../../SettingsContext";
 
 // Windows: Steam's text fields have no Paste in their right-click menu and a gamepad has no Ctrl+V, so the key
@@ -27,7 +27,7 @@ export const WithPaste: VFC<{ onPaste: (text: string) => void; children: any }> 
                     height: inputBox ? `${inputBox.height}px` : undefined,
                 }}
                 onClick={async () => {
-                    const text = await call<[], string>('get_clipboard_text').catch(() => "");
+                    const text = await backend.getClipboardText().catch(() => "");
                     if (text && text.trim()) onPaste(text.trim());
                 }}
             >

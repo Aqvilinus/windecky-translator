@@ -1,7 +1,7 @@
 // src/TextRecognizer.tsx: OCR boxes glued into lines and paragraphs, and what is not worth translating dropped.
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('@decky/api', () => ({ call: vi.fn() }));
+vi.mock('@decky/api', () => ({ callable: () => vi.fn() }));
 
 const { TextRecognizer } = await import('../../src/TextRecognizer');
 

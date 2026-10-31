@@ -1,9 +1,7 @@
 // index.tsx - Main plugin entry point
 
-import {
-    definePlugin,
-    call
-} from "@decky/api";
+import { definePlugin } from "@decky/api";
+import { backend } from "./backend";
 
 import {
     PanelSection,
@@ -111,7 +109,7 @@ const GameTranslator: VFC<{ logic: GameTranslatorLogic }> = ({ logic }) => {
         if (!probeOcr && !probeTrans) return;
 
         try {
-            const reach = await call<[], any>('check_web_reachability');
+            const reach = await backend.checkWebReachability();
             if (reach && !reach.error) {
                 setWebReachability({ ocr: reach.ocr ?? null, translation: reach.translation ?? null });
             }
@@ -122,7 +120,7 @@ const GameTranslator: VFC<{ logic: GameTranslatorLogic }> = ({ logic }) => {
 
     const fetchProviderStatus = useCallback(async () => {
         try {
-            const result = await call<[], any>('get_provider_status');
+            const result = await backend.getProviderStatus();
             if (result) {
                 setProviderStatus(result);
             }
@@ -260,7 +258,7 @@ export default definePlugin(() => {
         p => (p.content as { props?: { logic?: unknown } } | undefined)?.props?.logic === logic);
     // a Steam UI reload leaves the backend running: hide a translation the old UI left on screen (and resume a game
     // it paused), since this UI starts with none
-    call('native_overlay_update', { visible: false }).catch(() => { /* logged by the backend */ });
+    backend.nativeOverlayUpdate({ visible: false }).catch(() => { /* logged by the backend */ });
     showBootProblems(PLUGIN_NAME);
 
     loadSettingsIntoLogic(logic);  // Ctrl+Alt+T needs them before the panel is ever opened

@@ -1,7 +1,7 @@
 // Downloadable models (main.py get_model_status & co.) and the engines' quality/speed ratings
 import { DialogButton, ProgressBar } from "@decky/ui";
 import { VFC, useState, useEffect, useRef, useCallback, RefObject } from "react";
-import { call } from "@decky/api";
+import { backend, ModelKind } from "../../backend";
 import { HiInboxArrowDown, HiTrash, HiXMark } from "react-icons/hi2";
 import { formatBytes } from "./languages";
 
@@ -23,8 +23,6 @@ export function formatApproxSize(mb: number): string {
     return `${Math.round(mb)} MB`;
 }
 
-// A model the user downloads here (main.py get_model_status & co.): "nllb" or "chromescreenai"
-export type ModelKind = 'nllb' | 'chromescreenai';
 
 export function useModelDownload(kind: ModelKind, approxMb: number): ModelDownloadState {
     const [status, setStatus] = useState<any>({
@@ -35,7 +33,7 @@ export function useModelDownload(kind: ModelKind, approxMb: number): ModelDownlo
 
     const refresh = useCallback(async () => {
         try {
-            const s = await call<[ModelKind], any>('get_model_status', kind);
+            const s = await backend.getModelStatus(kind);
             if (s) setStatus(s);
         } catch (e) { /* ignore */ }
     }, [kind]);
@@ -55,14 +53,14 @@ export function useModelDownload(kind: ModelKind, approxMb: number): ModelDownlo
     }, [status.downloading, refresh]);
 
     const handleDownload = async () => {
-        await call('clear_model_error', kind);
-        const started = await call<[ModelKind], boolean>('download_model', kind);
+        await backend.clearModelError(kind);
+        const started = await backend.downloadModel(kind);
         if (started) {
             setStatus((prev: any) => ({ ...prev, downloading: true, progress: 0, error: null }));
         }
     };
-    const handleCancel = async () => { await call('cancel_model_download', kind); };
-    const handleDelete = async () => { await call('delete_model', kind); refresh(); };
+    const handleCancel = async () => { await backend.cancelModelDownload(kind); };
+    const handleDelete = async () => { await backend.deleteModel(kind); refresh(); };
 
     const isDownloading = status.downloading;
     const isDownloaded = status.downloaded;

@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 let reply: unknown = {};
-vi.mock('@decky/api', () => ({ call: vi.fn(() => Promise.resolve(reply)), toaster: { toast: vi.fn() } }));
+vi.mock('@decky/api', () => ({ callable: () => vi.fn(() => Promise.resolve(reply)), toaster: { toast: vi.fn() } }));
 vi.mock('@decky/ui', () => ({ Router: {} }));
 // Steam provides React at runtime; the module only needs these names to load
 vi.mock('react', () => ({ default: {}, createContext: () => ({}), useContext: vi.fn(), useEffect: vi.fn(), useReducer: vi.fn() }));
