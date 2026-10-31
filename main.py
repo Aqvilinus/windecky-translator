@@ -91,8 +91,6 @@ from providers.translation_cache import TranslationCache, PROVIDER_TIERS, normal
 from plugin_core.secrets import SENSITIVE_SETTING_KEYS, UrlKeyRedactFilter, clean_api_key, display_key, mask_for_log
 from plugin_core.settings import PROVIDER_SETTINGS, SETTING_DEFAULTS, WORKER_SETTINGS, SettingsManager
 
-_processing_lock = False
-
 
 
 # Decky sets these for each plugin backend
@@ -187,6 +185,7 @@ class Plugin:
     # Windows: the translation overlay window, the window the last screenshot came from, the Ctrl+Alt+T hotkey
     _overlay = None
     _overlay_visible = False
+    _capturing = False  # take_screenshot is running
     _capture_target = None
     _hotkey = None
     _loop = None
@@ -316,21 +315,18 @@ class Plugin:
             return {"error": str(e)}
 
     async def take_screenshot(self, app_name: str = ""):
-        """Capture the foreground window (winport/capture.py) and remember where it is for the overlay."""
-        global _processing_lock
-        if _processing_lock:
-            logger.info("Screenshot already in progress, skipping")
-            raise RuntimeError("Screenshot already in progress")
-        _processing_lock = True
+        """Capture the foreground window (winport/capture.py) and remember where it is for the overlay.
+        {"path": name for recognize_text_file} or {"path": "", "error": why nothing was captured}."""
+        if self._capturing:
+            return {"path": "", "error": "A capture is already running"}
+        self._capturing = True
         try:
             if capture_foreground is None:
-                logger.error("Screen capture is unavailable (see the start of the log)")
-                return {"path": ""}
+                return {"path": "", "error": "Screen capture is unavailable: see the plugin's start-up message"}
             own = (self._overlay.hwnd,) if self._overlay and self._overlay.hwnd else ()
             cap = await capture_foreground(exclude=own)
             if cap is None:
-                logger.error("No foreground window to capture")
-                return {"path": ""}
+                return {"path": "", "error": "No game window in front to capture"}
             name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', " ", app_name or "").strip()
             if not name or name.lower() == "null":
                 name = "Decky-Screenshot"
@@ -342,12 +338,16 @@ class Plugin:
                                     "width": cap.width, "height": cap.height, "image": cap.image, "ocr_pending": True,
                                     "path": path}
             return {"path": path}
-        except Exception as e:
-            logger.error(f"Screenshot error: {e}")
-            logger.error(traceback.format_exc())
-            return {"path": ""}
+        except TimeoutError:
+            logger.exception("Screenshot error")
+            # Windows.Graphics.Capture gives no frames for a game in exclusive fullscreen
+            return {"path": "", "error": "Windows gave no picture of the game: if it runs in exclusive fullscreen, "
+                                         "switch it to borderless or windowed"}
+        except Exception as e:  # noqa: BLE001 - reported to the user, details in the log
+            logger.exception("Screenshot error")
+            return {"path": "", "error": f"Screen capture failed: {e}"}
         finally:
-            _processing_lock = False
+            self._capturing = False
 
     # Windows: the frontend sends upstream's overlay state on every change; winport/overlay.py draws it over the
     # captured window (Steam's UI can't sit over other windows on Windows)
@@ -746,26 +746,21 @@ class Plugin:
 
     async def _unload(self):
         logger.info("Unloading plugin")
+        # each step on its own, so one failure doesn't skip the rest; the quick ones that matter most first
+        steps = [
+            ("resume paused games", self._resume_paused_games),  # never leave a game paused
+            ("release Ctrl+Alt+T", lambda: self._hotkey and self._hotkey.close()),
+            ("close the overlay", lambda: self._overlay and self._overlay.stop()),
+            ("stop the workers", lambda: self._provider_manager and self._provider_manager.shutdown()),
+            ("close the translation cache", lambda: self._translation_cache and self._translation_cache.close()),
+        ]
+        for what, step in steps:
+            try:
+                step()
+            except Exception:  # noqa: BLE001 - go on with the next step
+                logger.exception(f"Unload: could not {what}")
+        self._hotkey = self._overlay = self._translation_cache = None
         try:
-            self._resume_paused_games()  # first: never leave a game paused
-
-            if self._provider_manager:
-                self._provider_manager.shutdown()
             await close_session()
-
-            if self._translation_cache:
-                self._translation_cache.close()
-                self._translation_cache = None
-
-            if self._overlay:
-                self._overlay.stop()
-                self._overlay = None
-
-            if self._hotkey:
-                self._hotkey.close()
-                self._hotkey = None
-
-        except Exception as e:
-            logger.error(f"Error during plugin unload: {e}")
-            logger.error(traceback.format_exc())
-        return
+        except Exception:  # noqa: BLE001
+            logger.exception("Unload: could not close the HTTP session")

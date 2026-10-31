@@ -259,7 +259,7 @@ def test_chrome_screen_ai_failures_raise(monkeypatch, tmp_path):
 
 def test_nothing_captured(backend, windows):
     windows.capture_image = None  # no foreground window
-    assert backend.call("take_screenshot", "Game") == {"path": ""}
+    assert backend.call("take_screenshot", "Game") == {"path": "", "error": "No game window in front to capture"}
 
 
 def test_screenshot_files_outside_the_plugin_are_refused(backend, tmp_path):

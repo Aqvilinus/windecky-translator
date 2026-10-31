@@ -92,7 +92,7 @@ export class GameTranslatorLogic {
 
             if (!result?.path) {
                 logger.warn('Translator', 'Screenshot capture failed, not opening overlay');
-                this.notify('Screen capture failed', 2500, 'Try pressing the shortcut again');
+                this.notify('Screen capture failed', 4000, result?.error || 'Try pressing the shortcut again');
                 return;
             }
 

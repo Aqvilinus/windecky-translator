@@ -27,7 +27,7 @@ export const backend = {
     getClipboardText: callable<[], string>('get_clipboard_text'),
     // the translation
     // the capture's name for recognize_text_file ("" when nothing was captured); the pixels stay in the backend
-    takeScreenshot: callable<[appName: string], { path: string }>('take_screenshot'),
+    takeScreenshot: callable<[appName: string], { path: string; error?: string }>('take_screenshot'),
     discardScreenshot: callable<[path: string], boolean>('discard_screenshot'),
     recognizeTextFile: callable<[path: string], TextRegion[] | ErrorResponse>('recognize_text_file'),
     translateText: callable<[regions: TextRegion[], target: string, input: string],
