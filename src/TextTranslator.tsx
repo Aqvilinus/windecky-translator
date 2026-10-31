@@ -1,7 +1,8 @@
 // TextTranslator.tsx
 
 import { call } from "@decky/api";
-import { TextRegion, ErrorResponse, BackendError, throwIfBackendError } from "./TextRecognizer";
+import { TextRegion } from "./TextRecognizer";
+import { ErrorResponse, BackendError, throwIfBackendError } from "./errors";
 
 // Include translated text with the original region info
 export interface TranslatedRegion extends TextRegion {

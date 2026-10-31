@@ -2,7 +2,8 @@
 
 import { call, toaster } from "@decky/api";
 import { Router } from "@decky/ui";
-import { TextRecognizer, BackendError, NetworkError, ApiKeyError } from "./TextRecognizer";
+import { TextRecognizer } from "./TextRecognizer";
+import { BackendError, NetworkError, ApiKeyError } from "./errors";
 import { TextTranslator } from "./TextTranslator";
 import { ImageState } from "./Overlay";
 import { logger } from "./Logger";

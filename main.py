@@ -1,5 +1,6 @@
 # main.py
 import asyncio
+import functools
 import os
 import sys
 import tempfile
@@ -227,6 +228,32 @@ except Exception as _e:  # noqa: BLE001
     _BOOT_ERRORS.append(f"Pause Game While Translating is unavailable: {_e}")
 for _error in _BOOT_ERRORS:
     logger.error(_error)
+
+
+# The plugin's errors as the frontend gets them, {error: code, message} (src/TextRecognizer.tsx throwIfBackendError)
+_ERROR_CODES = ((NetworkError, "network_error"), (ApiKeyError, "api_key_error"), (RateLimitError, "rate_limit_error"),
+                (OCRError, "ocr_failed"), (TranslationError, "translation_failed"))
+
+
+def answers_errors(fallback_code, fallback_message):
+    """A backend call whose failures reach the frontend as {error, message}: the plugin's own errors with their
+    message, anything else (a bug) as fallback_code with fallback_message, logged with its traceback.
+
+    A decorator: @answers_errors(...) above a method replaces it with call(), which runs the method inside the try."""
+    def wrap(method):
+        @functools.wraps(method)  # keeps the name Decky calls it by
+        async def call(*args, **kwargs):
+            try:
+                return await method(*args, **kwargs)
+            except tuple(cls for cls, _ in _ERROR_CODES) as e:
+                code = next(code for cls, code in _ERROR_CODES if isinstance(e, cls))
+                logger.error(f"{method.__name__}: {code}: {e}")
+                return {"error": code, "message": str(e)}
+            except Exception:
+                logger.exception(method.__name__)
+                return {"error": fallback_code, "message": fallback_message}
+        return call
+    return wrap
 
 
 class SettingsManager:
@@ -648,65 +675,49 @@ class Plugin:
             "capture": {k: v for k, v in (self._capture_target or {}).items() if k not in ("png", "image")},
         }
 
+    @answers_errors("ocr_failed", "Text recognition failed (details in the plugin log)")
     async def recognize_text(self, image_data):
         """image_data: base64 (data: URL or plain) from the frontend, or the image bytes from the backend itself."""
-        try:
-            if not image_data:
-                logger.error("Empty image data for text recognition")
-                return []
+        if not image_data:
+            logger.error("Empty image data for text recognition")
+            return []
 
-            if isinstance(image_data, (bytes, bytearray)):
-                image_bytes = bytes(image_data)
-            else:
-                if image_data.startswith('data:image'):
-                    image_data = image_data.split(',', 1)[1]
-                image_bytes = base64.b64decode(image_data)
+        if isinstance(image_data, (bytes, bytearray)):
+            image_bytes = bytes(image_data)
+        else:
+            if image_data.startswith('data:image'):
+                image_data = image_data.split(',', 1)[1]
+            image_bytes = base64.b64decode(image_data)
 
-            if not self._provider_manager:
-                logger.error("Provider manager not initialized")
-                return []
+        if not self._provider_manager:
+            logger.error("Provider manager not initialized")
+            return []
 
-            if self._ocr_provider == "chromescreenai" and not self._provider_manager.is_chromescreenai_downloaded():
-                return {"error": "model_not_available", "message": "Chrome Screen AI engine not downloaded.\nDownload it in plugin settings"}
+        if self._ocr_provider == "chromescreenai" and not self._provider_manager.is_chromescreenai_downloaded():
+            return {"error": "model_not_available", "message": "Chrome Screen AI engine not downloaded.\nDownload it in plugin settings"}
 
-            if self._ocr_provider == "windows_ocr" and self._input_language not in ("", "auto"):
-                from providers.windows_ocr import WindowsOCRProvider, plugin_code
-                if plugin_code(self._input_language) not in WindowsOCRProvider().get_supported_languages():
-                    from providers.gemini_vision import LANG_NAMES
-                    lang = LANG_NAMES.get(self._input_language, self._input_language)
-                    return {"error": "model_not_available",
-                            "message": f"No Windows OCR language pack for {lang}.\n"
-                                       "Add it in Windows Settings or use On-Device (Chrome)"}
+        if self._ocr_provider == "windows_ocr" and self._input_language not in ("", "auto"):
+            from providers.windows_ocr import WindowsOCRProvider, plugin_code
+            if plugin_code(self._input_language) not in WindowsOCRProvider().get_supported_languages():
+                from providers.gemini_vision import LANG_NAMES
+                lang = LANG_NAMES.get(self._input_language, self._input_language)
+                return {"error": "model_not_available",
+                        "message": f"No Windows OCR language pack for {lang}.\n"
+                                   "Add it in Windows Settings or use On-Device (Chrome)"}
 
-            # If using Gemini Vision, set the target language before OCR
-            # so it can translate in the same API call
-            if self._ocr_provider == "gemini_vision":
-                self._provider_manager.set_gemini_target_language(self._target_language)
+        # If using Gemini Vision, set the target language before OCR
+        # so it can translate in the same API call
+        if self._ocr_provider == "gemini_vision":
+            self._provider_manager.set_gemini_target_language(self._target_language)
 
-            start_time = time.time()
-            text_regions = await self._provider_manager.recognize_text(
-                image_bytes,
-                language=self._input_language
-            )
-            logger.info(f"OCR completed in {time.time() - start_time:.2f}s, found {len(text_regions)} regions")
+        start_time = time.time()
+        text_regions = await self._provider_manager.recognize_text(
+            image_bytes,
+            language=self._input_language
+        )
+        logger.info(f"OCR completed in {time.time() - start_time:.2f}s, found {len(text_regions)} regions")
 
-            return [region.to_dict() for region in text_regions]
-
-        except NetworkError as e:
-            logger.error(f"Network error during OCR: {e}")
-            return {"error": "network_error", "message": str(e)}
-        except ApiKeyError as e:
-            logger.error(f"API key error during OCR: {e}")
-            return {"error": "api_key_error", "message": str(e) or "Invalid API key"}
-        except RateLimitError as e:
-            logger.error(f"Rate limit during OCR: {e}")
-            return {"error": "rate_limit_error", "message": str(e)}
-        except OCRError as e:
-            logger.error(f"OCR failed: {e}")
-            return {"error": "ocr_failed", "message": str(e)}
-        except Exception:
-            logger.exception("Text recognition error")
-            return {"error": "ocr_failed", "message": "Text recognition failed (details in the plugin log)"}
+        return [region.to_dict() for region in text_regions]
 
     def _is_capture(self, image_path) -> bool:
         return bool(self._capture_target and image_path and image_path == self._capture_target.get("path"))
@@ -729,127 +740,111 @@ class Plugin:
             return []
         return await self.recognize_text(png)
 
+    @answers_errors("translation_failed", "Translation failed (details in the plugin log)")
     async def translate_text(self, text_regions, target_language=None, input_language=None):
-        try:
-            if not text_regions:
-                return []
+        if not text_regions:
+            return []
 
-            target_lang = target_language or self._target_language
-            input_lang = input_language or self._input_language
+        target_lang = target_language or self._target_language
+        input_lang = input_language or self._input_language
 
-            if not self._provider_manager:
-                logger.error("Provider manager not initialized")
-                return None
+        if not self._provider_manager:
+            logger.error("Provider manager not initialized")
+            return None
 
-            # If regions already have translatedText (e.g. from Gemini Vision),
-            # skip the translation step entirely
-            if all(r.get("translatedText") is not None for r in text_regions):
-                logger.info(f"Translation skipped: {len(text_regions)} regions already translated by OCR provider")
-                if (self._translation_cache_enabled and self._translation_cache
-                        and self._ocr_provider == "gemini_vision"):
-                    pairs = [(r["text"], r["translatedText"]) for r in text_regions]
-                    if any(normalize(s) != normalize(t) for s, t in pairs):
-                        await self._use_cache(
-                            self._translation_cache.put_many,
-                            pairs, input_lang, target_lang,
-                            PROVIDER_TIERS.get("gemini_vision", 0), "gemini_vision",
-                        )
-                return text_regions
-
-            # Check if CT2 provider has the needed models
-            if self._translation_provider == "ct2":
-                provider = self._provider_manager.get_translation_provider()
-                if provider and not provider.is_available(input_lang, target_lang):
-                    if input_lang == "auto":
-                        return {"error": "model_not_available", "message": "Offline translation requires a specific source language. Select one in plugin settings"}
-                    return {"error": "model_not_available", "message": "Offline model not found. Download it in plugin settings"}
-
-            # Only translate regions that don't already have translatedText
-            texts_to_translate = [
-                region["text"] for region in text_regions
-                if region.get("translatedText") is None
-            ]
-
-            cache_on = self._translation_cache_enabled and self._translation_cache is not None
-            provider_tier = PROVIDER_TIERS.get(self._translation_provider, 0)
-
-            cached = {}
-            if cache_on and texts_to_translate:
-                cached = await self._use_cache(
-                    self._translation_cache.get_many,
-                    texts_to_translate, input_lang, target_lang, provider_tier,
-                ) or {}
-
-            if cache_on:
-                to_request, seen = [], set()
-                for t in texts_to_translate:
-                    if t not in cached and t not in seen:
-                        seen.add(t)
-                        to_request.append(t)
-            else:
-                to_request = texts_to_translate
-
-            start_time = time.time()
-            requested = await self._provider_manager.translate_text(
-                to_request, source_lang=input_lang, target_lang=target_lang
-            ) if to_request else []
-            elapsed = time.time() - start_time
-            logger.info(f"Translation completed in {elapsed:.2f}s, {len(to_request)} new / {len(cached)} cached")
-            for i, (src, dst) in enumerate(zip(to_request, requested)):
-                logger.debug(f"  [{i}] '{src}' -> '{dst}'")
-            if to_request and all(t is None for t in requested):
-                # nothing came back (the free services changed or refuse): say so instead of showing the originals
-                raise TranslationError("The translation service did not answer (details in the plugin log)")
-
-            # Failed items come back as None. The AI provider reports per item whether the AI or its Google/Bing
-            # fallback translated it; each is cached under its own engine's tier.
-            sources = getattr(requested, "sources", None)
-            if not sources or len(sources) != len(to_request):
-                sources = [self._translation_provider] * len(to_request)
-            by_source = {}
-            for s, t, src in zip(to_request, requested, sources):
-                if t is not None:
-                    by_source.setdefault(src or self._translation_provider, []).append((s, t))
-            for src, translated in by_source.items():
-                if cache_on and any(normalize(s) != normalize(t) for s, t in translated):
+        # If regions already have translatedText (e.g. from Gemini Vision),
+        # skip the translation step entirely
+        if all(r.get("translatedText") is not None for r in text_regions):
+            logger.info(f"Translation skipped: {len(text_regions)} regions already translated by OCR provider")
+            if (self._translation_cache_enabled and self._translation_cache
+                    and self._ocr_provider == "gemini_vision"):
+                pairs = [(r["text"], r["translatedText"]) for r in text_regions]
+                if any(normalize(s) != normalize(t) for s, t in pairs):
                     await self._use_cache(
                         self._translation_cache.put_many,
-                        translated, input_lang, target_lang, PROVIDER_TIERS.get(src, provider_tier), src,
+                        pairs, input_lang, target_lang,
+                        PROVIDER_TIERS.get("gemini_vision", 0), "gemini_vision",
                     )
+            return text_regions
 
-            # A failed item shows its original text.
-            result_map = {s: (t if t is not None else s) for s, t in zip(to_request, requested)}
-            result_map.update(cached)
+        # Check if CT2 provider has the needed models
+        if self._translation_provider == "ct2":
+            provider = self._provider_manager.get_translation_provider()
+            if provider and not provider.is_available(input_lang, target_lang):
+                if input_lang == "auto":
+                    return {"error": "model_not_available", "message": "Offline translation requires a specific source language. Select one in plugin settings"}
+                return {"error": "model_not_available", "message": "Offline model not found. Download it in plugin settings"}
 
-            translated_regions = []
-            for region in text_regions:
-                if region.get("translatedText") is not None:
-                    translated_regions.append(region)
-                else:
-                    text = region["text"]
-                    translated_regions.append({
-                        **region,
-                        "translatedText": result_map.get(text, text)
-                    })
+        # Only translate regions that don't already have translatedText
+        texts_to_translate = [
+            region["text"] for region in text_regions
+            if region.get("translatedText") is None
+        ]
 
-            logger.debug(f"Returning {len(translated_regions)} translated regions (from {len(text_regions)} input regions)")
-            return translated_regions
+        cache_on = self._translation_cache_enabled and self._translation_cache is not None
+        provider_tier = PROVIDER_TIERS.get(self._translation_provider, 0)
 
-        except NetworkError as e:
-            logger.error(f"Network error during translation: {e}")
-            return {"error": "network_error", "message": str(e)}
-        except ApiKeyError as e:
-            logger.error(f"API key error during translation: {e}")
-            return {"error": "api_key_error", "message": str(e) or "Invalid API key"}
-        except RateLimitError as e:
-            logger.error(f"Rate limit during translation: {e}")
-            return {"error": "rate_limit_error", "message": str(e)}
-        except TranslationError as e:
-            logger.error(f"Translation failed: {e}")
-            return {"error": "translation_failed", "message": str(e)}
-        except Exception:
-            logger.exception("Translation error")
-            return {"error": "translation_failed", "message": "Translation failed (details in the plugin log)"}
+        cached = {}
+        if cache_on and texts_to_translate:
+            cached = await self._use_cache(
+                self._translation_cache.get_many,
+                texts_to_translate, input_lang, target_lang, provider_tier,
+            ) or {}
+
+        if cache_on:
+            to_request, seen = [], set()
+            for t in texts_to_translate:
+                if t not in cached and t not in seen:
+                    seen.add(t)
+                    to_request.append(t)
+        else:
+            to_request = texts_to_translate
+
+        start_time = time.time()
+        requested = await self._provider_manager.translate_text(
+            to_request, source_lang=input_lang, target_lang=target_lang
+        ) if to_request else []
+        elapsed = time.time() - start_time
+        logger.info(f"Translation completed in {elapsed:.2f}s, {len(to_request)} new / {len(cached)} cached")
+        for i, (src, dst) in enumerate(zip(to_request, requested)):
+            logger.debug(f"  [{i}] '{src}' -> '{dst}'")
+        if to_request and all(t is None for t in requested):
+            # nothing came back (the free services changed or refuse): say so instead of showing the originals
+            raise TranslationError("The translation service did not answer (details in the plugin log)")
+
+        # Failed items come back as None. The AI provider reports per item whether the AI or its Google/Bing
+        # fallback translated it; each is cached under its own engine's tier.
+        sources = getattr(requested, "sources", None)
+        if not sources or len(sources) != len(to_request):
+            sources = [self._translation_provider] * len(to_request)
+        by_source = {}
+        for s, t, src in zip(to_request, requested, sources):
+            if t is not None:
+                by_source.setdefault(src or self._translation_provider, []).append((s, t))
+        for src, translated in by_source.items():
+            if cache_on and any(normalize(s) != normalize(t) for s, t in translated):
+                await self._use_cache(
+                    self._translation_cache.put_many,
+                    translated, input_lang, target_lang, PROVIDER_TIERS.get(src, provider_tier), src,
+                )
+
+        # A failed item shows its original text.
+        result_map = {s: (t if t is not None else s) for s, t in zip(to_request, requested)}
+        result_map.update(cached)
+
+        translated_regions = []
+        for region in text_regions:
+            if region.get("translatedText") is not None:
+                translated_regions.append(region)
+            else:
+                text = region["text"]
+                translated_regions.append({
+                    **region,
+                    "translatedText": result_map.get(text, text)
+                })
+
+        logger.debug(f"Returning {len(translated_regions)} translated regions (from {len(text_regions)} input regions)")
+        return translated_regions
 
     @staticmethod
     async def _use_cache(method, *args):
