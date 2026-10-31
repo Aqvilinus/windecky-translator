@@ -22,14 +22,10 @@ export interface Settings {
     enabled: boolean;
     initialized: boolean;
     confidenceThreshold: number; // New setting for confidence threshold
-    rapidocrConfidence: number; // RapidOCR-specific confidence threshold (0.0-1.0)
-    rapidocrBoxThresh: number; // RapidOCR box detection threshold (0.0-1.0)
-    rapidocrUnclipRatio: number; // RapidOCR box expansion ratio (1.0-3.0)
-    rapidocrPersistentMode: boolean; // Keep RapidOCR worker alive between requests
     chromeScreenAiPersistentMode: boolean; // Keep Chrome Screen AI worker alive between requests
     ct2PersistentMode: boolean; // Keep CT2/NLLB worker alive between requests
     pauseGameOnOverlay: boolean; // Setting to control pausing game when overlay is shown
-    ocrProvider: 'rapidocr' | 'ocrspace' | 'googlecloud' | 'gemini_vision' | 'chromescreenai' | 'windows_ocr'; // OCR provider
+    ocrProvider: 'chromescreenai' | 'windows_ocr' | 'ocrspace' | 'googlecloud' | 'gemini_vision'; // OCR provider
     translationProvider: 'freegoogle' | 'googlecloud' | 'ct2' | 'llm'; // Translation provider
     googleApiKey: string; // Google Cloud Vision API key for text recognition
     geminiApiKey: string; // Gemini API key for Gemini Vision (free tier available)
@@ -60,10 +56,6 @@ const initialSettings: Settings = {
     enabled: true,
     initialized: false,
     confidenceThreshold: 0.6, // Default confidence threshold
-    rapidocrConfidence: 0.5, // Default RapidOCR confidence threshold (0.0-1.0)
-    rapidocrBoxThresh: 0.5, // Default RapidOCR box detection threshold (0.0-1.0)
-    rapidocrUnclipRatio: 1.6, // Default RapidOCR box expansion ratio (1.0-3.0)
-    rapidocrPersistentMode: false,
     chromeScreenAiPersistentMode: false,
     ct2PersistentMode: false,
     pauseGameOnOverlay: false, // Default to not pausing game
@@ -133,10 +125,6 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
                     targetLanguage: serverSettings.target_language,
                     enabled: serverSettings.enabled,
                     confidenceThreshold: serverSettings.confidence_threshold || 0.6, // Add default if not present
-                    rapidocrConfidence: serverSettings.rapidocr_confidence ?? 0.5, // RapidOCR confidence (0.0-1.0)
-                    rapidocrBoxThresh: serverSettings.rapidocr_box_thresh ?? 0.5, // RapidOCR box threshold (0.0-1.0)
-                    rapidocrUnclipRatio: serverSettings.rapidocr_unclip_ratio ?? 1.6, // RapidOCR unclip ratio (1.0-3.0)
-                    rapidocrPersistentMode: serverSettings.rapidocr_persistent_mode ?? false,
                     chromeScreenAiPersistentMode: serverSettings.chromescreenai_persistent_mode ?? false,
                     ct2PersistentMode: serverSettings.ct2_persistent_mode ?? false,
                     pauseGameOnOverlay: serverSettings.pause_game_on_overlay || false, // Add default if not present
@@ -204,10 +192,6 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
                 enabled: 'enabled',
                 initialized: 'initialized',
                 confidenceThreshold: 'confidence_threshold',
-                rapidocrConfidence: 'rapidocr_confidence',
-                rapidocrBoxThresh: 'rapidocr_box_thresh',
-                rapidocrUnclipRatio: 'rapidocr_unclip_ratio',
-                rapidocrPersistentMode: 'rapidocr_persistent_mode',
                 chromeScreenAiPersistentMode: 'chromescreenai_persistent_mode',
                 ct2PersistentMode: 'ct2_persistent_mode',
                 pauseGameOnOverlay: 'pause_game_on_overlay',

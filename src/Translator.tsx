@@ -24,7 +24,7 @@ export class GameTranslatorLogic {
     private currentRunId: number = 0;
 
     // Provider settings for upfront validation
-    private ocrProvider: string = "rapidocr";
+    private ocrProvider: string = "chromescreenai";
     private translationProvider: string = "freegoogle";
     private hasGoogleApiKey: boolean = false;
     private hasGeminiApiKey: boolean = false;
@@ -265,7 +265,6 @@ export class GameTranslatorLogic {
 
     private ocrMethodHint(): string {
         const labels: Record<string, string> = {
-            rapidocr: "On-Device",
             chromescreenai: "On-Device",
             windows_ocr: "On-Device",
             ocrspace: "OCR.space",

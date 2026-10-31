@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Subprocess OCR runner for Chrome Screen AI. Loads chrome_screen_ai.dll via
-ctypes, with the same JSON-line protocol used by rapidocr_subprocess.py.
+ctypes, answering JSON lines on stdin/stdout.
 
   Oneshot: python chromescreenai_subprocess.py <image> <model_dir> <min_conf>
   Worker:  python chromescreenai_subprocess.py --worker
@@ -232,7 +232,7 @@ def _write_line(obj):
 
 
 def worker_main():
-    """Long-lived worker. Mirrors rapidocr_subprocess.worker_main protocol.
+    """Long-lived worker: one JSON request per line on stdin, one JSON reply per line on stdout.
 
       >>> {"type":"init","model_dir":"...","min_confidence":0.5}
       <<< {"type":"ready","error":null}

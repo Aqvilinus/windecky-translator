@@ -66,11 +66,6 @@ def build_py_modules(target, work):
                 os.remove(os.path.join(dirpath, f))
     shutil.rmtree(os.path.join(target, "bin"), ignore_errors=True)  # console-script launchers
     os.remove(os.path.join(target, ".lock"))  # uv's install lock
-    # RapidOCR's bundled models aren't used (the plugin downloads its own), but rapidocr 3 needs the folder
-    models = os.path.join(target, "rapidocr", "models")
-    shutil.rmtree(models, ignore_errors=True)
-    os.makedirs(models)
-    shutil.rmtree(os.path.join(target, "onnxruntime", "datasets"), ignore_errors=True)
 
 
 def fetch_python(target, work):

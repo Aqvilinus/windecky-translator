@@ -9,8 +9,8 @@
       "enabled": false
     },
     {
-      "description": "Majors that break: Chrome Screen AI's code is for protobuf 6, the OCR stack shares numpy's ABI",
-      "matchPackageNames": ["protobuf", "numpy", "opencv-python-headless", "typescript", "react-icons"],
+      "description": "Majors that break: Chrome Screen AI's code is for protobuf 6",
+      "matchPackageNames": ["protobuf", "typescript", "react-icons"],
       "matchUpdateTypes": ["major"],
       "enabled": false
     }

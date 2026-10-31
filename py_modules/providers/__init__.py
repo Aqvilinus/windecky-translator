@@ -19,14 +19,12 @@ from .google_ocr import GoogleVisionProvider
 from .google_translate import GoogleTranslateProvider
 from .ocrspace import OCRSpaceProvider
 from .free_translate import FreeTranslateProvider
-from .rapidocr_provider import RapidOCRProvider
 from .chromescreenai_provider import ChromeScreenAIProvider
 from .gemini_vision import GeminiVisionProvider
 from .ct2_translate import CT2TranslateProvider
 from .llm_translate import LLMTranslateProvider
 from .nllb_downloader import NLLBDownloader
 from .screenai_downloader import ScreenAIDownloader
-from .rapidocr_downloader import RapidOCRDownloader
 
 logger = logging.getLogger(__name__)
 
@@ -48,15 +46,23 @@ __all__ = [
     'GoogleTranslateProvider',
     'OCRSpaceProvider',
     'FreeTranslateProvider',
-    'RapidOCRProvider',
     'ChromeScreenAIProvider',
     'GeminiVisionProvider',
     'CT2TranslateProvider',
     'NLLBDownloader',
     'ScreenAIDownloader',
-    'RapidOCRDownloader',
     'ProviderManager',
 ]
+
+
+# The frontend's OCR engine ids
+OCR_PROVIDER_TYPES = {
+    "chromescreenai": ProviderType.CHROME_SCREEN_AI,
+    "windows_ocr": ProviderType.WINDOWS_OCR,
+    "ocrspace": ProviderType.OCR_SPACE,
+    "googlecloud": ProviderType.GOOGLE,
+    "gemini_vision": ProviderType.GEMINI_VISION,
+}
 
 
 class ProviderManager:
@@ -73,13 +79,9 @@ class ProviderManager:
         self._gemini_api_key = ""
         self._gemini_model = "gemini-3.5-flash"
         self._gemini_target_language = "en"
-        self._ocr_provider_preference = "chromescreenai"  # "rapidocr", "ocrspace", "googlecloud", "gemini_vision", or "chromescreenai"
+        self._ocr_provider_preference = "chromescreenai"  # see OCR_PROVIDER_TYPES
         self._translation_provider_preference = "freegoogle"  # "freegoogle", "googlecloud", or "ct2"
-        self._rapidocr_confidence = 0.5  # Default RapidOCR confidence threshold (0.0-1.0)
-        self._rapidocr_box_thresh = 0.5  # Default RapidOCR box detection threshold (0.0-1.0)
-        self._rapidocr_unclip_ratio = 1.6  # Default RapidOCR box expansion ratio (1.0-3.0)
-        self._rapidocr_persistent_mode = False  # Keep worker alive between requests
-        self._chromescreenai_persistent_mode = False  # Same for Chrome Screen AI
+        self._chromescreenai_persistent_mode = False  # Keep the Chrome Screen AI worker alive between requests
         self._ct2_persistent_mode = False  # Same for CT2/NLLB translation
 
         # CT2 translation
@@ -89,10 +91,6 @@ class ProviderManager:
         # Created on first configure() that supplies screenai_models_dir.
         self._screenai_downloader: Optional[ScreenAIDownloader] = None
 
-        # Created on first configure() that supplies rapidocr_models_dir.
-        self._rapidocr_downloader: Optional[RapidOCRDownloader] = None
-
-        self._status_rapidocr_provider: Optional[RapidOCRProvider] = None
         self._reachability_cache: dict = {}
 
         # AI translation settings (applied to the provider when it's created)
@@ -108,14 +106,13 @@ class ProviderManager:
         translation_provider: str = "",
         ct2_models_dir: str = "",
         screenai_models_dir: str = "",
-        rapidocr_models_dir: str = "",
     ) -> None:
         """
         Configure provider preferences.
 
         Args:
             google_api_key: Google Cloud API key (only needed for googlecloud providers)
-            ocr_provider: OCR provider preference - "rapidocr", "ocrspace", "googlecloud", "gemini_vision", or "chromescreenai"
+            ocr_provider: OCR provider preference, a key of OCR_PROVIDER_TYPES
             translation_provider: Translation provider preference - "freegoogle", "googlecloud", or "ct2"
             ct2_models_dir: Directory for CT2 translation model storage
         """
@@ -125,8 +122,6 @@ class ProviderManager:
                 self._model_manager = NLLBDownloader(ct2_models_dir)
         if screenai_models_dir and not self._screenai_downloader:
             self._screenai_downloader = ScreenAIDownloader(screenai_models_dir)
-        if rapidocr_models_dir and not self._rapidocr_downloader:
-            self._rapidocr_downloader = RapidOCRDownloader(rapidocr_models_dir)
         self._google_api_key = google_api_key
         self._gemini_api_key = gemini_api_key
 
@@ -185,81 +180,6 @@ class ProviderManager:
             self._gemini_model = model
             # Remove cached provider so it gets recreated with the new model
             self._ocr_providers.pop(ProviderType.GEMINI_VISION, None)
-
-    def set_rapidocr_confidence(self, confidence: float) -> None:
-        """
-        Set the RapidOCR confidence threshold.
-
-        Args:
-            confidence: Minimum confidence (0.0-1.0) for RapidOCR results.
-        """
-        self._rapidocr_confidence = confidence
-        # Update existing RapidOCR provider if it exists
-        rapidocr = self._ocr_providers.get(ProviderType.RAPIDOCR)
-        if rapidocr:
-            rapidocr.set_min_confidence(confidence)
-        logger.debug(f"RapidOCR confidence set to {confidence}")
-
-    def set_rapidocr_box_thresh(self, box_thresh: float) -> None:
-        """
-        Set the RapidOCR box detection threshold.
-
-        Args:
-            box_thresh: Detection box confidence (0.0-1.0). Lower values detect more text.
-        """
-        self._rapidocr_box_thresh = box_thresh
-        rapidocr = self._ocr_providers.get(ProviderType.RAPIDOCR)
-        if rapidocr:
-            rapidocr.set_box_thresh(box_thresh)
-        logger.debug(f"RapidOCR box_thresh set to {box_thresh}")
-
-    def set_rapidocr_unclip_ratio(self, unclip_ratio: float) -> None:
-        """
-        Set the RapidOCR box expansion ratio.
-
-        Args:
-            unclip_ratio: Box expansion ratio (1.0-3.0). Higher values expand detected boxes.
-        """
-        self._rapidocr_unclip_ratio = unclip_ratio
-        rapidocr = self._ocr_providers.get(ProviderType.RAPIDOCR)
-        if rapidocr:
-            rapidocr.set_unclip_ratio(unclip_ratio)
-        logger.debug(f"RapidOCR unclip_ratio set to {unclip_ratio}")
-
-    def set_rapidocr_persistent_mode(
-        self, enabled: bool, apply_to_provider: bool = True
-    ) -> None:
-        self._rapidocr_persistent_mode = bool(enabled)
-        if not apply_to_provider:
-            logger.debug(
-                f"RapidOCR persistent_mode preference: {self._rapidocr_persistent_mode} "
-                f"(not applied)"
-            )
-            return
-
-        if self._rapidocr_persistent_mode and self._ocr_provider_preference == "rapidocr":
-            rapidocr = self.get_ocr_provider(ProviderType.RAPIDOCR)
-        else:
-            rapidocr = self._ocr_providers.get(ProviderType.RAPIDOCR)
-        if rapidocr:
-            rapidocr.set_persistent_mode(self._rapidocr_persistent_mode)
-        logger.debug(
-            f"RapidOCR persistent_mode set to {self._rapidocr_persistent_mode}"
-        )
-
-    def stop_rapidocr_worker(self) -> None:
-        rapidocr = self._ocr_providers.get(ProviderType.RAPIDOCR)
-        if rapidocr:
-            rapidocr.stop_worker()
-
-    def resume_rapidocr_worker(self) -> None:
-        if not self._rapidocr_persistent_mode:
-            return
-        if self._ocr_provider_preference != "rapidocr":
-            return
-        rapidocr = self.get_ocr_provider(ProviderType.RAPIDOCR)
-        if rapidocr:
-            rapidocr.set_persistent_mode(True)
 
     def set_chromescreenai_persistent_mode(
         self, enabled: bool, apply_to_provider: bool = True
@@ -333,36 +253,10 @@ class ProviderManager:
             OCRProvider instance or None
         """
         if provider_type is None:
-            # Determine provider type based on preference
-            if self._ocr_provider_preference == "rapidocr":
-                provider_type = ProviderType.RAPIDOCR
-            elif self._ocr_provider_preference == "ocrspace":
-                provider_type = ProviderType.OCR_SPACE
-            elif self._ocr_provider_preference == "gemini_vision":
-                provider_type = ProviderType.GEMINI_VISION
-            elif self._ocr_provider_preference == "chromescreenai":
-                provider_type = ProviderType.CHROME_SCREEN_AI
-            elif self._ocr_provider_preference == "windows_ocr":
-                provider_type = ProviderType.WINDOWS_OCR
-            else:  # "googlecloud"
-                provider_type = ProviderType.GOOGLE
+            provider_type = OCR_PROVIDER_TYPES.get(self._ocr_provider_preference, ProviderType.CHROME_SCREEN_AI)
 
         if provider_type not in self._ocr_providers:
-            if provider_type == ProviderType.RAPIDOCR:
-                models_dir = (
-                    self._rapidocr_downloader.get_target_dir()
-                    if self._rapidocr_downloader else ""
-                )
-                provider = RapidOCRProvider(
-                    min_confidence=self._rapidocr_confidence,
-                    models_dir=models_dir,
-                )
-                provider.set_box_thresh(self._rapidocr_box_thresh)
-                provider.set_unclip_ratio(self._rapidocr_unclip_ratio)
-                if self._rapidocr_persistent_mode:
-                    provider.set_persistent_mode(True)
-                self._ocr_providers[provider_type] = provider
-            elif provider_type == ProviderType.OCR_SPACE:
+            if provider_type == ProviderType.OCR_SPACE:
                 self._ocr_providers[provider_type] = OCRSpaceProvider()
             elif provider_type == ProviderType.GOOGLE:
                 self._ocr_providers[provider_type] = GoogleVisionProvider(
@@ -515,25 +409,6 @@ class ProviderManager:
             if hasattr(ocr_provider, 'get_usage_stats'):
                 status["ocr_usage"] = ocr_provider.get_usage_stats()
 
-        # Add RapidOCR availability info
-        rapidocr = self._ocr_providers.get(ProviderType.RAPIDOCR)
-        if rapidocr is None:
-            if self._status_rapidocr_provider is None:
-                models_dir = (
-                    self._rapidocr_downloader.get_target_dir()
-                    if self._rapidocr_downloader else ""
-                )
-                self._status_rapidocr_provider = RapidOCRProvider(
-                    min_confidence=self._rapidocr_confidence,
-                    models_dir=models_dir,
-                )
-            rapidocr = self._status_rapidocr_provider
-        rapidocr_available = rapidocr.is_available()
-        status["rapidocr_available"] = rapidocr_available
-        status["rapidocr_languages"] = rapidocr.get_supported_languages() if rapidocr_available else []
-        status["rapidocr_info"] = rapidocr.get_rapidocr_info()
-        status["rapidocr_error"] = rapidocr.get_init_error()
-
         llm = self._translation_providers.get(ProviderType.LLM)
         if llm:
             status["llm_backend"] = llm.backend
@@ -543,7 +418,6 @@ class ProviderManager:
 
         status["nllb_downloaded"] = self.is_nllb_model_downloaded()
         status["chromescreenai_downloaded"] = self.is_chromescreenai_downloaded()
-        status["rapidocr_downloaded"] = self.is_rapidocr_models_downloaded()
 
         nllb_dl = self._model_manager.get_download_status() if self._model_manager else {}
         status["nllb_downloading"] = bool(nllb_dl.get("downloading"))
@@ -552,10 +426,6 @@ class ProviderManager:
         scai_dl = self._screenai_downloader.get_status() if self._screenai_downloader else {}
         status["chromescreenai_downloading"] = bool(scai_dl.get("downloading"))
         status["chromescreenai_progress"] = float(scai_dl.get("progress") or 0)
-
-        rapidocr_dl = self._rapidocr_downloader.get_status() if self._rapidocr_downloader else {}
-        status["rapidocr_downloading"] = bool(rapidocr_dl.get("downloading"))
-        status["rapidocr_progress"] = float(rapidocr_dl.get("progress") or 0)
 
         return status
 
@@ -701,51 +571,10 @@ class ProviderManager:
         self._ocr_providers.pop(ProviderType.CHROME_SCREEN_AI, None)
         return self._screenai_downloader.delete()
 
-    # -- RapidOCR model download management --
-
-    def is_rapidocr_models_downloaded(self) -> bool:
-        if self._rapidocr_downloader:
-            return self._rapidocr_downloader.is_installed()
-        return False
-
-    def get_rapidocr_models_status(self) -> dict:
-        if not self._rapidocr_downloader:
-            return {
-                "downloaded": False, "size": 0, "approx_size_mb": 75,
-                "downloading": False, "progress": 0, "error": None,
-            }
-        return self._rapidocr_downloader.get_status()
-
-    def download_rapidocr_models(self) -> bool:
-        if self._rapidocr_downloader:
-            return self._rapidocr_downloader.start_download()
-        return False
-
-    def cancel_rapidocr_models_download(self) -> None:
-        if self._rapidocr_downloader:
-            self._rapidocr_downloader.cancel_download()
-
-    def clear_rapidocr_models_error(self) -> None:
-        if self._rapidocr_downloader:
-            self._rapidocr_downloader.clear_error()
-
-    def delete_rapidocr_models(self) -> bool:
-        if not self._rapidocr_downloader:
-            return False
-        provider = self._ocr_providers.get(ProviderType.RAPIDOCR)
-        if provider and hasattr(provider, 'stop_worker'):
-            provider.stop_worker()
-        # Drop the cached provider so it re-checks availability after delete.
-        self._ocr_providers.pop(ProviderType.RAPIDOCR, None)
-        return self._rapidocr_downloader.delete()
-
     def shutdown(self):
         ct2 = self._translation_providers.get(ProviderType.CT2)
         if ct2 and hasattr(ct2, 'shutdown'):
             ct2.shutdown()
-        rapidocr = self._ocr_providers.get(ProviderType.RAPIDOCR)
-        if rapidocr and hasattr(rapidocr, 'stop_worker'):
-            rapidocr.stop_worker()
         screenai = self._ocr_providers.get(ProviderType.CHROME_SCREEN_AI)
         if screenai and hasattr(screenai, 'stop_worker'):
             screenai.stop_worker()
