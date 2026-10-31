@@ -85,8 +85,9 @@ class ProviderManager:
         self._gemini_target_language = "en"
         self._ocr_provider_preference = "chromescreenai"  # see OCR_PROVIDER_TYPES
         self._translation_provider_preference = "freegoogle"  # "freegoogle", "googlecloud", or "ct2"
-        self._chromescreenai_persistent_mode = False  # Keep the Chrome Screen AI worker alive between requests
-        self._ct2_persistent_mode = False  # Same for CT2/NLLB translation
+        # main.py _sync_workers decides: the worker of the chosen local engine stays up between requests
+        self._chromescreenai_persistent_mode = False
+        self._ct2_persistent_mode = False
 
         # CT2 translation
         self._ct2_models_dir = None
@@ -182,63 +183,21 @@ class ProviderManager:
             # Remove cached provider so it gets recreated with the new model
             self._ocr_providers.pop(ProviderType.GEMINI_VISION, None)
 
-    def set_chromescreenai_persistent_mode(
-        self, enabled: bool, apply_to_provider: bool = True
-    ) -> None:
+    def set_chromescreenai_persistent_mode(self, enabled: bool) -> None:
+        """Keep the Chrome Screen AI worker running between requests (True), or stop it (False)."""
         self._chromescreenai_persistent_mode = bool(enabled)
-        if not apply_to_provider:
-            return
-        if self._chromescreenai_persistent_mode and self._ocr_provider_preference == "chromescreenai":
-            provider = self.get_ocr_provider(ProviderType.CHROME_SCREEN_AI)
-        else:
-            provider = self._ocr_providers.get(ProviderType.CHROME_SCREEN_AI)
+        provider = (self.get_ocr_provider(ProviderType.CHROME_SCREEN_AI) if enabled
+                    else self._ocr_providers.get(ProviderType.CHROME_SCREEN_AI))
         if provider:
             provider.set_persistent_mode(self._chromescreenai_persistent_mode)
 
-    def stop_chromescreenai_worker(self) -> None:
-        provider = self._ocr_providers.get(ProviderType.CHROME_SCREEN_AI)
-        if provider:
-            provider.stop_worker()
-
-    def resume_chromescreenai_worker(self) -> None:
-        if not self._chromescreenai_persistent_mode:
-            return
-        if self._ocr_provider_preference != "chromescreenai":
-            return
-        provider = self.get_ocr_provider(ProviderType.CHROME_SCREEN_AI)
-        if provider:
-            provider.set_persistent_mode(True)
-
-    def set_ct2_persistent_mode(
-        self, enabled: bool, apply_to_provider: bool = True
-    ) -> None:
+    def set_ct2_persistent_mode(self, enabled: bool) -> None:
+        """Keep the offline NLLB worker running between requests (True), or stop it (False)."""
         self._ct2_persistent_mode = bool(enabled)
-        if not apply_to_provider:
-            logger.debug(
-                f"CT2 persistent_mode preference: {self._ct2_persistent_mode} (not applied)"
-            )
-            return
-        if self._ct2_persistent_mode and self._translation_provider_preference == "ct2":
-            provider = self.get_translation_provider(ProviderType.CT2)
-        else:
-            provider = self._translation_providers.get(ProviderType.CT2)
+        provider = (self.get_translation_provider(ProviderType.CT2) if enabled
+                    else self._translation_providers.get(ProviderType.CT2))
         if provider:
             provider.set_persistent_mode(self._ct2_persistent_mode)
-        logger.debug(f"CT2 persistent_mode set to {self._ct2_persistent_mode}")
-
-    def stop_ct2_worker(self) -> None:
-        provider = self._translation_providers.get(ProviderType.CT2)
-        if provider:
-            provider.set_persistent_mode(False)
-
-    def resume_ct2_worker(self) -> None:
-        if not self._ct2_persistent_mode:
-            return
-        if self._translation_provider_preference != "ct2":
-            return
-        provider = self.get_translation_provider(ProviderType.CT2)
-        if provider:
-            provider.set_persistent_mode(True)
 
     def get_ocr_provider(
         self,

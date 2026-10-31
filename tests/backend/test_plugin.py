@@ -62,6 +62,34 @@ def test_api_keys_never_reach_the_frontend(backend):
         assert json.load(f)["google_api_key"] == key
 
 
+def test_unknown_settings_are_refused(backend):
+    assert backend.call("set_setting", "no_such_setting", 1) is False
+    assert "no_such_setting" not in backend.call("get_all_settings")
+
+
+def test_every_setting_has_a_value_from_the_start(backend):
+    s = backend.call("get_all_settings")
+    assert s["input_language"] == "auto" and s["confidence_threshold"] == 0.6 and s["llm_backend"] == "gemini"
+
+
+def test_the_saved_gemini_model_is_used_after_a_restart(start):
+    b = start({"gemini_model": "gemini-9-pro"})
+    assert b.plugin._provider_manager._gemini_model == "gemini-9-pro"
+
+
+def test_a_worker_stays_up_only_for_the_chosen_engine_while_the_plugin_is_on(start):
+    b = start({"translation_provider": "ct2", "ct2_persistent_mode": True})  # no model: nothing really starts
+    pm = b.plugin._provider_manager
+    assert pm._ct2_persistent_mode is True
+    b.call("set_setting", "enabled", False)
+    assert pm._ct2_persistent_mode is False
+    b.call("set_setting", "enabled", True)
+    assert pm._ct2_persistent_mode is True
+    b.call("set_setting", "translation_provider", "freegoogle")
+    assert pm._ct2_persistent_mode is False
+    assert pm._chromescreenai_persistent_mode is False  # "Faster Recognition" is off
+
+
 def test_a_damaged_settings_file_is_kept_aside(start, tmp_path):
     settings = tmp_path / "settings"
     settings.mkdir()

@@ -99,11 +99,26 @@ SENSITIVE_SETTING_KEYS = {
     "gemini_api_key",
 }
 
-# Settings only the frontend uses: set_setting just stores them
-FRONTEND_ONLY_SETTINGS = {"font_scale", "confidence_threshold", "custom_recognition_settings"}
-
-# AI translation (translation_provider "llm", providers/llm_translate.py); the Gemini key is the shared gemini_api_key
-LLM_SETTING_DEFAULTS = {
+# Every setting and its default: what get_all_settings answers, the only keys set_setting stores
+SETTING_DEFAULTS = {
+    "enabled": True,
+    "target_language": "en",
+    "input_language": "auto",
+    "ocr_provider": "chromescreenai",       # "chromescreenai", "windows_ocr", "ocrspace", "googlecloud", "gemini_vision"
+    "translation_provider": "freegoogle",   # "freegoogle", "googlecloud", "ct2" (offline NLLB) or "llm" (AI)
+    "google_api_key": "",                   # one Google Cloud key for Vision and Translation
+    "gemini_api_key": "",                   # Gemini Vision, and AI translation through Gemini
+    "gemini_model": "gemini-3.5-flash",     # Gemini Vision's model
+    "chromescreenai_persistent_mode": False,  # "Faster Recognition": the Screen AI worker stays up between requests
+    "ct2_persistent_mode": False,           # the same for the offline NLLB worker
+    "pause_game_on_overlay": False,
+    "translation_cache_enabled": True,
+    "debug_mode": False,
+    # used by the frontend only
+    "font_scale": 1.0,
+    "confidence_threshold": 0.6,
+    "custom_recognition_settings": False,
+    # AI translation (translation_provider "llm", providers/llm_translate.py)
     "llm_backend": "gemini",                # "gemini", "groq" or "custom" (any OpenAI-compatible server)
     "llm_gemini_model": "gemini-flash-lite-latest",
     "llm_groq_model": "openai/gpt-oss-120b",
@@ -112,6 +127,12 @@ LLM_SETTING_DEFAULTS = {
     "groq_api_key": "",
     "llm_custom_api_key": "",
 }
+# Settings the provider manager gets (_configure_providers) and those that decide which workers run (_sync_workers)
+PROVIDER_SETTINGS = {"ocr_provider", "translation_provider", "google_api_key", "gemini_api_key", "gemini_model",
+                     "llm_backend", "llm_gemini_model", "llm_groq_model", "llm_custom_model", "llm_custom_url",
+                     "groq_api_key", "llm_custom_api_key"}
+WORKER_SETTINGS = {"enabled", "ocr_provider", "translation_provider", "chromescreenai_persistent_mode",
+                   "ct2_persistent_mode"}
 
 
 def _mask_secret(value):
@@ -309,24 +330,13 @@ class SettingsManager:
             return False
 
     def get_setting(self, key, default=None):
-        value = self.settings.get(key, default)
-        logger.debug(f"Getting setting {key}: {_mask_for_log(key, value)}")
-        return value
+        return self.settings.get(key, default)
 
 
 class Plugin:
     _settings = None
-    _input_language: str = "auto"  # Default to auto-detect
-    _target_language: str = "en"
-    _chromescreenai_persistent_mode: bool = False  # Keep Chrome Screen AI worker alive between requests
-    _ct2_persistent_mode: bool = False  # Keep CT2/NLLB worker alive between requests
-    _pause_game_on_overlay: bool = False  # Default to not pausing game on overlay
     _pause_problems_shown: frozenset = frozenset()  # pause problems already shown to the user (_report_pause_problem)
-
-    # Provider system
     _provider_manager: ProviderManager = None
-    # "chromescreenai", "windows_ocr", "ocrspace", "googlecloud", "gemini_vision"
-    _ocr_provider: str = "chromescreenai"
 
     # Windows: the translation overlay window, the window the last screenshot came from, the Ctrl+Alt+T hotkey
     _overlay = None
@@ -334,169 +344,86 @@ class Plugin:
     _capture_target = None
     _hotkey = None
     _loop = None
-    _translation_provider: str = "freegoogle"  # "freegoogle" or "googlecloud"
 
-    # Translation cache
     _translation_cache: TranslationCache = None
-    _translation_cache_enabled: bool = True
 
-    # OCR API configurations - user must provide their own API key (one Google key for Vision and Translate)
-    _google_api_key: str = ""
-    _gemini_api_key: str = ""
-    _gemini_model: str = "gemini-3.5-flash"
-
-    def _configure_providers(self):
-        """Provider choice and keys -> the provider manager (whenever one of them changes)."""
-        if self._provider_manager:
-            self._provider_manager.configure(
-                google_api_key=self._google_api_key,
-                gemini_api_key=self._gemini_api_key,
-                ocr_provider=self._ocr_provider,
-                translation_provider=self._translation_provider,
-            )
+    def _get(self, key):
+        """A setting's current value (or its default from SETTING_DEFAULTS)."""
+        return self._settings.get_setting(key, SETTING_DEFAULTS[key])
 
     async def set_setting(self, key, value):
-        logger.debug(f"Setting {key} to: {_mask_for_log(key, value)}")
-        if key in SENSITIVE_SETTING_KEYS and isinstance(value, str) and value and \
-                value == display_key(self._settings.get_setting(key, "") or ""):
-            return True  # the frontend saved the key it was shown (a dialog closed without a new key): unchanged
+        if key not in SETTING_DEFAULTS:
+            logger.warning(f"Unknown setting {key}: not stored")
+            return False
         if key in SENSITIVE_SETTING_KEYS and isinstance(value, str):
+            if value and value == display_key(self._get(key) or ""):
+                return True  # the frontend saved the key it was shown (a dialog closed without a new key): unchanged
             cleaned = _clean_api_key(value)
             if cleaned != value:
-                logger.warning(
-                    f"{key} contained whitespace or invisible characters, "
-                    f"cleaned (len {len(value)} -> {len(cleaned)})"
-                )
+                logger.warning(f"{key} contained whitespace or invisible characters, "
+                               f"cleaned (len {len(value)} -> {len(cleaned)})")
             value = cleaned
             logger.info(f"{key} set (len={len(value)})")
-        try:
-            if key == "target_language":
-                self._target_language = value
-            elif key == "input_language":
-                self._input_language = value
-            elif key == "enabled":
-                if not value:
-                    self._resume_paused_games()  # never leave a game frozen behind a switched-off plugin
-                if self._hotkey:
-                    self._hotkey.set_enabled(bool(value))
-                if self._provider_manager:
-                    if value:
-                        if self._chromescreenai_persistent_mode:
-                            self._provider_manager.resume_chromescreenai_worker()
-                        if self._ct2_persistent_mode:
-                            self._provider_manager.resume_ct2_worker()
-                    else:
-                        self._provider_manager.stop_chromescreenai_worker()
-                        self._provider_manager.stop_ct2_worker()
-            elif key == "google_api_key":
-                # Single API key for both Vision and Translate
-                self._google_api_key = value
-                self._configure_providers()
-            elif key == "gemini_model":
-                self._gemini_model = value
-                if self._provider_manager:
-                    self._provider_manager.set_gemini_model(value)
-            elif key == "gemini_api_key":
-                self._gemini_api_key = value
-                self._configure_providers()
-            elif key == "chromescreenai_persistent_mode":
-                self._chromescreenai_persistent_mode = bool(value)
-                if self._provider_manager:
-                    plugin_enabled = self._settings.get_setting("enabled", True)
-                    self._provider_manager.set_chromescreenai_persistent_mode(
-                        self._chromescreenai_persistent_mode,
-                        apply_to_provider=plugin_enabled,
-                    )
-                    if not plugin_enabled and not self._chromescreenai_persistent_mode:
-                        self._provider_manager.stop_chromescreenai_worker()
-            elif key == "ct2_persistent_mode":
-                self._ct2_persistent_mode = bool(value)
-                if self._provider_manager:
-                    plugin_enabled = self._settings.get_setting("enabled", True)
-                    self._provider_manager.set_ct2_persistent_mode(
-                        self._ct2_persistent_mode,
-                        apply_to_provider=plugin_enabled,
-                    )
-                    if not plugin_enabled and not self._ct2_persistent_mode:
-                        self._provider_manager.stop_ct2_worker()
-            elif key == "pause_game_on_overlay":
-                self._pause_game_on_overlay = value
-            elif key in FRONTEND_ONLY_SETTINGS:
-                pass  # used by the frontend only: just persist it
-            elif key == "debug_mode":
-                logger.setLevel(logging.DEBUG if value else logging.INFO)
-            elif key == "ocr_provider":
-                self._ocr_provider = value
-                self._configure_providers()
-                if self._provider_manager:
-                    # don't leave the Screen AI worker running for another engine; resume it on the way back
-                    plugin_enabled = self._settings.get_setting("enabled", True)
-                    if value != "chromescreenai":
-                        self._provider_manager.stop_chromescreenai_worker()
-                    elif plugin_enabled:
-                        self._provider_manager.resume_chromescreenai_worker()
-            elif key == "translation_provider":
-                self._translation_provider = value
-                self._configure_providers()
-                if self._provider_manager:
-                    plugin_enabled = self._settings.get_setting("enabled", True)
-                    if value != "ct2":
-                        self._provider_manager.stop_ct2_worker()
-                    elif plugin_enabled:
-                        self._provider_manager.resume_ct2_worker()
-            elif key == "translation_cache_enabled":
-                self._translation_cache_enabled = bool(value)
-            elif key in LLM_SETTING_DEFAULTS:
-                pass  # applied below, after it is stored
-            else:
-                logger.warning(f"Unknown setting key: {key}")
-
-            stored = self._settings.set_setting(key, value)
-            if key in LLM_SETTING_DEFAULTS or key == "gemini_api_key":
-                self._apply_llm_settings()
-            return stored
-        except Exception as e:
-            logger.error(f"Error setting {key}: {str(e)}")
-            logger.error(traceback.format_exc())
+        logger.debug(f"Setting {key} to: {_mask_for_log(key, value)}")
+        if not self._settings.set_setting(key, value):
             return False
+        try:
+            self._apply_setting(key)
+        except Exception:  # noqa: BLE001 - stored; tell the frontend it didn't take effect
+            logger.exception(f"Applying {key} failed")
+            return False
+        return True
+
+    def _apply_setting(self, key):
+        """What a changed setting changes in the backend now (the others are read where they are used)."""
+        if key == "enabled":
+            enabled = bool(self._get("enabled"))
+            if not enabled:
+                self._resume_paused_games()  # never leave a game frozen behind a switched-off plugin
+            if self._hotkey:
+                self._hotkey.set_enabled(enabled)
+        if key == "debug_mode":
+            logger.setLevel(logging.DEBUG if self._get("debug_mode") else logging.INFO)
+        if key in PROVIDER_SETTINGS:
+            self._configure_providers()
+        if key in WORKER_SETTINGS:
+            self._sync_workers()
+
+    def _configure_providers(self):
+        """Engine choice, keys and models -> the provider manager."""
+        pm = self._provider_manager
+        if not pm:
+            return
+        pm.configure(google_api_key=self._get("google_api_key"), gemini_api_key=self._get("gemini_api_key"),
+                     ocr_provider=self._get("ocr_provider"), translation_provider=self._get("translation_provider"))
+        pm.set_gemini_model(self._get("gemini_model"))
+        pm.configure_llm(
+            backend=self._get("llm_backend"),
+            keys={"gemini": self._get("gemini_api_key"), "groq": self._get("groq_api_key"),
+                  "custom": self._get("llm_custom_api_key")},
+            models={"gemini": self._get("llm_gemini_model"), "groq": self._get("llm_groq_model"),
+                    "custom": self._get("llm_custom_model")},
+            custom_url=self._get("llm_custom_url"),
+        )
+
+    def _sync_workers(self):
+        """The Screen AI and NLLB workers stay up between requests only while the plugin is on, their engine is the
+        chosen one and its "Faster ..." setting is on; otherwise each request starts and stops its own."""
+        pm = self._provider_manager
+        if not pm:
+            return
+        on = bool(self._get("enabled"))
+        pm.set_chromescreenai_persistent_mode(
+            on and self._get("ocr_provider") == "chromescreenai" and bool(self._get("chromescreenai_persistent_mode")))
+        pm.set_ct2_persistent_mode(
+            on and self._get("translation_provider") == "ct2" and bool(self._get("ct2_persistent_mode")))
 
     async def get_all_settings(self):
         # no catch-all: a failure here rejects the frontend's call instead of answering {} (every setting unset)
-        settings = {
-            "target_language": self._target_language,
-            "input_language": self._input_language,
-            "enabled": self._settings.get_setting("enabled", True),
-            "ocr_provider": self._ocr_provider,
-            "translation_provider": self._translation_provider,
-            "google_api_key": self._google_api_key,
-            "gemini_api_key": self._gemini_api_key,
-            "gemini_model": self._gemini_model,
-            "confidence_threshold": self._settings.get_setting("confidence_threshold", 0.6),
-            "chromescreenai_persistent_mode": self._settings.get_setting("chromescreenai_persistent_mode", False),
-            "ct2_persistent_mode": self._settings.get_setting("ct2_persistent_mode", False),
-            "pause_game_on_overlay": self._settings.get_setting("pause_game_on_overlay", False),
-            "debug_mode": self._settings.get_setting("debug_mode", False),
-            "font_scale": self._settings.get_setting("font_scale", 1.0),
-            "custom_recognition_settings": self._settings.get_setting("custom_recognition_settings", False),
-            "translation_cache_enabled": self._translation_cache_enabled,
-            **{k: self._settings.get_setting(k, d) for k, d in LLM_SETTING_DEFAULTS.items()},
-        }
-        for k in SENSITIVE_SETTING_KEYS & settings.keys():
+        settings = {key: self._get(key) for key in SETTING_DEFAULTS}
+        for k in SENSITIVE_SETTING_KEYS:
             settings[k] = display_key(settings[k])
         return settings
-
-    def _apply_llm_settings(self):
-        """AI translation settings -> the provider manager (on start and whenever one of them changes)."""
-        if not self._provider_manager or not self._settings:
-            return
-        get = lambda k: self._settings.get_setting(k, LLM_SETTING_DEFAULTS[k])
-        self._provider_manager.configure_llm(
-            backend=get("llm_backend"),
-            keys={"gemini": self._gemini_api_key, "groq": get("groq_api_key"), "custom": get("llm_custom_api_key")},
-            models={"gemini": get("llm_gemini_model"), "groq": get("llm_groq_model"),
-                    "custom": get("llm_custom_model")},
-            custom_url=get("llm_custom_url"),
-        )
 
     async def get_llm_models(self, backend: str):
         """Models the configured key can use on that AI backend, for the model picker."""
@@ -511,14 +438,14 @@ class Plugin:
 
     async def get_gemini_models(self):
         try:
-            if not self._gemini_api_key:
+            if not self._get("gemini_api_key"):
                 return []
             gemini = self._provider_manager.get_ocr_provider() if (
-                self._provider_manager and self._ocr_provider == "gemini_vision"
+                self._provider_manager and self._get("ocr_provider") == "gemini_vision"
             ) else None
             if not gemini:
                 from providers.gemini_vision import GeminiVisionProvider
-                gemini = GeminiVisionProvider(api_key=self._gemini_api_key)
+                gemini = GeminiVisionProvider(api_key=self._get("gemini_api_key"))
             return await gemini.list_available_models()
         except Exception as e:
             logger.error(f"Error fetching Gemini models: {e}")
@@ -590,7 +517,7 @@ class Plugin:
             self._overlay_visible = visible
             if visible:
                 self._overlay.show(state, self._capture_target)
-                if appeared and self._pause_game_on_overlay:
+                if appeared and self._get("pause_game_on_overlay"):
                     self._pause_captured_game()
             else:
                 self._overlay.hide()
@@ -693,27 +620,27 @@ class Plugin:
             logger.error("Provider manager not initialized")
             return []
 
-        if self._ocr_provider == "chromescreenai" and not self._provider_manager.is_chromescreenai_downloaded():
+        if self._get("ocr_provider") == "chromescreenai" and not self._provider_manager.is_chromescreenai_downloaded():
             return {"error": "model_not_available", "message": "Chrome Screen AI engine not downloaded.\nDownload it in plugin settings"}
 
-        if self._ocr_provider == "windows_ocr" and self._input_language not in ("", "auto"):
+        if self._get("ocr_provider") == "windows_ocr" and self._get("input_language") not in ("", "auto"):
             from providers.windows_ocr import WindowsOCRProvider, plugin_code
-            if plugin_code(self._input_language) not in WindowsOCRProvider().get_supported_languages():
+            if plugin_code(self._get("input_language")) not in WindowsOCRProvider().get_supported_languages():
                 from providers.gemini_vision import LANG_NAMES
-                lang = LANG_NAMES.get(self._input_language, self._input_language)
+                lang = LANG_NAMES.get(self._get("input_language"), self._get("input_language"))
                 return {"error": "model_not_available",
                         "message": f"No Windows OCR language pack for {lang}.\n"
                                    "Add it in Windows Settings or use On-Device (Chrome)"}
 
         # If using Gemini Vision, set the target language before OCR
         # so it can translate in the same API call
-        if self._ocr_provider == "gemini_vision":
-            self._provider_manager.set_gemini_target_language(self._target_language)
+        if self._get("ocr_provider") == "gemini_vision":
+            self._provider_manager.set_gemini_target_language(self._get("target_language"))
 
         start_time = time.time()
         text_regions = await self._provider_manager.recognize_text(
             image_bytes,
-            language=self._input_language
+            language=self._get("input_language")
         )
         logger.info(f"OCR completed in {time.time() - start_time:.2f}s, found {len(text_regions)} regions")
 
@@ -745,8 +672,8 @@ class Plugin:
         if not text_regions:
             return []
 
-        target_lang = target_language or self._target_language
-        input_lang = input_language or self._input_language
+        target_lang = target_language or self._get("target_language")
+        input_lang = input_language or self._get("input_language")
 
         if not self._provider_manager:
             logger.error("Provider manager not initialized")
@@ -756,8 +683,8 @@ class Plugin:
         # skip the translation step entirely
         if all(r.get("translatedText") is not None for r in text_regions):
             logger.info(f"Translation skipped: {len(text_regions)} regions already translated by OCR provider")
-            if (self._translation_cache_enabled and self._translation_cache
-                    and self._ocr_provider == "gemini_vision"):
+            if (self._get("translation_cache_enabled") and self._translation_cache
+                    and self._get("ocr_provider") == "gemini_vision"):
                 pairs = [(r["text"], r["translatedText"]) for r in text_regions]
                 if any(normalize(s) != normalize(t) for s, t in pairs):
                     await self._use_cache(
@@ -768,7 +695,7 @@ class Plugin:
             return text_regions
 
         # Check if CT2 provider has the needed models
-        if self._translation_provider == "ct2":
+        if self._get("translation_provider") == "ct2":
             provider = self._provider_manager.get_translation_provider()
             if provider and not provider.is_available(input_lang, target_lang):
                 if input_lang == "auto":
@@ -781,8 +708,8 @@ class Plugin:
             if region.get("translatedText") is None
         ]
 
-        cache_on = self._translation_cache_enabled and self._translation_cache is not None
-        provider_tier = PROVIDER_TIERS.get(self._translation_provider, 0)
+        cache_on = self._get("translation_cache_enabled") and self._translation_cache is not None
+        provider_tier = PROVIDER_TIERS.get(self._get("translation_provider"), 0)
 
         cached = {}
         if cache_on and texts_to_translate:
@@ -816,11 +743,11 @@ class Plugin:
         # fallback translated it; each is cached under its own engine's tier.
         sources = getattr(requested, "sources", None)
         if not sources or len(sources) != len(to_request):
-            sources = [self._translation_provider] * len(to_request)
+            sources = [self._get("translation_provider")] * len(to_request)
         by_source = {}
         for s, t, src in zip(to_request, requested, sources):
             if t is not None:
-                by_source.setdefault(src or self._translation_provider, []).append((s, t))
+                by_source.setdefault(src or self._get("translation_provider"), []).append((s, t))
         for src, translated in by_source.items():
             if cache_on and any(normalize(s) != normalize(t) for s, t in translated):
                 await self._use_cache(
@@ -1016,42 +943,6 @@ class Plugin:
             )
             self._settings.read()
 
-            def load_setting(key, default):
-                saved = self._settings.get_setting(key)
-                if saved is not None:
-                    return saved
-                self._settings.set_setting(key, default)
-                return default
-
-            # Load basic settings
-            self._target_language = load_setting("target_language", self._target_language)
-            self._input_language = load_setting("input_language", self._input_language)
-            self._pause_game_on_overlay = load_setting("pause_game_on_overlay", self._pause_game_on_overlay)
-            self._translation_cache_enabled = bool(
-                load_setting("translation_cache_enabled", self._translation_cache_enabled)
-            )
-
-
-            def load_api_key(name):
-                raw = self._settings.get_setting(name, "")
-                cleaned = _clean_api_key(raw)
-                if cleaned != raw:
-                    logger.warning(
-                        f"{name} contained whitespace or invisible characters, "
-                        f"cleaned (len {len(raw)} -> {len(cleaned)})"
-                    )
-                    self._settings.set_setting(name, cleaned)
-                if cleaned:
-                    logger.info(f"{name} loaded (len={len(cleaned)})")
-                return cleaned
-
-            self._google_api_key = load_api_key("google_api_key")
-            self._gemini_api_key = load_api_key("gemini_api_key")
-            self._gemini_model = self._settings.get_setting("gemini_model", "gemini-3.5-flash")
-
-            self._ocr_provider = load_setting("ocr_provider", self._ocr_provider)
-            self._translation_provider = load_setting("translation_provider", self._translation_provider)
-
             # Downloaded models (NLLB, Chrome Screen AI) live in the settings folder, so they survive plugin
             # updates
             models_dir = os.path.join(settingsDir, "decky-translator", "models")
@@ -1066,53 +957,17 @@ class Plugin:
                 logger.error(f"Failed to open translation cache, continuing without it: {e}")
                 self._translation_cache = None
 
-            # Initialize provider manager
             self._provider_manager = ProviderManager()
-            self._provider_manager.configure(
-                google_api_key=self._google_api_key,
-                gemini_api_key=self._gemini_api_key,
-                ocr_provider=self._ocr_provider,
-                translation_provider=self._translation_provider,
-                ct2_models_dir=ct2_models_dir,
-                screenai_models_dir=models_dir,
-            )
-
-            self._chromescreenai_persistent_mode = bool(
-                load_setting("chromescreenai_persistent_mode", self._chromescreenai_persistent_mode)
-            )
-            self._ct2_persistent_mode = bool(
-                load_setting("ct2_persistent_mode", self._ct2_persistent_mode)
-            )
-            for key in ("groq_api_key", "llm_custom_api_key"):
-                load_api_key(key)
-            self._apply_llm_settings()
-            # Only spin up the worker if the plugin is enabled right now;
-            # the preference is always stored so re-enable can pick it up.
-            plugin_enabled_at_boot = self._settings.get_setting("enabled", True)
-            self._provider_manager.set_chromescreenai_persistent_mode(
-                self._chromescreenai_persistent_mode,
-                apply_to_provider=plugin_enabled_at_boot
-                                  and self._ocr_provider == "chromescreenai",
-            )
-            self._provider_manager.set_ct2_persistent_mode(
-                self._ct2_persistent_mode,
-                apply_to_provider=plugin_enabled_at_boot
-                                  and self._translation_provider == "ct2",
-            )
-
-            # Apply debug_mode log level
-            if self._settings.get_setting("debug_mode", False):
-                logger.setLevel(logging.DEBUG)
-                logger.debug("Debug logging enabled")
+            self._provider_manager.configure(ct2_models_dir=ct2_models_dir, screenai_models_dir=models_dir)
+            for key in ("debug_mode", "enabled"):  # log level; Ctrl+Alt+T on or off
+                self._apply_setting(key)
+            self._configure_providers()
+            self._sync_workers()
 
             provider_status = self._provider_manager.get_provider_status()
             logger.info(f"Initialized - OCR: {provider_status.get('ocr_provider', '?')}, "
                         f"Translation: {provider_status.get('translation_provider', '?')}, "
-                        f"Target lang: {self._target_language}")
-
-            # hotkey and leftover resume started in _start_windows; the overlay window starts on first use
-            if self._hotkey:
-                self._hotkey.set_enabled(bool(self._settings.get_setting("enabled", True)))
+                        f"Target lang: {self._get('target_language')}")
 
         except Exception as e:
             logger.error(f"Error during initialization: {e}")

@@ -2,7 +2,6 @@
 
 import {
     definePlugin,
-    routerHook,
     call
 } from "@decky/api";
 
@@ -26,7 +25,7 @@ import { ImageState } from "./Overlay";
 import { GameTranslatorLogic } from "./Translator";
 import { forwardOverlayToBackend, listenForHotkey, listenForProblems, showBootProblems } from "./windows";
 import { adoptActivePlugin } from "./deckyState";
-import { SettingsProvider, useSettings } from "./SettingsContext";
+import { SettingsProvider, useSettings, loadSettingsIntoLogic } from "./SettingsContext";
 import { logger } from "./Logger";
 
 // Import tab components
@@ -220,14 +219,6 @@ const TranslatorApp: VFC<{ logic: GameTranslatorLogic }> = ({ logic }) => {
     );
 };
 
-// Decky renders the plugin's panel (TranslatorApp) only while it is open in the side menu, but Ctrl+Alt+T needs the
-// languages, providers and keys in the logic from the start: this always-mounted component loads them (its
-// SettingsProvider reads the backend's settings into the logic) and draws nothing. Upstream got this as a side effect
-// of the controller hold indicator.
-const SettingsLoader: VFC<{ logic: GameTranslatorLogic }> = ({ logic }) => (
-    <SettingsProvider logic={logic}>{null}</SettingsProvider>
-);
-
 // plugin.json name
 const PLUGIN_NAME = "WinDecky Translator";
 
@@ -273,7 +264,7 @@ export default definePlugin(() => {
     call('native_overlay_update', { visible: false }).catch(() => { /* logged by the backend */ });
     showBootProblems(PLUGIN_NAME);
 
-    routerHook.addGlobalComponent("TranslatorSettingsLoader", () => <SettingsLoader logic={logic}/>);
+    loadSettingsIntoLogic(logic);  // Ctrl+Alt+T needs them before the panel is ever opened
 
     return {
         name: PLUGIN_NAME,
@@ -286,7 +277,6 @@ export default definePlugin(() => {
             stopHotkey();
             stopProblems();
             stopAdopting();
-            routerHook.removeGlobalComponent("TranslatorSettingsLoader");
         },
         // no alwaysRender: Decky then unmounts the panel when the side menu closes, which stops its status polling
         // (a web request every 10 s) during the game
