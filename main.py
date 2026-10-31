@@ -11,6 +11,7 @@ import logging
 import re
 import json
 import base64
+import sqlite3
 import tarfile
 
 # IMPORTANT: Set up plugin directory FIRST
@@ -745,7 +746,7 @@ class Plugin:
                         and self._ocr_provider == "gemini_vision"):
                     pairs = [(r["text"], r["translatedText"]) for r in text_regions]
                     if any(normalize(s) != normalize(t) for s, t in pairs):
-                        await asyncio.to_thread(
+                        await self._use_cache(
                             self._translation_cache.put_many,
                             pairs, input_lang, target_lang,
                             PROVIDER_TIERS.get("gemini_vision", 0), "gemini_vision",
@@ -771,10 +772,10 @@ class Plugin:
 
             cached = {}
             if cache_on and texts_to_translate:
-                cached = await asyncio.to_thread(
+                cached = await self._use_cache(
                     self._translation_cache.get_many,
                     texts_to_translate, input_lang, target_lang, provider_tier,
-                )
+                ) or {}
 
             if cache_on:
                 to_request, seen = [], set()
@@ -808,7 +809,7 @@ class Plugin:
                     by_source.setdefault(src or self._translation_provider, []).append((s, t))
             for src, translated in by_source.items():
                 if cache_on and any(normalize(s) != normalize(t) for s, t in translated):
-                    await asyncio.to_thread(
+                    await self._use_cache(
                         self._translation_cache.put_many,
                         translated, input_lang, target_lang, PROVIDER_TIERS.get(src, provider_tier), src,
                     )
@@ -846,6 +847,16 @@ class Plugin:
         except Exception:
             logger.exception("Translation error")
             return {"error": "translation_failed", "message": "Translation failed (details in the plugin log)"}
+
+    @staticmethod
+    async def _use_cache(method, *args):
+        """A translation cache call, off the event loop. A cache failure (a full disk, a locked or damaged database)
+        costs only the cache, never the translation: None then."""
+        try:
+            return await asyncio.to_thread(method, *args)
+        except sqlite3.Error as e:
+            logger.error(f"Translation cache unavailable: {e}")
+            return None
 
     async def get_enabled_state(self):
         return self._settings.get_setting("enabled", True) if self._settings else True

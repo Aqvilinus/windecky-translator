@@ -155,6 +155,17 @@ def test_offline_translation_failures_are_errors(backend, monkeypatch):
         provider._translate_batch_sync(["Hallo"], "auto", "en")
 
 
+def test_a_broken_cache_does_not_stop_the_translation(backend, net, monkeypatch):
+    import sqlite3
+
+    def locked(*args):
+        raise sqlite3.OperationalError("database is locked")
+    monkeypatch.setattr(backend.plugin._translation_cache, "get_many", locked)
+    monkeypatch.setattr(backend.plugin._translation_cache, "put_many", locked)
+    _, _, translated = translate_screen(backend)
+    assert [r["translatedText"] for r in translated] == ["Welcome, traveller", "New game"]
+
+
 def test_translation_cache(start, net):
     b = start()
     _, regions, first = translate_screen(b)
