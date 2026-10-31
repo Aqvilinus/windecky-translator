@@ -19,6 +19,7 @@ import {
 import { showModal } from "../modal";
 
 import { VFC, useState, useEffect, useRef, useCallback, RefObject } from "react";
+import { OCR_ENGINE_LABELS, TRANSLATION_ENGINE_LABELS } from "../providers";
 import { call } from "@decky/api";
 import { useSettings, displayKey } from "../SettingsContext";
 import { LLM_DEFAULT_MODELS, LLM_KEY_SETTING, LLM_MODEL_SETTING, llmConfigured, llmModel } from "../llm";
@@ -160,13 +161,9 @@ const ApiKeyModal: VFC<{
     );
 };
 
-const cacheProviderLabel = (p: string) => ({
-    ct2: "On-Device",
-    freegoogle: "Google Translate",
-    googlecloud: "Google Cloud",
-    gemini_vision: "Gemini Vision",
-    llm: "AI",
-} as Record<string, string>)[p] || p || "?";
+// who translated a cached line: a translation engine, or Gemini Vision (OCR and translation in one)
+const cacheProviderLabel = (p: string) =>
+    ({ ...TRANSLATION_ENGINE_LABELS, gemini_vision: OCR_ENGINE_LABELS.gemini_vision } as Record<string, string>)[p] || p || "?";
 
 // AI translation through a custom OpenAI-compatible server: address, optional key, model
 const CustomServerModal: VFC<{

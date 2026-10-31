@@ -8,6 +8,7 @@ import {
 } from "@decky/ui";
 
 import { VFC } from "react";
+import { OCR_ENGINE_LABELS, TRANSLATION_ENGINE_LABELS } from "../providers";
 import { BsTranslate, BsXLg, BsEye, BsStars } from "react-icons/bs";
 import { HiInboxArrowDown } from "react-icons/hi2";
 import { useSettings } from "../SettingsContext";
@@ -163,9 +164,7 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                                         <BsEye style={{ marginRight: '8px', color: '#aaa' }} />
                                         <span style={{ color: '#888' }}>Text Recognition:</span>
                                         <span style={{ marginLeft: '6px', fontWeight: 'bold' }}>
-                                            {settings.ocrProvider === 'chromescreenai' ? 'On-Device' :
-                                             settings.ocrProvider === 'windows_ocr' ? 'On-Device (Windows)' :
-                                             settings.ocrProvider === 'ocrspace' ? 'OCR.space' : 'Google Cloud'}
+                                            {OCR_ENGINE_LABELS[settings.ocrProvider]}
                                         </span>
                                     </div>
                                 )}
@@ -290,10 +289,8 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                                         <BsTranslate style={{ marginRight: '8px', color: '#aaa' }} />
                                         <span style={{ color: '#888' }}>Translation:</span>
                                         <span style={{ marginLeft: '6px', fontWeight: 'bold' }}>
-                                            {settings.translationProvider === 'googlecloud' ? 'Google Cloud' :
-                                             settings.translationProvider === 'ct2' ? 'On-Device' :
-                                             settings.translationProvider === 'llm' ? `AI (${LLM_BACKEND_LABELS[settings.llmBackend] || settings.llmBackend})` :
-                                             'Google Translate'}
+                                            {TRANSLATION_ENGINE_LABELS[settings.translationProvider]}
+                                            {settings.translationProvider === 'llm' && ` (${LLM_BACKEND_LABELS[settings.llmBackend] || settings.llmBackend})`}
                                         </span>
                                     </div>
                                 )}

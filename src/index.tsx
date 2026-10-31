@@ -27,6 +27,7 @@ import { forwardOverlayToBackend, listenForHotkey, listenForProblems, showBootPr
 import { adoptActivePlugin } from "./deckyState";
 import { SettingsProvider, useSettings, loadSettingsIntoLogic } from "./SettingsContext";
 import { logger } from "./Logger";
+import { WEB_OCR_ENGINES, WEB_TRANSLATION_ENGINES } from "./providers";
 
 // Import tab components
 import { TabMain, TabTranslation, TabControls } from "./tabs";
@@ -105,10 +106,8 @@ const GameTranslator: VFC<{ logic: GameTranslatorLogic }> = ({ logic }) => {
     const probeReachability = useCallback(async () => {
         const s = settingsRef.current;
         if (currentTabRouteRef.current !== 'main' || !s?.enabled) return;
-        const webOcr = new Set(['gemini_vision', 'googlecloud', 'ocrspace']);
-        const webTrans = new Set(['freegoogle', 'googlecloud', 'llm']);
-        const probeOcr = webOcr.has(s.ocrProvider);
-        const probeTrans = s.ocrProvider !== 'gemini_vision' && webTrans.has(s.translationProvider);
+        const probeOcr = WEB_OCR_ENGINES.has(s.ocrProvider);
+        const probeTrans = s.ocrProvider !== 'gemini_vision' && WEB_TRANSLATION_ENGINES.has(s.translationProvider);
         if (!probeOcr && !probeTrans) return;
 
         try {

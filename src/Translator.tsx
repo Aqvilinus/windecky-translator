@@ -7,6 +7,7 @@ import { BackendError, NetworkError, ApiKeyError } from "./errors";
 import { TextTranslator } from "./TextTranslator";
 import { ImageState } from "./Overlay";
 import { logger } from "./Logger";
+import { OCR_ENGINE_LABELS, TRANSLATION_ENGINE_LABELS } from "./providers";
 
 // main.py take_screenshot: the capture's name for recognize_text_file ("" when nothing was captured); the pixels
 // stay in the backend, which draws the overlay
@@ -205,24 +206,11 @@ export class GameTranslatorLogic {
     }
 
     private translationMethodHint(): string {
-        const labels: Record<string, string> = {
-            ct2: "On-Device",
-            freegoogle: "Google Translate",
-            googlecloud: "Google Cloud",
-            llm: "AI",
-        };
-        return labels[this.translationProvider] || this.translationProvider;
+        return (TRANSLATION_ENGINE_LABELS as Record<string, string>)[this.translationProvider] || this.translationProvider;
     }
 
     private ocrMethodHint(): string {
-        const labels: Record<string, string> = {
-            chromescreenai: "On-Device",
-            windows_ocr: "On-Device",
-            ocrspace: "OCR.space",
-            googlecloud: "Google Cloud",
-            gemini_vision: "Gemini Vision",
-        };
-        return labels[this.ocrProvider] || this.ocrProvider;
+        return (OCR_ENGINE_LABELS as Record<string, string>)[this.ocrProvider] || this.ocrProvider;
     }
 
     setHasGoogleApiKey = (hasKey: boolean): void => {

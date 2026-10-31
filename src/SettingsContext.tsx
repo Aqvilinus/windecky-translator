@@ -4,6 +4,7 @@ import { call } from '@decky/api';
 import { GameTranslatorLogic } from './Translator';
 import { logger } from './Logger';
 import { LLM_DEFAULT_MODELS } from './llm';
+import type { OcrEngine, TranslationEngine } from './providers';
 
 // API keys: the backend hands out only their first 3 and last 4 characters (main.py display_key), and saving that
 // same text back changes nothing. A key typed in a dialog is kept here in the same shortened form.
@@ -25,8 +26,8 @@ export interface Settings {
     chromeScreenAiPersistentMode: boolean; // Keep Chrome Screen AI worker alive between requests
     ct2PersistentMode: boolean; // Keep CT2/NLLB worker alive between requests
     pauseGameOnOverlay: boolean; // Setting to control pausing game when overlay is shown
-    ocrProvider: 'chromescreenai' | 'windows_ocr' | 'ocrspace' | 'googlecloud' | 'gemini_vision'; // OCR provider
-    translationProvider: 'freegoogle' | 'googlecloud' | 'ct2' | 'llm'; // Translation provider
+    ocrProvider: OcrEngine;
+    translationProvider: TranslationEngine;
     googleApiKey: string; // Google Cloud Vision API key for text recognition
     geminiApiKey: string; // Gemini API key for Gemini Vision (free tier available)
     geminiModel: string; // Gemini model to use
