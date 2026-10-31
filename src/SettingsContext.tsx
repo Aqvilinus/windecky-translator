@@ -1,9 +1,10 @@
 // src/SettingsContext.tsx
 import React, { createContext, useContext, useEffect, useReducer } from 'react';
-import { call } from '@decky/api';
+import { backend, BackendSettings } from './backend';
 import { GameTranslatorLogic } from './Translator';
 import { logger } from './Logger';
 import { LLM_DEFAULT_MODELS } from './llm';
+import type { OcrEngine, TranslationEngine } from './providers';
 
 // API keys: the backend hands out only their first 3 and last 4 characters (main.py display_key), and saving that
 // same text back changes nothing. A key typed in a dialog is kept here in the same shortened form.
@@ -25,8 +26,8 @@ export interface Settings {
     chromeScreenAiPersistentMode: boolean; // Keep Chrome Screen AI worker alive between requests
     ct2PersistentMode: boolean; // Keep CT2/NLLB worker alive between requests
     pauseGameOnOverlay: boolean; // Setting to control pausing game when overlay is shown
-    ocrProvider: 'chromescreenai' | 'windows_ocr' | 'ocrspace' | 'googlecloud' | 'gemini_vision'; // OCR provider
-    translationProvider: 'freegoogle' | 'googlecloud' | 'ct2' | 'llm'; // Translation provider
+    ocrProvider: OcrEngine;
+    translationProvider: TranslationEngine;
     googleApiKey: string; // Google Cloud Vision API key for text recognition
     geminiApiKey: string; // Gemini API key for Gemini Vision (free tier available)
     geminiModel: string; // Gemini model to use
@@ -77,38 +78,72 @@ const initialSettings: Settings = {
     llmCustomApiKey: "",
 };
 
-// main.py get_all_settings
-type BackendSettings = Record<string, any>;
+// Settings the backend stores (initialized is the panel's own)
+type SavedSettings = Omit<Settings, 'initialized'>;
+
+// Each setting's name in the backend (main.py SETTING_DEFAULTS)
+const BACKEND_KEYS: Record<keyof SavedSettings, string> = {
+    inputLanguage: 'input_language',
+    targetLanguage: 'target_language',
+    enabled: 'enabled',
+    confidenceThreshold: 'confidence_threshold',
+    chromeScreenAiPersistentMode: 'chromescreenai_persistent_mode',
+    ct2PersistentMode: 'ct2_persistent_mode',
+    pauseGameOnOverlay: 'pause_game_on_overlay',
+    ocrProvider: 'ocr_provider',
+    translationProvider: 'translation_provider',
+    googleApiKey: 'google_api_key',
+    geminiApiKey: 'gemini_api_key',
+    geminiModel: 'gemini_model',
+    debugMode: 'debug_mode',
+    fontScale: 'font_scale',
+    customRecognitionSettings: 'custom_recognition_settings',
+    translationCacheEnabled: 'translation_cache_enabled',
+    llmBackend: 'llm_backend',
+    llmGeminiModel: 'llm_gemini_model',
+    llmGroqModel: 'llm_groq_model',
+    llmCustomModel: 'llm_custom_model',
+    llmCustomUrl: 'llm_custom_url',
+    groqApiKey: 'groq_api_key',
+    llmCustomApiKey: 'llm_custom_api_key',
+};
+const SAVED_KEYS = Object.keys(BACKEND_KEYS) as Array<keyof SavedSettings>;
 
 // The backend's settings as the frontend's (a missing one gets its default; a stored 0 or "" stays)
-export function settingsFromBackend(server: BackendSettings): Omit<Settings, 'initialized'> {
-    const pick = <K extends keyof Settings>(key: K, backendKey: string): Settings[K] =>
-        server[backendKey] ?? initialSettings[key];
-    return {
-        inputLanguage: pick('inputLanguage', 'input_language'),
-        targetLanguage: pick('targetLanguage', 'target_language'),
-        enabled: pick('enabled', 'enabled'),
-        confidenceThreshold: pick('confidenceThreshold', 'confidence_threshold'),
-        chromeScreenAiPersistentMode: pick('chromeScreenAiPersistentMode', 'chromescreenai_persistent_mode'),
-        ct2PersistentMode: pick('ct2PersistentMode', 'ct2_persistent_mode'),
-        pauseGameOnOverlay: pick('pauseGameOnOverlay', 'pause_game_on_overlay'),
-        ocrProvider: pick('ocrProvider', 'ocr_provider'),
-        translationProvider: pick('translationProvider', 'translation_provider'),
-        googleApiKey: pick('googleApiKey', 'google_api_key'),
-        geminiApiKey: pick('geminiApiKey', 'gemini_api_key'),
-        geminiModel: pick('geminiModel', 'gemini_model'),
-        debugMode: pick('debugMode', 'debug_mode'),
-        fontScale: pick('fontScale', 'font_scale'),
-        customRecognitionSettings: pick('customRecognitionSettings', 'custom_recognition_settings'),
-        translationCacheEnabled: pick('translationCacheEnabled', 'translation_cache_enabled'),
-        llmBackend: pick('llmBackend', 'llm_backend'),
-        llmGeminiModel: pick('llmGeminiModel', 'llm_gemini_model'),
-        llmGroqModel: pick('llmGroqModel', 'llm_groq_model'),
-        llmCustomModel: pick('llmCustomModel', 'llm_custom_model'),
-        llmCustomUrl: pick('llmCustomUrl', 'llm_custom_url'),
-        groqApiKey: pick('groqApiKey', 'groq_api_key'),
-        llmCustomApiKey: pick('llmCustomApiKey', 'llm_custom_api_key'),
-    };
+export function settingsFromBackend(server: BackendSettings): SavedSettings {
+    const settings: Record<string, unknown> = {};
+    for (const key of SAVED_KEYS) settings[key] = server[BACKEND_KEYS[key]] ?? initialSettings[key];
+    return settings as SavedSettings;
+}
+
+// What a setting changes in the translator logic, which keeps what Ctrl+Alt+T needs
+function applyToLogic(logic: GameTranslatorLogic, key: keyof SavedSettings, value: any): void {
+    switch (key) {
+        case 'inputLanguage': logic.setInputLanguage(value); break;
+        case 'targetLanguage': logic.setTargetLanguage(value); break;
+        case 'enabled': logic.setEnabled(value); break;
+        case 'confidenceThreshold': logic.setConfidenceThreshold(value); break;
+        case 'debugMode': logger.setEnabled(value); break;
+        case 'fontScale': logic.setFontScale(value); break;
+        case 'ocrProvider': logic.setOcrProvider(value); break;
+        case 'translationProvider': logic.setTranslationProvider(value); break;
+        case 'googleApiKey': logic.setHasGoogleApiKey(!!value); break;
+        case 'geminiApiKey': logic.setHasGeminiApiKey(!!value); break;
+    }
+}
+
+// The backend's settings into the logic; null if they can't be read. Called at plugin start (index.tsx): Decky
+// renders the panel, and with it SettingsProvider, only while the panel is open, but Ctrl+Alt+T works from the start.
+export async function loadSettingsIntoLogic(logic: GameTranslatorLogic): Promise<SavedSettings | null> {
+    try {
+        const settings = settingsFromBackend(await backend.getAllSettings());
+        for (const key of SAVED_KEYS) applyToLogic(logic, key, settings[key]);
+        logger.logObject('SettingsContext', 'Settings', settings);
+        return settings;
+    } catch (error) {
+        logger.error('SettingsContext', 'Error loading settings', error);
+        return null;
+    }
 }
 
 // Create the reducer
@@ -146,126 +181,27 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
                                                                   }) => {
     const [settings, dispatch] = useReducer(settingsReducer, initialSettings);
 
-    // Load all settings at once
     const loadAllSettings = async () => {
-        try {
-            const mapped = settingsFromBackend(await call<[], BackendSettings>('get_all_settings'));
-            dispatch({ type: 'INITIALIZE_SETTINGS', settings: mapped });
-
-            // Update logic instance with settings
-            logic.setInputLanguage(mapped.inputLanguage);
-            logic.setTargetLanguage(mapped.targetLanguage);
-            logic.setEnabled(mapped.enabled);
-            logic.setConfidenceThreshold(mapped.confidenceThreshold);
-            logger.setEnabled(mapped.debugMode);
-
-            // Set provider settings for upfront API key validation
-            logic.setOcrProvider(mapped.ocrProvider);
-            logic.setTranslationProvider(mapped.translationProvider);
-            logic.setHasGoogleApiKey(!!mapped.googleApiKey);
-            logic.setHasGeminiApiKey(!!mapped.geminiApiKey);
-
-            logic.setFontScale(mapped.fontScale);
-
-            logger.info('SettingsContext', 'All settings loaded successfully');
-            logger.logObject('SettingsContext', 'Settings', mapped);
-        } catch (error) {
-            logger.error('SettingsContext', 'Error loading settings', error);
-        } finally {
-            dispatch({ type: 'SET_INITIALIZED', initialized: true });
-        }
+        const loaded = await loadSettingsIntoLogic(logic);
+        if (loaded) dispatch({ type: 'INITIALIZE_SETTINGS', settings: loaded });
+        dispatch({ type: 'SET_INITIALIZED', initialized: true });
     };
 
-    // Update a single setting
+    // Save one setting: the panel's state, the logic, the backend
     const updateSetting = async (key: keyof Settings, value: any, label?: string): Promise<boolean> => {
+        if (key === 'initialized') return true;
+        dispatch({
+            type: 'UPDATE_SETTING', key,
+            value: SECRET_SETTINGS.has(key) && typeof value === 'string' ? displayKey(value) : value,
+        });
+        applyToLogic(logic, key, value);
         try {
-            // Update local state
-            dispatch({
-                type: 'UPDATE_SETTING', key,
-                value: SECRET_SETTINGS.has(key as string) && typeof value === 'string' ? displayKey(value) : value,
-            });
-
-            // Map frontend setting key to backend setting key
-            const backendKeyMap: Record<keyof Settings, string> = {
-                inputLanguage: 'input_language',
-                targetLanguage: 'target_language',
-                enabled: 'enabled',
-                initialized: 'initialized',
-                confidenceThreshold: 'confidence_threshold',
-                chromeScreenAiPersistentMode: 'chromescreenai_persistent_mode',
-                ct2PersistentMode: 'ct2_persistent_mode',
-                pauseGameOnOverlay: 'pause_game_on_overlay',
-                ocrProvider: 'ocr_provider',
-                translationProvider: 'translation_provider',
-                googleApiKey: 'google_api_key',
-                geminiApiKey: 'gemini_api_key',
-                geminiModel: 'gemini_model',
-                debugMode: 'debug_mode',
-                fontScale: 'font_scale',
-                customRecognitionSettings: 'custom_recognition_settings',
-                translationCacheEnabled: 'translation_cache_enabled',
-                llmBackend: 'llm_backend',
-                llmGeminiModel: 'llm_gemini_model',
-                llmGroqModel: 'llm_groq_model',
-                llmCustomModel: 'llm_custom_model',
-                llmCustomUrl: 'llm_custom_url',
-                groqApiKey: 'groq_api_key',
-                llmCustomApiKey: 'llm_custom_api_key'
-            };
-
-            // Skip settings that don't need to be saved to backend
-            if (key === 'initialized') return true;
-
-            const backendKey = backendKeyMap[key];
-
-            // Update logic based on setting type
-            switch (key) {
-                case 'inputLanguage':
-                    logic.setInputLanguage(value);
-                    break;
-                case 'targetLanguage':
-                    logic.setTargetLanguage(value);
-                    break;
-                case 'enabled':
-                    logic.setEnabled(value);
-                    break;
-                case 'confidenceThreshold':
-                    logic.setConfidenceThreshold(value);
-                    break;
-                case 'debugMode':
-                    logger.setEnabled(value);
-                    break;
-                case 'fontScale':
-                    logic.setFontScale(value);
-                    break;
-                case 'ocrProvider':
-                    logic.setOcrProvider(value);
-                    break;
-                case 'translationProvider':
-                    logic.setTranslationProvider(value);
-                    break;
-                case 'googleApiKey':
-                    logic.setHasGoogleApiKey(!!value);
-                    break;
-                case 'geminiApiKey':
-                    logic.setHasGeminiApiKey(!!value);
-                    break;
-            }
-
-            // Save to backend
-            const result = await call<[string, any], boolean>('set_setting', backendKey, value);
-
-            if (result) {
-                return true;
-            } else {
-                logic.notify(`Failed to update ${label || key}`, 2000);
-                return false;
-            }
+            if (await backend.setSetting(BACKEND_KEYS[key], value)) return true;
         } catch (error) {
             logger.error('SettingsContext', `Failed to update ${key}`, error);
-            logic.notify(`Failed to update ${label || key}`, 2000);
-            return false;
         }
+        logic.notify(`Failed to update ${label || key}`, 2000);
+        return false;
     };
 
     // Initialize settings on mount

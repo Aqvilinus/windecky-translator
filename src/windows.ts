@@ -3,7 +3,8 @@
 // is a normal window behind the game, so the backend draws the overlay in a click-through window of its own
 // (py_modules/winport/overlay.py). This forwards every ImageState change to it; the screenshot itself stays in the
 // backend, which took it.
-import { addEventListener, call, removeEventListener, toaster } from '@decky/api';
+import { addEventListener, removeEventListener, toaster } from '@decky/api';
+import { backend } from './backend';
 import { Router } from '@decky/ui';
 import { ImageState, OverlayState } from './Overlay';
 import type { GameTranslatorLogic } from './Translator';
@@ -38,7 +39,7 @@ export function forwardOverlayToBackend(state: ImageState, dismiss: () => void):
 
     const unsubscribe = state.subscribe((s: OverlayState) => {
         if (s.visible) watchMenus(); else stopWatchingMenus();
-        call('native_overlay_update', s).catch(() => { /* the backend logs its own errors */ });
+        backend.nativeOverlayUpdate(s).catch(() => { /* the backend logs its own errors */ });
     });
     return () => {
         stopWatchingMenus();
@@ -65,7 +66,7 @@ export function listenForHotkey(logic: GameTranslatorLogic): () => void {
 export async function showBootProblems(title: string): Promise<void> {
     let problems: string[] = [];
     try {
-        problems = await call<[], string[]>('get_boot_status');
+        problems = await backend.getBootStatus();
     } catch {
         return;  // the backend didn't load at all: Decky shows that itself
     }

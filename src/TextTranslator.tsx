@@ -1,7 +1,8 @@
 // TextTranslator.tsx
 
-import { call } from "@decky/api";
-import { TextRegion, ErrorResponse, BackendError, throwIfBackendError } from "./TextRecognizer";
+import { backend } from "./backend";
+import { TextRegion } from "./TextRecognizer";
+import { BackendError, throwIfBackendError } from "./errors";
 
 // Include translated text with the original region info
 export interface TranslatedRegion extends TextRegion {
@@ -35,8 +36,8 @@ export class TextTranslator {
 
     async translateText(textRegions: TextRegion[]): Promise<TranslatedRegion[]> {
         if (!textRegions.length) return [];
-        const translated = throwIfBackendError(await call<[TextRegion[], string, string], TranslatedRegion[] | ErrorResponse>(
-            'translate_text', textRegions, this.targetLanguage, this.inputLanguage));
+        const translated = throwIfBackendError(
+            await backend.translateText(textRegions, this.targetLanguage, this.inputLanguage));
         if (!translated) throw new BackendError("Translation failed (details in the plugin log)");
         return translated;
     }

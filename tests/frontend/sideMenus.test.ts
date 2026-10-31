@@ -8,7 +8,7 @@ const store = {
     CloseSideMenus: vi.fn(() => { menuOpen = false; }),
 };
 
-vi.mock('@decky/api', () => ({ call: vi.fn(), toaster: { toast: vi.fn() }, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+vi.mock('@decky/api', () => ({ callable: () => vi.fn(), toaster: { toast: vi.fn() }, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
 vi.mock('@decky/ui', () => ({
     Router: {
         CloseSideMenus: () => { throw new TypeError('CloseSideMenus is not a function'); },  // renamed by Steam

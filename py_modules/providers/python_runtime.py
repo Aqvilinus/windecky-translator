@@ -6,9 +6,7 @@
 
 import logging
 import os
-import queue
 import subprocess
-import threading
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -42,16 +40,6 @@ def missing_message() -> str:
 def popen_kwargs() -> dict:
     """Extra subprocess arguments: no console window (it would pop up over the game)."""
     return {"creationflags": subprocess.CREATE_NO_WINDOW}
-
-
-def readline_with_timeout(stream, timeout: float) -> Optional[bytes]:
-    """stream.readline() that gives up after timeout seconds (None). select() can't wait on pipes on Windows."""
-    result: "queue.Queue[bytes]" = queue.Queue()
-    threading.Thread(target=lambda: result.put(stream.readline()), daemon=True).start()
-    try:
-        return result.get(timeout=timeout)
-    except queue.Empty:
-        return None
 
 
 def find_python(plugin_dir: str) -> Optional[str]:
