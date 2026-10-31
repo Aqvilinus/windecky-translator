@@ -7,10 +7,10 @@ import { TextTranslator } from "./TextTranslator";
 import { ImageState } from "./Overlay";
 import { logger } from "./Logger";
 
-// Screenshot response interface
-export interface ScreenshotResponse {
+// main.py take_screenshot: the capture's name for recognize_text_file ("" when nothing was captured); the pixels
+// stay in the backend, which draws the overlay
+interface ScreenshotResponse {
     path: string;
-    base64: string;
 }
 
 // Main app logic
@@ -63,7 +63,7 @@ export class GameTranslatorLogic {
         this.currentRunId++;
         this.isProcessing = false;
         if (this.imageState.isVisible()) {
-            this.imageState.hideImage();
+            this.imageState.hide();
         }
     }
 
@@ -93,20 +93,18 @@ export class GameTranslatorLogic {
                 return;
             }
 
-            if (!result || !result.path || !result.base64) {
+            if (!result?.path) {
                 logger.warn('Translator', 'Screenshot capture failed, not opening overlay');
                 this.notify('Screen capture failed', 2500, 'Try pressing the shortcut again');
                 return;
             }
 
-            logger.debug('Translator', `Screenshot captured, path: ${result.path}, base64 length: ${result.base64.length}`);
+            logger.debug('Translator', `Screenshot captured: ${result.path}`);
 
-            this.imageState.startLoading("Processing");
-            this.imageState.showImage(result.base64);
             const recognizingStep = this.ocrProvider === 'gemini_vision'
                 ? "Recognizing and Translating"
                 : "Recognizing";
-            this.imageState.updateProcessingStep(recognizingStep, false, this.ocrMethodHint());
+            this.imageState.startLoading(recognizingStep, this.ocrMethodHint());
 
             const textRegions = await this.textRecognizer.recognizeTextFile(result.path);
             if (isCancelled()) {
@@ -138,14 +136,14 @@ export class GameTranslatorLogic {
                     logger.info('Translator', `Filtered ${before - translatedRegions.length} identical translations`);
                 }
 
-                this.imageState.showTranslatedImage(result.base64, translatedRegions);
+                this.imageState.showTranslations(translatedRegions);
             } else {
                 // No text found, show message
                 this.imageState.updateProcessingStep("No text found");
 
                 // Hide overlay after a short delay
                 setTimeout(() => {
-                    if (!isCancelled()) this.imageState.hideImage();
+                    if (!isCancelled()) this.imageState.hide();
                 }, 2000); // 2 seconds delay
             }
         } catch (error) {
@@ -164,7 +162,7 @@ export class GameTranslatorLogic {
             const quick = error instanceof NetworkError || error instanceof ApiKeyError;
             this.imageState.updateProcessingStep(message, true);
             setTimeout(() => {
-                if (!isCancelled()) this.imageState.hideImage();
+                if (!isCancelled()) this.imageState.hide();
             }, quick ? 2500 : 3000);
         }
         finally {

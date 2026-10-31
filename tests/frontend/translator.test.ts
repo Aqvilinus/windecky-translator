@@ -15,8 +15,8 @@ const { ImageState } = await import('../../src/Overlay');
 function startTranslator() {
     const state = new ImageState();
     const steps: Array<{ step: string; isError: boolean }> = [];
-    state.onStateChanged((visible, _image, _regions, _loading, step, _detail, isError) => {
-        if (visible && step) steps.push({ step, isError });
+    state.subscribe(s => {
+        if (s.visible && s.processingStep) steps.push({ step: s.processingStep, isError: s.processingIsError });
     });
     const logic = new GameTranslatorLogic(state);
     logic.setInputLanguage('auto');
@@ -27,8 +27,7 @@ function startTranslator() {
 describe('GameTranslatorLogic errors', () => {
     beforeEach(() => {
         replies = {
-            get_enabled_state: true,
-            take_screenshot: { path: 'shot.png', base64: 'x' },
+            take_screenshot: { path: 'shot.png' },
         };
     });
 
@@ -52,5 +51,20 @@ describe('GameTranslatorLogic errors', () => {
         const { logic, steps } = startTranslator();
         await logic.takeScreenshotAndTranslate();
         expect(steps.at(-1)).toEqual({ step: 'No text found', isError: false });
+    });
+});
+
+describe('ImageState', () => {
+    it('sends the changes made in one go once', async () => {
+        const state = new ImageState();
+        const sent: boolean[] = [];
+        state.subscribe(s => sent.push(s.visible));
+        state.startLoading('Recognizing');
+        state.updateProcessingStep('Recognizing', false, 'On-Device');
+        await Promise.resolve();
+        expect(sent).toEqual([true]);
+        state.hide();
+        await Promise.resolve();
+        expect(sent).toEqual([true, false]);
     });
 });

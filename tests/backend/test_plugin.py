@@ -10,13 +10,12 @@ from PIL import ImageChops
 
 import harness
 
-PLACEHOLDER = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
 
 
 def overlay_state(regions, **kw):
     """What src/windows.ts sends for a shown translation."""
     return {"visible": True, "regions": regions, "loading": False, "processingStep": "", "processingDetail": "",
-            "processingIsError": False, "translationsVisible": True, "fontScale": 1.0, **kw}
+            "processingIsError": False, "fontScale": 1.0, **kw}
 
 
 def pixels(img):
@@ -76,8 +75,8 @@ def test_a_damaged_settings_file_is_kept_aside(start, tmp_path):
 def test_capture_ocr_translate_overlay(backend, windows, net):
     shot, regions, translated = translate_screen(backend)
 
-    # the capture stays in memory: the frontend gets a name and a placeholder image
-    assert shot["base64"] == PLACEHOLDER and shot["path"].endswith(".png") and "The Banner Saga" in shot["path"]
+    # the capture stays in memory: the frontend gets only a name
+    assert shot == {"path": shot["path"]} and shot["path"].endswith(".png") and "The Banner Saga" in shot["path"]
     assert windows.captures == 1 and not os.path.exists(shot["path"])
     assert [r["text"] for r in regions] == [t for t, _ in harness.SCREEN]
     for r, (_, (x, y)) in zip(regions, harness.SCREEN):
@@ -114,11 +113,6 @@ def test_overlay_draws_the_labels_over_the_text(backend, windows, net):
     # nothing drawn far from the text: the lower half is the captured frame (but for the 1 px border)
     lower = diff.crop((10, 220, shot.width - 10, shot.height - 10))
     assert max(pixels(lower)) < 10
-
-    # translations hidden (the toggle): the still without labels
-    backend.call("native_overlay_update", overlay_state(translated, translationsVisible=False))
-    hidden = ImageChops.difference(windows.overlay.image(), shot).convert("L")
-    assert max(pixels(hidden.crop((40, 40, 420, 80)))) < 10
 
 
 def test_google_rate_limit_falls_back_to_bing(backend, net):
@@ -237,7 +231,7 @@ def test_chrome_screen_ai_failures_raise(monkeypatch, tmp_path):
 
 def test_nothing_captured(backend, windows):
     windows.capture_image = None  # no foreground window
-    assert backend.call("take_screenshot", "Game") == {"path": "", "base64": ""}
+    assert backend.call("take_screenshot", "Game") == {"path": ""}
 
 
 def test_screenshot_files_outside_the_plugin_are_refused(backend, tmp_path):

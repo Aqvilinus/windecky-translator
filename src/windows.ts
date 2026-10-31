@@ -5,14 +5,12 @@
 // backend, which took it.
 import { addEventListener, call, removeEventListener, toaster } from '@decky/api';
 import { Router } from '@decky/ui';
-import { ImageState } from './Overlay';
+import { ImageState, OverlayState } from './Overlay';
 import type { GameTranslatorLogic } from './Translator';
 import { logger } from './Logger';
 
 // The translate/close hotkey (py_modules/winport/hotkey.py HOTKEY)
 export const WINDOWS_HOTKEY = 'Ctrl+Alt+T';
-
-type StateListener = Parameters<ImageState['onStateChanged']>[0];
 
 // How often the side menus are checked while a translation is on screen
 const SIDE_MENU_CHECK_MS = 250;
@@ -38,20 +36,13 @@ export function forwardOverlayToBackend(state: ImageState, dismiss: () => void):
         }, SIDE_MENU_CHECK_MS);
     };
 
-    const onChange: StateListener = (
-        visible, _imageData, regions, loading, processingStep, processingDetail, processingIsError,
-        translationsVisible, fontScale,
-    ) => {
-        if (visible) watchMenus(); else stopWatchingMenus();
-        call('native_overlay_update', {
-            visible, regions, loading, processingStep, processingDetail, processingIsError,
-            translationsVisible, fontScale,
-        }).catch(() => { /* the backend logs its own errors */ });
-    };
-    state.onStateChanged(onChange);
+    const unsubscribe = state.subscribe((s: OverlayState) => {
+        if (s.visible) watchMenus(); else stopWatchingMenus();
+        call('native_overlay_update', s).catch(() => { /* the backend logs its own errors */ });
+    });
     return () => {
         stopWatchingMenus();
-        state.offStateChanged(onChange);
+        unsubscribe();
     };
 }
 

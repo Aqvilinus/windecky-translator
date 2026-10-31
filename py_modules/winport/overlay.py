@@ -163,9 +163,9 @@ def render(state, target, mon, scale, image=None):
     """The overlay image for the monitor rectangle mon = (left, top, width, height). image: the captured frame
     (PIL, capture pixels).
 
-    As in Overlay.tsx the overlay is a still: the captured frame covers the window, the translations sit on it, and a
-    thin border marks it (red: translations shown, amber: hidden). The game keeps running underneath unseen, so the
-    labels never go stale; the shortcut closes the still and shows the live game again."""
+    The overlay is a still: the captured frame covers the window, the translations sit on it, and a thin red border
+    marks it. The game keeps running underneath unseen, so the labels never go stale; the shortcut closes the still
+    and shows the live game again."""
     mx, my, mw, mh = mon
     img = Image.new("RGBA", (mw, mh), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
@@ -176,20 +176,13 @@ def render(state, target, mon, scale, image=None):
 
     if image is not None:
         img.paste(image, (ox, oy))
-        border = (244, 67, 54, 255) if state.get("translationsVisible", True) else (255, 193, 7, 255)
-        d.rectangle((ox, oy, ox + tw - 1, oy + th - 1), outline=border, width=max(1, int(scale)))
+        d.rectangle((ox, oy, ox + tw - 1, oy + th - 1), outline=(244, 67, 54, 255), width=max(1, int(scale)))
 
-    if state.get("translationsVisible", True) and regions and not loading:
+    if regions and not loading:
         _draw_labels(d, regions, ox, oy, tw, state, scale, image)
 
     if loading and state.get("processingStep"):
         _draw_pill(d, state, ox + int(20 * scale), oy + th - int(20 * scale), scale)
-    elif not state.get("translationsVisible", True) and not loading:
-        r = int(22 * scale)
-        cx, cy = ox + int(20 * scale) + r, oy + th - int(20 * scale) - r
-        d.ellipse((cx - r, cy - r, cx + r, cy + r), fill=(0, 0, 0, 178))
-        d.ellipse((cx - r // 2, cy - r // 3, cx + r // 2, cy + r // 3), outline=(255, 193, 7, 255), width=max(2, int(2 * scale)))
-        d.line((cx - r // 2, cy - r // 2, cx + r // 2, cy + r // 2), fill=(255, 193, 7, 255), width=max(2, int(2 * scale)))
     return img
 
 

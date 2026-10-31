@@ -201,8 +201,6 @@ logger.info(f"WinDecky Translator v{_plugin_version} starting")
 
 # The capture's name for the frontend (no file is written; suspended.json of winport/pause.py lives here too)
 SCREENSHOT_DIR = os.path.join(tempfile.gettempdir(), "decky-translator")
-# Windows: the screenshot's stand-in for the frontend (a 1x1 transparent PNG; the backend keeps the real one)
-PLACEHOLDER_PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
 # What keeps parts of the plugin from working, for the frontend to show (get_boot_status). Capture and overlay load
 # compiled modules (winrt, Pillow) built for one Python version into Decky's own interpreter: after a Decky update
 # that changes its Python they fail to import, and the rest of the plugin should still load and say why.
@@ -527,28 +525,27 @@ class Plugin:
         try:
             if capture_foreground is None:
                 logger.error("Screen capture is unavailable (see the start of the log)")
-                return {"path": "", "base64": ""}
+                return {"path": ""}
             own = (self._overlay.hwnd,) if self._overlay and self._overlay.hwnd else ()
             cap = await capture_foreground(exclude=own)
             if cap is None:
                 logger.error("No foreground window to capture")
-                return {"path": "", "base64": ""}
+                return {"path": ""}
             name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', " ", app_name or "").strip()
             if not name or name.lower() == "null":
                 name = "Decky-Screenshot"
             timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S_%f")
-            # The screenshot stays in memory: the frontend doesn't draw it (the overlay window does), so it gets a
-            # name for recognize_text_file and a placeholder image instead of megabytes of base64, and no file is
-            # written and read back
+            # The screenshot stays in memory: the frontend doesn't draw it (the overlay window does), so it only
+            # gets a name for recognize_text_file, and no file is written and read back
             path = os.path.join(SCREENSHOT_DIR, f"{name}_{timestamp}.png")
             self._capture_target = {"hwnd": cap.hwnd, "left": cap.left, "top": cap.top,
                                     "width": cap.width, "height": cap.height, "png": cap.png, "image": cap.image,
                                     "path": path}
-            return {"path": path, "base64": PLACEHOLDER_PNG_BASE64}
+            return {"path": path}
         except Exception as e:
             logger.error(f"Screenshot error: {e}")
             logger.error(traceback.format_exc())
-            return {"path": "", "base64": ""}
+            return {"path": ""}
         finally:
             _processing_lock = False
 

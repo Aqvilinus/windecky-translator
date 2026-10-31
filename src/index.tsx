@@ -101,24 +101,7 @@ const GameTranslator: VFC<{ logic: GameTranslatorLogic }> = ({ logic }) => {
         setPendingScrollTarget(scrollTargetId ?? null);
     };
 
-    useEffect(() => {
-        // Don't poll overlay state if plugin is disabled
-        if (!settings.enabled) {
-            setOverlayVisible(false);
-            return;
-        }
-
-        const checkOverlayState = () => {
-            setOverlayVisible(logic.isOverlayVisible());
-        };
-
-        checkOverlayState();
-        const intervalId = setInterval(checkOverlayState, 500);
-
-        return () => {
-            clearInterval(intervalId);
-        };
-    }, [logic, settings.enabled]);
+    useEffect(() => logic.imageState.subscribe(s => setOverlayVisible(s.visible)), [logic]);
 
     const probeReachability = useCallback(async () => {
         const s = settingsRef.current;
