@@ -7,9 +7,9 @@
 # least thinking, then none. What it learns is kept for the session, so the next requests go straight to what works.
 
 import logging
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
-import requests
+from .base import NetworkError, Response, fetch
 
 logger = logging.getLogger(__name__)
 
@@ -19,8 +19,6 @@ FALLBACK_MODEL = "gemini-flash-lite-latest"
 
 # Not text/vision chat models
 _SKIP = ("tts", "image", "live", "embedding", "audio", "robotics", "computer-use", "aqa")
-
-_http = requests.Session()  # connections kept alive between requests
 
 _retired: Dict[str, str] = {}             # model -> the model used instead (it answered 404)
 _thinking: Dict[str, Optional[dict]] = {}  # model -> the thinking setting it accepted (None: none at all)
@@ -36,15 +34,15 @@ def least_thinking(model: str) -> dict:
     return {"thinkingBudget": 0} if model.startswith("gemini-2") else {"thinkingLevel": "minimal"}
 
 
-def list_models(key: str, timeout: float = 10) -> List[str]:
+async def list_models(key: str) -> List[str]:
     """Gemini models the key can call generateContent on (no TTS, image, embedding... models), sorted.
     Empty if the key is missing or the request fails."""
     if not key:
         return []
     try:
-        resp = _http.get(API_URL, params={"pageSize": 200}, headers=headers(key), timeout=timeout)
-    except requests.RequestException as e:
-        logger.warning(f"Listing Gemini models failed: {type(e).__name__}")
+        resp = await fetch("GET", API_URL, params={"pageSize": 200}, headers=headers(key))
+    except NetworkError as e:
+        logger.warning(f"Listing Gemini models failed: {e}")
         return []
     if resp.status_code != 200:
         logger.warning(f"Listing Gemini models failed: HTTP {resp.status_code}")
@@ -54,25 +52,22 @@ def list_models(key: str, timeout: float = 10) -> List[str]:
     return sorted(n for n in names if n.startswith("gemini") and not any(s in n for s in _SKIP))
 
 
-Send = Callable[[str, dict, dict], requests.Response]
-
-
-def generate(key: str, model: str, payload: dict, send: Send, thinking: bool = True) -> Tuple[requests.Response, str]:
+async def generate(key: str, model: str, payload: dict, timeout: float, thinking: bool = True) -> Tuple[Response, str]:
     """POST generateContent; returns (the last response, the model that answered).
 
-    send(url, payload, headers) does the HTTP request (each caller maps connection errors its own way). thinking=True
-    asks for the least thinking the model allows (faster, cheaper; translation doesn't need it). Retries: a retired
-    model (404) once with FALLBACK_MODEL; a 400 that isn't about the key with the least thinking level, then with no
-    thinking setting (some models answer a setting they don't take with only "invalid argument")."""
+    thinking=True asks for the least thinking the model allows (faster, cheaper; translation doesn't need it).
+    Retries: a retired model (404) once with FALLBACK_MODEL; a 400 that isn't about the key with the least thinking
+    level, then with no thinking setting (some models answer a setting they don't take with only "invalid argument")."""
     model = _retired.get(model, model)
     config = payload.setdefault("generationConfig", {})
 
-    def attempt(m: str, think: Optional[dict]) -> requests.Response:
+    async def attempt(m: str, think: Optional[dict]) -> Response:
         if think is None:
             config.pop("thinkingConfig", None)
         else:
             config["thinkingConfig"] = think
-        return send(f"{API_URL}/{m}:generateContent", payload, headers(key))
+        return await fetch("POST", f"{API_URL}/{m}:generateContent", json=payload, headers=headers(key),
+                           timeout=timeout)
 
     def first_thinking(m: str) -> Optional[dict]:
         if not thinking:
@@ -80,20 +75,20 @@ def generate(key: str, model: str, payload: dict, send: Send, thinking: bool = T
         return _thinking[m] if m in _thinking else least_thinking(m)
 
     think = first_thinking(model)
-    resp = attempt(model, think)
+    resp = await attempt(model, think)
     if resp.status_code == 404 and model != FALLBACK_MODEL:
         logger.warning(f"Gemini model {model} is not available (404); using {FALLBACK_MODEL} from now on")
         _retired[model] = FALLBACK_MODEL
         model = FALLBACK_MODEL
         think = first_thinking(model)
-        resp = attempt(model, think)
+        resp = await attempt(model, think)
     ladder = [t for t in ({"thinkingLevel": "minimal"}, None) if t != think]
     for retry in ladder:
         if resp.status_code != 400 or "api key" in resp.text.lower() or think is None:
             break
         logger.info(f"{model} rejects thinkingConfig {think}; retrying with {retry}")
         think = retry
-        resp = attempt(model, think)
+        resp = await attempt(model, think)
     if resp.status_code == 200 and thinking:
         _thinking[model] = think
     return resp, model

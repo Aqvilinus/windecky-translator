@@ -8,6 +8,8 @@ import os
 import re
 import shutil
 import threading
+import urllib.error
+import urllib.request
 import zipfile
 from typing import Dict, Optional
 
@@ -149,24 +151,15 @@ class ScreenAIDownloader:
         return True
 
     def _prpc_post(self, url: str, payload: dict) -> dict:
-        import requests
+        request = urllib.request.Request(url, data=json.dumps(payload).encode(), method="POST",
+                                         headers={"Content-Type": "application/json", "Accept": "application/json"})
         try:
-            resp = requests.post(
-                url,
-                data=json.dumps(payload),
-                headers={
-                    "Content-Type": "application/json",
-                    "Accept": "application/json",
-                },
-                timeout=30,
-            )
-        except requests.ConnectionError:
+            with urllib.request.urlopen(request, timeout=30) as resp:
+                body = resp.read()
+        except urllib.error.HTTPError as e:
+            raise Exception(f"pRPC HTTP {e.code}: {e.read()[:200]!r}")
+        except (urllib.error.URLError, TimeoutError):
             raise Exception("Cannot reach the remote resource. Check internet connection.")
-        except requests.Timeout:
-            raise Exception("Connection timed out. Check internet connection.")
-        if resp.status_code != 200:
-            raise Exception(f"pRPC HTTP {resp.status_code}: {resp.text[:200]}")
-        body = resp.content
         if body.startswith(PRPC_PREFIX):
             body = body[len(PRPC_PREFIX):]
         return json.loads(body.decode("utf-8"))
@@ -199,8 +192,6 @@ class ScreenAIDownloader:
         return signed, hash_algo, hex_digest
 
     def _download(self):
-        import requests
-
         zip_path = os.path.join(self._base_dir, f"{SCREENAI_DIR_NAME}.tmpzip")
         staging_dir = os.path.join(
             self._base_dir, f"{SCREENAI_DIR_NAME}.downloading"
@@ -218,33 +209,23 @@ class ScreenAIDownloader:
                 raise Exception("Download cancelled")
 
             try:
-                resp = requests.get(signed_url, stream=True, timeout=60)
-            except requests.ConnectionError:
+                with urllib.request.urlopen(signed_url, timeout=60) as resp, open(zip_path, "wb") as f:
+                    total = int(resp.headers.get("Content-Length") or 0)
+                    downloaded = 0
+                    while chunk := resp.read(1024 * 256):
+                        if self._download_cancel:
+                            raise Exception("Download cancelled")
+                        f.write(chunk)
+                        hasher.update(chunk)
+                        downloaded += len(chunk)
+                        if total > 0:
+                            with self._lock:
+                                # Cap at 95% so the bar isn't pinned during unzip.
+                                self._download_progress = min(0.95, downloaded / total * 0.95)
+            except urllib.error.HTTPError as e:
+                raise Exception(f"HTTP {e.code} fetching package")
+            except (urllib.error.URLError, TimeoutError):
                 raise Exception("Cannot reach the remote resource. Check internet connection.")
-            except requests.Timeout:
-                raise Exception("Connection timed out. Check internet connection.")
-
-            if resp.status_code != 200:
-                raise Exception(f"HTTP {resp.status_code} fetching package")
-
-            total = int(resp.headers.get("content-length") or 0)
-            downloaded = 0
-
-            with open(zip_path, "wb") as f:
-                for chunk in resp.iter_content(chunk_size=1024 * 256):
-                    if self._download_cancel:
-                        raise Exception("Download cancelled")
-                    if not chunk:
-                        continue
-                    f.write(chunk)
-                    hasher.update(chunk)
-                    downloaded += len(chunk)
-                    if total > 0:
-                        with self._lock:
-                            # Cap at 95% so the bar isn't pinned during unzip.
-                            self._download_progress = min(
-                                0.95, downloaded / total * 0.95
-                            )
 
             if self._download_cancel:
                 raise Exception("Download cancelled")

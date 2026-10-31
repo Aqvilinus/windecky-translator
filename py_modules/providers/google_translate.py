@@ -1,17 +1,11 @@
 # providers/google_translate.py
 # Google Cloud Translation provider
 
-import asyncio
 import logging
 from typing import List
 
-import requests
-
-from .base import TranslationProvider, ProviderType, NetworkError, ApiKeyError, RateLimitError, classify_google_error
-
-# one session per module: connections are kept alive between requests (a new TLS handshake per
-# request doubled the time of short requests, e.g. 561 -> 258 ms to translate.googleapis.com)
-_http = requests.Session()
+from .base import (TranslationProvider, ProviderType, NetworkError, ApiKeyError, RateLimitError,
+                   classify_google_error, fetch, probe, raise_for_google_error)
 
 logger = logging.getLogger(__name__)
 
@@ -101,38 +95,14 @@ class GoogleTranslateProvider(TranslationProvider):
         if not texts:
             return texts
 
+        request_data = {"q": texts, "target": target_lang, "format": "text"}
+        if source_lang and source_lang != "auto":
+            request_data["source"] = source_lang
         try:
-            url = self._endpoint
-
-            request_data = {
-                "q": texts,
-                "target": target_lang,
-                "format": "text"
-            }
-
-            # Only add source language if not auto
-            if source_lang and source_lang != "auto":
-                request_data["source"] = source_lang
-
-            def do_request():
-                return _http.post(url, json=request_data, headers={"x-goog-api-key": self._api_key}, timeout=10.0)
-
             logger.debug(f"Translating {len(texts)} texts: {source_lang} -> {target_lang}")
-            response = await asyncio.to_thread(do_request)
-
+            response = await fetch("POST", self._endpoint, json=request_data, headers={"x-goog-api-key": self._api_key})
             if response.status_code != 200:
-                logger.error(f"Google Translate API error: {response.status_code}")
-                logger.error(f"Response: {response.text[:500]}")
-                reason = classify_google_error(response.status_code, response.text)
-                if reason in (
-                    "Invalid API key",
-                    "API not enabled in Cloud project",
-                    "Billing not enabled",
-                    "Access blocked (key restriction)",
-                ):
-                    raise ApiKeyError(reason)
-                if reason == "Rate limited":
-                    raise RateLimitError(reason)
+                raise_for_google_error(response)
                 return texts
 
             result = response.json()
@@ -149,14 +119,8 @@ class GoogleTranslateProvider(TranslationProvider):
                 logger.error("Unexpected response format from Translation API")
                 return texts
 
-        except (ApiKeyError, RateLimitError):
+        except (ApiKeyError, RateLimitError, NetworkError):
             raise
-        except requests.exceptions.ConnectionError as e:
-            logger.error(f"Google Translate connection error: {e}")
-            raise NetworkError("No internet connection") from e
-        except requests.exceptions.Timeout as e:
-            logger.error(f"Google Translate timeout error: {e}")
-            raise NetworkError("Connection timed out") from e
         except Exception as e:
             logger.error(f"Batch translation error: {e}")
             return texts
@@ -164,17 +128,9 @@ class GoogleTranslateProvider(TranslationProvider):
     async def test_network(self) -> tuple:
         if not self._api_key:
             return False, "API key required"
-
-        def _probe():
-            url = f"{self._endpoint}/languages"
-            try:
-                resp = _http.get(url, headers={"x-goog-api-key": self._api_key}, timeout=4)
-            except (requests.ConnectionError, requests.Timeout):
-                return False, "Network unreachable"
-            except Exception as e:
-                return False, f"Probe failed: {type(e).__name__}"
-            if resp.status_code == 200:
-                return True, ""
-            return False, classify_google_error(resp.status_code, resp.text)
-
-        return await asyncio.to_thread(_probe)
+        resp, error = await probe("GET", f"{self._endpoint}/languages", headers={"x-goog-api-key": self._api_key})
+        if resp is None:
+            return False, error
+        if resp.status_code == 200:
+            return True, ""
+        return False, classify_google_error(resp.status_code, resp.text)

@@ -1,19 +1,12 @@
 # providers/google_ocr.py
 # Google Cloud Vision OCR provider
 
-import asyncio
 import base64
 import logging
-import struct
 from typing import List
 
-import requests
-
-from .base import OCRProvider, ProviderType, TextRegion, NetworkError, ApiKeyError, RateLimitError, classify_google_error
-
-# one session per module: connections are kept alive between requests (a new TLS handshake per
-# request doubled the time of short requests, e.g. 561 -> 258 ms to translate.googleapis.com)
-_http = requests.Session()
+from .base import (OCRProvider, ProviderType, TextRegion, NetworkError, ApiKeyError, RateLimitError,
+                   classify_google_error, fetch, probe, raise_for_google_error)
 
 logger = logging.getLogger(__name__)
 
@@ -68,62 +61,21 @@ class GoogleVisionProvider(OCRProvider):
             logger.error("Google Vision API key not configured")
             return []
 
+        request_data = {
+            "requests": [{
+                "image": {"content": base64.b64encode(image_data).decode('utf-8')},
+                "features": [{"type": "DOCUMENT_TEXT_DETECTION", "maxResults": 50}],
+            }]
+        }
         try:
-            # Encode image to base64
-            image_base64 = base64.b64encode(image_data).decode('utf-8')
-
-            # Get image dimensions from PNG header (bytes 16-23)
-            if image_data[1:4] == b'PNG':
-                img_width, img_height = struct.unpack('>II', image_data[16:24])
-            else:
-                img_width, img_height = 0, 0
-            logger.debug(f"Image dimensions: {img_width}x{img_height}")
-
-            # Prepare request
-            url = self._endpoint
-            request_data = {
-                "requests": [{
-                    "image": {"content": image_base64},
-                    "features": [{
-                        "type": "DOCUMENT_TEXT_DETECTION",
-                        "maxResults": 50
-                    }]
-                }]
-            }
-
-            # Make API call in thread pool
-            def do_request():
-                return _http.post(url, json=request_data, headers={"x-goog-api-key": self._api_key}, timeout=10.0)
-
             logger.debug("Sending request to Google Cloud Vision API")
-            response = await asyncio.to_thread(do_request)
-
+            response = await fetch("POST", self._endpoint, json=request_data, headers={"x-goog-api-key": self._api_key})
             if response.status_code != 200:
-                logger.error(f"Google Vision API error: {response.status_code}")
-                logger.error(f"Response: {response.text[:500]}")
-                reason = classify_google_error(response.status_code, response.text)
-                if reason in (
-                    "Invalid API key",
-                    "API not enabled in Cloud project",
-                    "Billing not enabled",
-                    "Access blocked (key restriction)",
-                ):
-                    raise ApiKeyError(reason)
-                if reason == "Rate limited":
-                    raise RateLimitError(reason)
+                raise_for_google_error(response)
                 return []
-
-            result = response.json()
-            return self._parse_response(result)
-
-        except (ApiKeyError, RateLimitError):
+            return self._parse_response(response.json())
+        except (ApiKeyError, RateLimitError, NetworkError):
             raise
-        except requests.exceptions.ConnectionError as e:
-            logger.error(f"Google Vision connection error: {e}")
-            raise NetworkError("No internet connection") from e
-        except requests.exceptions.Timeout as e:
-            logger.error(f"Google Vision timeout error: {e}")
-            raise NetworkError("Connection timed out") from e
         except Exception as e:
             logger.error(f"Google Vision OCR error: {e}")
             return []
@@ -131,23 +83,16 @@ class GoogleVisionProvider(OCRProvider):
     async def test_network(self) -> tuple:
         if not self._api_key:
             return False, "API key required"
-
-        def _probe():
-            url = self._endpoint
-            try:
-                resp = _http.post(url, json={"requests": []}, headers={"x-goog-api-key": self._api_key}, timeout=4)
-            except (requests.ConnectionError, requests.Timeout):
-                return False, "Network unreachable"
-            except Exception as e:
-                return False, f"Probe failed: {type(e).__name__}"
-            if resp.status_code == 200:
-                return True, ""
-            reason = classify_google_error(resp.status_code, resp.text)
-            if resp.status_code == 400 and reason == "API error (400)":
-                return True, ""
-            return False, reason
-
-        return await asyncio.to_thread(_probe)
+        resp, error = await probe("POST", self._endpoint, json={"requests": []},
+                                  headers={"x-goog-api-key": self._api_key})
+        if resp is None:
+            return False, error
+        if resp.status_code == 200:
+            return True, ""
+        reason = classify_google_error(resp.status_code, resp.text)
+        if resp.status_code == 400 and reason == "API error (400)":
+            return True, ""
+        return False, reason
 
     def _parse_response(self, result: dict) -> List[TextRegion]:
         """Parse Google Vision API response into TextRegion objects."""

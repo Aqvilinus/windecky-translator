@@ -87,6 +87,7 @@ except ImportError:
 
 # Import provider system
 from providers import ProviderManager, NetworkError, ApiKeyError, RateLimitError
+from providers.base import close_session
 from providers.translation_cache import TranslationCache, PROVIDER_TIERS, normalize
 
 _processing_lock = False
@@ -491,7 +492,7 @@ class Plugin:
             if not self._provider_manager:
                 return []
             llm = self._provider_manager.get_llm_provider()
-            return await asyncio.to_thread(llm.list_models, backend)
+            return await llm.list_models(backend)
         except Exception as e:
             logger.error(f"Error fetching {backend} models: {e}")
             return []
@@ -506,8 +507,7 @@ class Plugin:
             if not gemini:
                 from providers.gemini_vision import GeminiVisionProvider
                 gemini = GeminiVisionProvider(api_key=self._gemini_api_key)
-            import asyncio
-            return await asyncio.to_thread(gemini.list_available_models)
+            return await gemini.list_available_models()
         except Exception as e:
             logger.error(f"Error fetching Gemini models: {e}")
             return []
@@ -1136,6 +1136,7 @@ class Plugin:
 
             if self._provider_manager:
                 self._provider_manager.shutdown()
+            await close_session()
 
             if self._translation_cache:
                 self._translation_cache.close()

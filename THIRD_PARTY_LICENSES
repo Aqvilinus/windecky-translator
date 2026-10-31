@@ -5,14 +5,6 @@ Pillow
 https://github.com/python-pillow/Pillow
 License: MIT-CMU
 
-Requests
-https://github.com/psf/requests
-License: Apache License 2.0
-
-urllib3
-https://github.com/urllib3/urllib3
-License: MIT License
-
 Python 3.14
 https://github.com/astral-sh/python-build-standalone
 License: Mozilla Public License 2.0

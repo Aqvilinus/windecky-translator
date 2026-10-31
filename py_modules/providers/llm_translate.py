@@ -4,23 +4,17 @@
 # rest of the screen as context. Whatever the AI doesn't return (rate limit, network, a malformed reply) goes to the
 # free Google -> Bing chain.
 
-import asyncio
 import json
 import logging
 import re
 import time
 from typing import Dict, List, Optional
 
-import requests
-
-from .base import TranslationProvider, ProviderType, NetworkError, ApiKeyError, RateLimitError, chunk_indices
+from .base import (TranslationProvider, ProviderType, NetworkError, ApiKeyError, RateLimitError, Response,
+                   chunk_indices, fetch, probe)
 from . import gemini_api
 from .free_translate import FreeTranslateProvider
 from .gemini_vision import LANG_NAMES
-
-# one session per module: connections are kept alive between requests (a new TLS handshake per
-# request doubled the time of short requests, e.g. 561 -> 258 ms to translate.googleapis.com)
-_http = requests.Session()
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +91,7 @@ def _parse_translations(text: str, expected: int) -> Optional[List[str]]:
     return [item if isinstance(item, str) else str(item) for item in data]
 
 
-def _retry_after(resp: requests.Response) -> float:
+def _retry_after(resp: Response) -> float:
     try:
         return min(MAX_RATE_LIMIT_PAUSE, float(resp.headers.get("retry-after", "")))
     except ValueError:
@@ -107,7 +101,7 @@ def _retry_after(resp: requests.Response) -> float:
     return min(MAX_RATE_LIMIT_PAUSE, float(match.group(1))) if match else RATE_LIMIT_PAUSE
 
 
-def _error_message(resp: requests.Response) -> str:
+def _error_message(resp: Response) -> str:
     try:
         body = resp.json()
         err = body.get("error") if isinstance(body, dict) else None
@@ -187,15 +181,10 @@ class LLMTranslateProvider(TranslationProvider):
             headers["Authorization"] = f"Bearer {key}"
         return headers
 
-    def _post(self, url: str, payload: dict, headers: dict) -> requests.Response:
-        try:
-            return _http.post(url, json=payload, headers=headers, timeout=REQUEST_TIMEOUT)
-        except requests.exceptions.ConnectionError as e:
-            raise NetworkError(f"Cannot reach the AI service ({type(e).__name__})") from e
-        except requests.exceptions.Timeout as e:
-            raise NetworkError("The AI service timed out") from e
+    async def _post(self, url: str, payload: dict, headers: dict) -> Response:
+        return await fetch("POST", url, json=payload, headers=headers, timeout=REQUEST_TIMEOUT)
 
-    def _check(self, resp: requests.Response) -> None:
+    def _check(self, resp: Response) -> None:
         if resp.status_code == 200:
             return
         message = _error_message(resp)
@@ -207,7 +196,7 @@ class LLMTranslateProvider(TranslationProvider):
             raise ApiKeyError(f"{self.name}: invalid API key ({message})")
         raise NetworkError(f"{self.name} error {resp.status_code}: {message}")
 
-    def _gemini_request(self, system: str, user: str) -> str:
+    async def _gemini_request(self, system: str, user: str) -> str:
         payload = {
             "system_instruction": {"parts": [{"text": system}]},
             "contents": [{"role": "user", "parts": [{"text": user}]}],
@@ -222,7 +211,7 @@ class LLMTranslateProvider(TranslationProvider):
             },
         }
         # retired model -> current alias, thinking setting the model rejects -> less (gemini_api.generate)
-        resp, _ = gemini_api.generate(self._keys["gemini"], self.model, payload, self._post)
+        resp, _ = await gemini_api.generate(self._keys["gemini"], self.model, payload, REQUEST_TIMEOUT)
         self._check(resp)
         body = resp.json()
         usage = body.get("usageMetadata") or {}
@@ -235,7 +224,7 @@ class LLMTranslateProvider(TranslationProvider):
             raise NetworkError(f"Gemini returned no text (blocked? {json.dumps(body)[:200]})")
         return "".join(p.get("text", "") for p in parts if not p.get("thought"))
 
-    def _openai_request(self, system: str, user: str) -> str:
+    async def _openai_request(self, system: str, user: str) -> str:
         payload = {
             "model": self.model,
             "temperature": 0.2,
@@ -244,27 +233,27 @@ class LLMTranslateProvider(TranslationProvider):
         }
         if self._backend == "groq" and "gpt-oss" in self.model:
             payload["reasoning_effort"] = "low"
-        resp = self._post(f"{self._openai_base()}/chat/completions", payload, self._openai_headers())
+        resp = await self._post(f"{self._openai_base()}/chat/completions", payload, self._openai_headers())
         if resp.status_code == 400 and "response_format" in resp.text:
             del payload["response_format"]  # servers without JSON mode; the prompt asks for JSON anyway
-            resp = self._post(f"{self._openai_base()}/chat/completions", payload, self._openai_headers())
+            resp = await self._post(f"{self._openai_base()}/chat/completions", payload, self._openai_headers())
         self._check(resp)
         try:
             return resp.json()["choices"][0]["message"]["content"] or ""
         except (KeyError, IndexError, TypeError, ValueError):
             raise NetworkError(f"{self.name} returned no text")
 
-    def _translate_chunk(self, texts: List[str], source_lang: str, target_lang: str) -> Optional[List[str]]:
+    async def _translate_chunk(self, texts: List[str], source_lang: str, target_lang: str) -> Optional[List[str]]:
         system = _system_prompt(source_lang, target_lang)
         user = json.dumps({"texts": texts}, ensure_ascii=False)
         start = time.time()
-        reply = (self._gemini_request if self._backend == "gemini" else self._openai_request)(system, user)
+        reply = await (self._gemini_request if self._backend == "gemini" else self._openai_request)(system, user)
         result = _parse_translations(reply, len(texts))
         logger.info(f"{self.name} [{self.model}]: {len(texts)} texts in {time.time() - start:.2f}s"
                     + ("" if result else f", unusable reply: {reply[:200]!r}"))
         return result
 
-    def _translate_lines(self, texts: List[str], source_lang: str, target_lang: str) -> List[Optional[str]]:
+    async def _translate_lines(self, texts: List[str], source_lang: str, target_lang: str) -> List[Optional[str]]:
         results: List[Optional[str]] = [None] * len(texts)
         sources: List[Optional[str]] = [None] * len(texts)
         order = [i for i, t in enumerate(texts) if t and t.strip()]
@@ -275,7 +264,7 @@ class LLMTranslateProvider(TranslationProvider):
             if not self.is_configured() or time.time() < self._paused_until:
                 break
             try:
-                out = self._translate_chunk([texts[i] for i in chunk], source_lang, target_lang)
+                out = await self._translate_chunk([texts[i] for i in chunk], source_lang, target_lang)
             except ApiKeyError:
                 raise
             except (RateLimitError, NetworkError) as e:
@@ -294,7 +283,7 @@ class LLMTranslateProvider(TranslationProvider):
 
         missing = [i for i in order if results[i] is None]
         if missing:
-            fallback = self._fallback._translate_lines([texts[i] for i in missing],
+            fallback = await self._fallback._translate_lines([texts[i] for i in missing],
                                                        self._fallback._map_language(source_lang),
                                                        self._fallback._map_language(target_lang))
             for i, t in zip(missing, fallback):
@@ -311,21 +300,21 @@ class LLMTranslateProvider(TranslationProvider):
     async def translate(self, text: str, source_lang: str, target_lang: str) -> str:
         if not text or not text.strip():
             return text
-        result = (await asyncio.to_thread(self._translate_lines, [text], source_lang, target_lang))[0]
+        result = (await self._translate_lines([text], source_lang, target_lang))[0]
         return result if result is not None else text
 
     async def translate_batch(self, texts: List[str], source_lang: str, target_lang: str) -> List[Optional[str]]:
         if not texts:
             return texts
-        return await asyncio.to_thread(self._translate_lines, list(texts), source_lang, target_lang)
+        return await self._translate_lines(list(texts), source_lang, target_lang)
 
     # -- settings UI helpers --
 
-    def list_models(self, backend: str) -> List[str]:
+    async def list_models(self, backend: str) -> List[str]:
         """Models the key can use, for the model picker (text models only)."""
         try:
             if backend == "gemini":
-                return gemini_api.list_models(self._keys["gemini"])
+                return await gemini_api.list_models(self._keys["gemini"])
             base = GROQ_URL if backend == "groq" else self._custom_url
             if not base:
                 return []
@@ -333,7 +322,7 @@ class LLMTranslateProvider(TranslationProvider):
             key = self._keys.get(backend)
             if key:
                 headers["Authorization"] = f"Bearer {key}"
-            resp = _http.get(f"{base}/models", headers=headers, timeout=10)
+            resp = await fetch("GET", f"{base}/models", headers=headers)
             if resp.status_code != 200:
                 return []
             skip = ("whisper", "tts", "guard", "embed", "orpheus", "playai", "compound")
@@ -348,25 +337,19 @@ class LLMTranslateProvider(TranslationProvider):
             return False, "API key required" if self._backend != "custom" else "Server address and model required"
 
         # Reads the model's info (Gemini) or the model list: checks address and key without using request quota
-        def _probe():
-            try:
-                if self._backend == "gemini":
-                    resp = _http.get(f"{gemini_api.API_URL}/{self.model}", headers=gemini_api.headers(self._keys["gemini"]),
-                                        timeout=4)
-                else:
-                    resp = _http.get(f"{self._openai_base()}/models", headers=self._openai_headers(), timeout=4)
-            except (requests.ConnectionError, requests.Timeout):
-                return False, "Network unreachable"
-            except Exception as e:
-                return False, f"Probe failed: {type(e).__name__}"
-            if resp.status_code == 200:
-                return True, ""
-            if resp.status_code == 404 and self._backend == "gemini":
-                return False, f"Unknown model {self.model}"
-            if resp.status_code in (400, 401, 403):
-                return False, "Invalid API key"
-            if resp.status_code == 429:
-                return False, "Rate limited"
-            return False, f"API error ({resp.status_code})"
-
-        return await asyncio.to_thread(_probe)
+        if self._backend == "gemini":
+            resp, error = await probe("GET", f"{gemini_api.API_URL}/{self.model}",
+                                      headers=gemini_api.headers(self._keys["gemini"]))
+        else:
+            resp, error = await probe("GET", f"{self._openai_base()}/models", headers=self._openai_headers())
+        if resp is None:
+            return False, error
+        if resp.status_code == 200:
+            return True, ""
+        if resp.status_code == 404 and self._backend == "gemini":
+            return False, f"Unknown model {self.model}"
+        if resp.status_code in (400, 401, 403):
+            return False, "Invalid API key"
+        if resp.status_code == 429:
+            return False, "Rate limited"
+        return False, f"API error ({resp.status_code})"
