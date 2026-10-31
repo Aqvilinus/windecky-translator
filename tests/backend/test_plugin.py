@@ -260,6 +260,22 @@ def test_pause_game_while_translating(start, windows, net):
     assert windows.processes.suspended == set()
 
 
+def test_a_game_that_cannot_be_paused_is_reported_once(start, windows, net, main):
+    b = start({"pause_game_on_overlay": True})
+    _, _, translated = translate_screen(b)
+    windows.processes.suspend = lambda pid: False  # e.g. access denied
+
+    async def show_twice():
+        for _ in range(2):
+            b.plugin._overlay_visible = False
+            await b.plugin.native_overlay_update(overlay_state(translated))
+        await harness.asyncio.sleep(0.05)
+    b.run(show_twice())
+    assert [e for e in main.test_events if e[0] == "translator_problem"] == [
+        ("translator_problem", ("Pause Game While Translating: Windows didn't let the plugin pause this game "
+                                "(details in the plugin log)",))]
+
+
 def test_switching_the_plugin_off_resumes_a_paused_game(start, windows, net):
     b = start({"pause_game_on_overlay": True})
     _, _, translated = translate_screen(b)

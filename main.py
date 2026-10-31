@@ -307,6 +307,7 @@ class Plugin:
     _chromescreenai_persistent_mode: bool = False  # Keep Chrome Screen AI worker alive between requests
     _ct2_persistent_mode: bool = False  # Keep CT2/NLLB worker alive between requests
     _pause_game_on_overlay: bool = False  # Default to not pausing game on overlay
+    _pause_problems_shown: frozenset = frozenset()  # pause problems already shown to the user (_report_pause_problem)
 
     # Provider system
     _provider_manager: ProviderManager = None
@@ -598,9 +599,23 @@ class Plugin:
     # so the screenshot shows it running) and everything paused is resumed when the translation is hidden, however
     # it was started (Ctrl+Alt+T, the side menu, a controller shortcut) and even if the game exited meanwhile.
     def _pause_captured_game(self):
-        pid = game_pause.game_pid((self._capture_target or {}).get("hwnd")) if game_pause else 0
-        if pid:
-            game_pause.suspend(pid)
+        if not game_pause:
+            return  # reported at start (_BOOT_ERRORS)
+        pid = game_pause.game_pid((self._capture_target or {}).get("hwnd"))
+        if not pid:
+            self._report_pause_problem("Pause Game While Translating: this window isn't a game Steam started, "
+                                       "so it keeps running")
+        elif not game_pause.suspend(pid):
+            self._report_pause_problem("Pause Game While Translating: Windows didn't let the plugin pause this game "
+                                       "(details in the plugin log)")
+
+    def _report_pause_problem(self, message):
+        """A toast once per kind of problem, not on every translation."""
+        logger.warning(message)
+        if message not in self._pause_problems_shown:
+            # a new set, assigned: a class attribute must not be changed in place (it would be shared)
+            self._pause_problems_shown = self._pause_problems_shown | {message}
+            self._emit("translator_problem", message)
 
     def _resume_paused_games(self):
         if game_pause and game_pause.any_suspended():
