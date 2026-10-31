@@ -6,6 +6,7 @@
 # thinking budget of 0 -> 400). generate() retries such a request once with Google's current-model alias, and with the
 # least thinking, then none. What it learns is kept for the session, so the next requests go straight to what works.
 
+import json
 import logging
 from typing import Dict, List, Optional, Tuple
 
@@ -92,3 +93,21 @@ async def generate(key: str, model: str, payload: dict, timeout: float, thinking
     if resp.status_code == 200 and thinking:
         _thinking[model] = think
     return resp, model
+
+
+def reply_text(resp: Response) -> str:
+    """The text of a 200 generateContent reply: its text parts without the model's thinking. NetworkError if there
+    is none (a blocked prompt, an empty answer)."""
+    body = resp.json()
+    usage = body.get("usageMetadata") or {}
+    if usage:
+        logger.debug(f"Gemini tokens: prompt={usage.get('promptTokenCount')}, "
+                     f"output={usage.get('candidatesTokenCount')}")
+    try:
+        candidate = body["candidates"][0]
+        parts = candidate["content"]["parts"]
+    except (KeyError, IndexError, TypeError):
+        raise NetworkError(f"Gemini returned no text (blocked? {json.dumps(body)[:200]})")
+    if candidate.get("finishReason") not in (None, "STOP"):
+        logger.warning(f"Gemini finishReason={candidate['finishReason']} (the reply is likely cut short)")
+    return "".join(p.get("text", "") for p in parts if not p.get("thought"))
