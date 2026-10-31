@@ -365,7 +365,9 @@ def _is_ghost_of(hwnd, target):
 class Overlay:
     """Owns the overlay window on its own thread; show()/hide() can be called from any thread."""
 
-    def __init__(self):
+    def __init__(self, on_error=None):
+        """on_error(message): called (on the overlay thread) when the overlay stops working, once per new error."""
+        self._on_error = on_error
         self._queue = queue.Queue()
         self._thread = None
         self._hwnd = None
@@ -376,7 +378,7 @@ class Overlay:
         self.error = None  # why the overlay can't be drawn (get_windows_status), None while it works
 
     def start(self):
-        if self._thread is None:
+        if self._thread is None or not self._thread.is_alive():  # first use, or the thread died: (re)start it
             self._thread = threading.Thread(target=self._run, name="translator-overlay", daemon=True)
             self._thread.start()
 
@@ -405,6 +407,7 @@ class Overlay:
         user32.RegisterClassW(ctypes.byref(wc))  # fails harmlessly if a previous overlay thread registered it
         self._hwnd = user32.CreateWindowExW(WS_EX_STYLE, CLASS_NAME, "Decky Translator", WS_POPUP, 0, 0, 1, 1,
                                             None, None, hinst, None)
+        self._shown = False  # a new window (this thread may replace one that died)
         if not self._hwnd:
             self._fail(f"could not create the overlay window (error {ctypes.get_last_error()})")
         msg = wintypes.MSG()
@@ -438,6 +441,8 @@ class Overlay:
                 while user32.PeekMessageW(ctypes.byref(msg), None, 0, 0, PM_REMOVE):
                     user32.TranslateMessage(ctypes.byref(msg))
                     user32.DispatchMessageW(ctypes.byref(msg))
+        except Exception as e:  # noqa: BLE001 - reported; the next show() starts a new thread
+            self._fail(f"the overlay thread stopped: {e!r}")
         finally:
             self._free_dib()
             user32.DestroyWindow(self._hwnd)
@@ -473,6 +478,8 @@ class Overlay:
         """Log a drawing failure once (until the overlay works again) and keep it for get_windows_status."""
         if error != self.error:
             logger.error("overlay: %s", error)
+            if self._on_error:
+                self._on_error(error)
         self.error = error
 
     def _dib_for(self, mw, mh, screen):

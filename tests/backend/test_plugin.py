@@ -268,6 +268,26 @@ def test_switching_the_plugin_off_resumes_a_paused_game(start, windows, net):
     assert windows.processes.suspended == set()
 
 
+def test_a_taken_hotkey_is_reported(backend):
+    assert backend.call("get_boot_status") == []
+    backend.plugin._hotkey.error = 1409
+    [problem] = backend.call("get_boot_status")
+    assert "Ctrl+Alt+T is taken by another program" in problem
+
+
+def test_overlay_failures_reach_the_frontend(backend, windows, main):
+    backend.call("native_overlay_update", {"visible": False})  # creates the overlay
+    windows.overlay.on_error("draw failed: MemoryError()")
+
+    async def wait():
+        for _ in range(50):
+            if main.test_events:
+                return
+            await harness.asyncio.sleep(0.01)
+    backend.run(wait())
+    assert main.test_events == [("translator_problem", ("The translation overlay doesn't work: draw failed: MemoryError()",))]
+
+
 def test_hotkey_resumes_a_paused_game_even_without_the_frontend(start, windows, net):
     b = start({"pause_game_on_overlay": True})
     _, _, translated = translate_screen(b)

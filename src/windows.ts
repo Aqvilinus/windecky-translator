@@ -78,6 +78,14 @@ export async function showBootProblems(title: string): Promise<void> {
     for (const body of problems || []) toaster.toast({ title, body, duration: 10000 });
 }
 
+// Problems the backend finds later (main.py emits translator_problem, e.g. the overlay window stopped working): a
+// toast each, instead of translations that silently never appear
+export function listenForProblems(title: string): () => void {
+    const onProblem = (body: string) => toaster.toast({ title, body, duration: 10000 });
+    addEventListener('translator_problem', onProblem);
+    return () => removeEventListener('translator_problem', onProblem);
+}
+
 // Each Steam UI window (Big Picture, the overlay over each game) has a menu store of its own. Steam's internals: the
 // methods are still called with ?. and try/catch, so a Steam update that renames them only turns these checks off.
 type SideMenuStore = NonNullable<NonNullable<typeof Router.WindowStore>['SteamUIWindows'][number]['MenuStore']>;

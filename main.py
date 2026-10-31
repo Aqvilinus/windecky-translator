@@ -569,7 +569,8 @@ class Plugin:
             if Overlay is None:
                 return False
             if self._overlay is None:
-                self._overlay = Overlay()
+                self._overlay = Overlay(on_error=lambda error: self._emit(
+                    "translator_problem", f"The translation overlay doesn't work: {error}"))
             visible = bool(state and state.get("visible"))
             appeared = visible and not self._overlay_visible
             self._overlay_visible = visible
@@ -634,8 +635,14 @@ class Plugin:
         return clipboard.get_text()
 
     async def get_boot_status(self):
-        """Problems found while the plugin loaded (see _BOOT_ERRORS); the frontend shows them once."""
-        return list(_BOOT_ERRORS)
+        """Problems found while the plugin loaded (see _BOOT_ERRORS) and a shortcut another program took; the
+        frontend shows them once."""
+        problems = list(_BOOT_ERRORS)
+        hotkey = self._hotkey.status() if self._hotkey else None
+        if hotkey and hotkey["error"]:
+            problems.append(f"{hotkey['hotkey']} is taken by another program (error {hotkey['error']}): "
+                            "close that program or change its shortcut, then switch the plugin off and on")
+        return problems
 
     async def get_windows_status(self):
         """Diagnostics of the Windows parts: hotkey, overlay, last capture."""

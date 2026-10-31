@@ -24,7 +24,7 @@ import {
 import { BsTranslate } from "react-icons/bs";
 import { ImageState } from "./Overlay";
 import { GameTranslatorLogic } from "./Translator";
-import { forwardOverlayToBackend, listenForHotkey, showBootProblems } from "./windows";
+import { forwardOverlayToBackend, listenForHotkey, listenForProblems, showBootProblems } from "./windows";
 import { adoptActivePlugin } from "./deckyState";
 import { SettingsProvider, useSettings } from "./SettingsContext";
 import { logger } from "./Logger";
@@ -281,6 +281,7 @@ export default definePlugin(() => {
     // The backend draws the overlay over the game window (py_modules/winport/overlay.py)
     const stopForwarding = forwardOverlayToBackend(imageState, logic.dismiss);
     const stopHotkey = listenForHotkey(logic);
+    const stopProblems = listenForProblems(PLUGIN_NAME);
     // after a reload the side menu would keep showing the unloaded instance (deckyState.ts)
     const stopAdopting = adoptActivePlugin(PLUGIN_NAME,
         p => (p.content as { props?: { logic?: unknown } } | undefined)?.props?.logic === logic);
@@ -300,6 +301,7 @@ export default definePlugin(() => {
         onDismount() {
             stopForwarding();
             stopHotkey();
+            stopProblems();
             stopAdopting();
             routerHook.removeGlobalComponent("TranslatorSettingsLoader");
         },
