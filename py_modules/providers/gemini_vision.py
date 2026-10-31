@@ -9,7 +9,6 @@ import logging
 import re
 from typing import List, Optional
 
-from PIL import Image
 
 from . import gemini_api
 from .base import (
@@ -216,6 +215,7 @@ class GeminiVisionProvider(OCRProvider):
         if not self._api_key:
             raise ApiKeyError("Gemini API key not configured")
 
+        from PIL import Image  # Pillow is imported where it's used (see main.py _BOOT_ERRORS)
         img_width, img_height = Image.open(io.BytesIO(image_data)).size
 
         prompt = self._build_prompt(language, self._target_language)
