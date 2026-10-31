@@ -13,6 +13,7 @@ import {
     TextField,
     Field,
     Focusable,
+    ProgressBar,
     type SingleDropdownOption
 } from "@decky/ui";
 import { showModal } from "../modal";
@@ -682,22 +683,8 @@ const ModelStatusIndicator: VFC<{ state: ModelDownloadState }> = ({ state }) => 
 
 const ModelHeadingProgressBar: VFC<{ state: ModelDownloadState }> = ({ state }) => (
     state.isDownloading ? (
-        <div style={{
-            marginTop: "2px",
-            marginBottom: "4px",
-            marginLeft: "26px",
-            height: "2px",
-            backgroundColor: "rgba(255,255,255,0.1)",
-            borderRadius: "2px",
-            overflow: "hidden",
-        }}>
-            <div style={{
-                width: `${state.progressPct}%`,
-                height: "100%",
-                backgroundColor: state.statusColor,
-                borderRadius: "2px",
-                transition: "width 0.3s ease",
-            }} />
+        <div style={{ margin: "2px 0 4px 26px" }}>
+            <ProgressBar nProgress={state.progressPct} />
         </div>
     ) : null
 );
