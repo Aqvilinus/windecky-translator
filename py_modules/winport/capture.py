@@ -5,8 +5,8 @@ apps (borderless and windowed; true exclusive fullscreen is the one case Windows
 also leaves out anything drawn over it, including our own overlay window. The capture border is switched off where
 Windows allows it (it does for desktop apps on Windows 11).
 
-capture_foreground() returns a Capture: PNG bytes (for the OCR engines) and the decoded frame (for the overlay's
-still and label colours), plus the window's on-screen rectangle (the frame's top-left corner in screen pixels), which
+capture_foreground() returns a Capture: the frame as a PIL image (the overlay's still and label colours;
+encode_png() makes the OCR engines' PNG from it when they need it), plus the window's on-screen rectangle (the frame's top-left corner in screen pixels), which
 the overlay uses to put the translations exactly over the captured text.
 """
 import asyncio
@@ -39,7 +39,6 @@ _device = None
 
 @dataclass
 class Capture:
-    png: bytes
     image: object  # PIL.Image, RGB
     width: int
     height: int
@@ -113,16 +112,21 @@ async def _capture_window(hwnd, timeout):
         pool.close()
 
 
-def bitmap_to_png(bmp):
-    """(PNG bytes, PIL RGB image) of the frame."""
+def bitmap_to_image(bmp):
+    """The frame as a PIL RGB image."""
     from PIL import Image
     w, h = bmp.pixel_width, bmp.pixel_height
     buf = Buffer(w * h * 4)
     bmp.copy_to_buffer(buf)
-    img = Image.frombuffer("RGBA", (w, h), memoryview(buf), "raw", "BGRA", 0, 1).convert("RGB")
+    return Image.frombuffer("RGBA", (w, h), memoryview(buf), "raw", "BGRA", 0, 1).convert("RGB")
+
+
+def encode_png(image) -> bytes:
+    """The OCR engines' input: a PNG of the frame (50-230 ms for a full screen, so it is made only for OCR, after the
+    overlay already shows that the translation started)."""
     out = io.BytesIO()
-    img.save(out, "PNG", compress_level=1)
-    return out.getvalue(), img
+    image.save(out, "PNG", compress_level=1)
+    return out.getvalue()
 
 
 async def capture_foreground(exclude=()):
@@ -133,7 +137,7 @@ async def capture_foreground(exclude=()):
     t0 = time.perf_counter()
     bmp = await capture_window(hwnd)
     left, top = _frame_bounds(hwnd)
-    png, image = await asyncio.to_thread(bitmap_to_png, bmp)  # 15-120 ms for a full-screen frame: off the event loop
+    image = await asyncio.to_thread(bitmap_to_image, bmp)  # tens of ms for a full-screen frame: off the event loop
     logger.info("captured window %#x %dx%d at (%d,%d) in %.0f ms", hwnd, bmp.pixel_width, bmp.pixel_height, left, top,
                 (time.perf_counter() - t0) * 1000)
-    return Capture(png, image, bmp.pixel_width, bmp.pixel_height, left, top, hwnd)
+    return Capture(image, bmp.pixel_width, bmp.pixel_height, left, top, hwnd)

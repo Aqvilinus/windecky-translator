@@ -134,9 +134,9 @@ if sys.version_info[:2] != (3, 14):
     _BOOT_ERRORS.append(f"Decky Loader runs Python {sys.version_info[0]}.{sys.version_info[1]}, this build of the "
                         "plugin was made for 3.14: update the plugin")
 try:
-    from winport.capture import capture_foreground
+    from winport.capture import capture_foreground, encode_png
 except Exception as _e:  # noqa: BLE001 - ImportError, or OSError from a DLL that won't load
-    capture_foreground = None
+    capture_foreground = encode_png = None
     _BOOT_ERRORS.append(f"Screen capture is unavailable: {_e}")
 try:
     from winport.overlay import Overlay
@@ -339,7 +339,7 @@ class Plugin:
             # gets a name for recognize_text_file, and no file is written and read back
             path = os.path.join(SCREENSHOT_DIR, f"{name}_{timestamp}.png")
             self._capture_target = {"hwnd": cap.hwnd, "left": cap.left, "top": cap.top,
-                                    "width": cap.width, "height": cap.height, "png": cap.png, "image": cap.image,
+                                    "width": cap.width, "height": cap.height, "image": cap.image, "ocr_pending": True,
                                     "path": path}
             return {"path": path}
         except Exception as e:
@@ -375,11 +375,11 @@ class Plugin:
             return False
 
     def _release_capture(self):
-        """Drop the capture's pixels (the PNG and the decoded frame, megabytes) once nothing needs them; the window
-        position stays for get_windows_status."""
+        """Drop the capture's pixels (megabytes) once nothing needs them; the window position stays for
+        get_windows_status."""
         if self._capture_target:
-            self._capture_target.pop("png", None)
             self._capture_target.pop("image", None)
+            self._capture_target.pop("ocr_pending", None)
 
     # Windows: Pause Game While Translating. The game is paused when its translation appears (right after the capture,
     # so the screenshot shows it running) and everything paused is resumed when the translation is hidden, however
@@ -445,7 +445,7 @@ class Plugin:
         return {
             "hotkey": self._hotkey.status() if self._hotkey else None,
             "overlay_error": self._overlay.error if self._overlay else None,
-            "capture": {k: v for k, v in (self._capture_target or {}).items() if k not in ("png", "image")},
+            "capture": {k: v for k, v in (self._capture_target or {}).items() if k != "image"},
         }
 
     @answers_errors("ocr_failed", "Text recognition failed (details in the plugin log)")
@@ -507,11 +507,11 @@ class Plugin:
         if not self._is_capture(image_path):
             logger.error(f"Not the current capture: {image_path}")
             return []
-        png = self._capture_target.pop("png", None)  # only OCR needs the PNG
-        if png is None:
+        image = self._capture_target.get("image")
+        if image is None or not self._capture_target.pop("ocr_pending", False):
             logger.error("The capture was already recognized or discarded")
             return []
-        return await self.recognize_text(png)
+        return await self.recognize_text(await asyncio.to_thread(encode_png, image))
 
     @answers_errors("translation_failed", "Translation failed (details in the plugin log)")
     async def translate_text(self, text_regions, target_language=None, input_language=None):

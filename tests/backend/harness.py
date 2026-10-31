@@ -96,11 +96,8 @@ def screen_image(width=640, height=360):
 
 
 def capture_of(img, left=100, top=50):
-    import io
     from winport.capture import Capture
-    buf = io.BytesIO()
-    img.save(buf, "PNG")
-    return Capture(png=buf.getvalue(), image=img, width=img.width, height=img.height, left=left, top=top, hwnd=GAME_HWND)
+    return Capture(image=img, width=img.width, height=img.height, left=left, top=top, hwnd=GAME_HWND)
 
 
 # ---------------------------------------------------------------- Windows parts
