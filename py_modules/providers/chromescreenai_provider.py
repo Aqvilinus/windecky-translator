@@ -5,7 +5,6 @@ import asyncio
 import json
 import logging
 import os
-import re
 import subprocess
 import tempfile
 import threading
@@ -14,11 +13,12 @@ from typing import List, Optional
 
 from .base import OCRError, OCRProvider, TextRegion
 from . import python_runtime
+from .worker_process import JsonLineWorker
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_MIN_CONFIDENCE = 0.5
-OCR_TIMEOUT_SECONDS = 120
+OCR_TIMEOUT_SECONDS = 30  # a screen takes about a second; a hung engine must not hold a paused game long
 WORKER_READY_TIMEOUT_SECONDS = 60
 
 _WORKER_ENV_STRIP = (
@@ -56,8 +56,7 @@ class ChromeScreenAIProvider(OCRProvider):
         self._python_path: Optional[str] = None
 
         self._persistent_mode = False
-        self._worker_proc: Optional[subprocess.Popen] = None
-        self._worker_lock = threading.Lock()
+        self._start_lock = threading.Lock()
 
         # Prefer the extracted bin/py_modules copy (Decky Store install),
         # fall back to root py_modules in dev.
@@ -72,6 +71,9 @@ class ChromeScreenAIProvider(OCRProvider):
         self._subprocess_script = bin_script if os.path.exists(bin_script) else root_script
 
         self._py_modules_dir = python_runtime.worker_pythonpath(self._plugin_dir)
+        # the engine picks its own thread count: don't pass the plugin's limits on
+        self._worker = JsonLineWorker("Chrome Screen AI", self._subprocess_script, ["--worker"],
+                                      env={k: None for k in _WORKER_ENV_STRIP})
 
         logger.debug(
             f"ChromeScreenAIProvider initialized "
@@ -125,138 +127,27 @@ class ChromeScreenAIProvider(OCRProvider):
         if self._persistent_mode:
             self.start_worker()
 
-    def _is_worker_alive(self) -> bool:
-        proc = self._worker_proc
-        return proc is not None and proc.poll() is None
-
-    def _start_stderr_drainer(self, proc: subprocess.Popen) -> None:
-        def drain():
-            try:
-                stream = proc.stderr
-                if stream is None:
-                    return
-                for raw in iter(stream.readline, b''):
-                    if not raw:
-                        break
-                    try:
-                        line = raw.decode('utf-8', errors='replace').rstrip()
-                    except Exception:
-                        continue
-                    if line and re.match(r"[IW]\d{4} ", line):
-                        logger.debug(f"ChromeScreenAI worker: {line}")
-                    elif line:
-                        logger.warning(f"ChromeScreenAI worker stderr: {line}")
-            except Exception:
-                pass
-
-        threading.Thread(target=drain, daemon=True).start()
-
-    def _build_worker_env(self) -> dict:
-        env = os.environ.copy()
-        env['PYTHONPATH'] = self._py_modules_dir
-        env['PYTHONNOUSERSITE'] = '1'
-        env['PYTHONDONTWRITEBYTECODE'] = '1'
-        for k in _WORKER_ENV_STRIP:
-            env.pop(k, None)
-        return env
-
     def start_worker(self) -> bool:
-        with self._worker_lock:
-            if not self._persistent_mode:
-                return False
-            if self._worker_proc is not None and self._worker_proc.poll() is None:
+        """Start the persistent worker and load the engine into it."""
+        with self._start_lock:
+            if self._worker.alive:
                 return True
-
-            if not self._check_availability() or not self._python_path:
-                logger.warning("Cannot start Chrome Screen AI worker: not available")
+            if not self._persistent_mode or not self._check_availability():
                 return False
-
-            env = self._build_worker_env()
-            try:
-                self._worker_proc = subprocess.Popen(
-                    [self._python_path, '-S', self._subprocess_script, '--worker'],
-                    stdin=subprocess.PIPE,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    env=env,
-                    **python_runtime.popen_kwargs(),
-                )
-            except Exception as e:
-                logger.error(f"Failed to spawn Chrome Screen AI worker: {e}")
-                self._worker_proc = None
+            if not self._worker.start(self._python_path, self._py_modules_dir):
                 return False
-
-            self._start_stderr_drainer(self._worker_proc)
-
-            init_msg = {
-                "type": "init",
-                "model_dir": self._model_dir,
-                "min_confidence": self._min_confidence,
-            }
             start = time.time()
-            try:
-                self._worker_proc.stdin.write((json.dumps(init_msg) + "\n").encode())
-                self._worker_proc.stdin.flush()
-                ready_line = python_runtime.readline_with_timeout(self._worker_proc.stdout, WORKER_READY_TIMEOUT_SECONDS)
-                if not ready_line:
-                    logger.error("Chrome Screen AI worker died or hung before its ready response")
-                    self._kill_worker_unlocked()
-                    return False
-                ready = json.loads(ready_line.decode().strip())
-                if ready.get("error"):
-                    logger.error(f"Chrome Screen AI worker init error: {ready['error']}")
-                    self._kill_worker_unlocked()
-                    return False
-            except Exception as e:
-                logger.error(f"Chrome Screen AI worker init failed: {e}")
-                self._kill_worker_unlocked()
+            ready = self._worker.request({"type": "init", "model_dir": self._model_dir,
+                                          "min_confidence": self._min_confidence}, WORKER_READY_TIMEOUT_SECONDS)
+            if not ready or ready.get("error"):
+                logger.error(f"Chrome Screen AI worker init failed: {(ready or {}).get('error') or 'no answer'}")
+                self._worker.stop()
                 return False
-
-            elapsed = time.time() - start
-            logger.info(f"Chrome Screen AI worker ready ({elapsed:.2f}s)")
+            logger.info(f"Chrome Screen AI worker ready ({time.time() - start:.2f}s)")
             return True
 
     def stop_worker(self) -> None:
-        with self._worker_lock:
-            self._kill_worker_unlocked()
-
-    def _kill_worker_unlocked(self) -> None:
-        proc = self._worker_proc
-        self._worker_proc = None
-        if proc is None:
-            return
-        try:
-            if proc.poll() is None:
-                try:
-                    proc.stdin.write(b'{"type":"shutdown"}\n')
-                    proc.stdin.flush()
-                except Exception:
-                    pass
-                try:
-                    proc.stdin.close()
-                except Exception:
-                    pass
-                try:
-                    proc.wait(timeout=2)
-                except subprocess.TimeoutExpired:
-                    proc.terminate()
-                    try:
-                        proc.wait(timeout=1)
-                    except subprocess.TimeoutExpired:
-                        proc.kill()
-                        try:
-                            proc.wait(timeout=1)
-                        except subprocess.TimeoutExpired:
-                            pass
-        except Exception as e:
-            logger.warning(f"Error stopping Chrome Screen AI worker: {e}")
-        for f in (proc.stdin, proc.stdout, proc.stderr):
-            try:
-                if f:
-                    f.close()
-            except Exception:
-                pass
-        logger.debug("Chrome Screen AI worker stopped")
+        self._worker.stop({"type": "shutdown"})
 
     async def recognize(self, image_data: bytes, language: str = "auto") -> List[TextRegion]:
         if not self._check_availability():
@@ -271,56 +162,22 @@ class ChromeScreenAIProvider(OCRProvider):
         return await asyncio.to_thread(self._recognize_oneshot, image_data)
 
     def _recognize_via_worker(self, image_data: bytes) -> Optional[List[TextRegion]]:
-        if not self._is_worker_alive():
-            if not self.start_worker():
-                return None
-
+        """The persistent worker's answer; None if it isn't available (the caller falls back to a one-shot run)."""
+        if not self._worker.alive and not self.start_worker():
+            return None
         with tempfile.NamedTemporaryFile(prefix="chromescreenai_input_", suffix=".png", delete_on_close=False) as image_file:
             image_file.write(image_data)
             image_file.close()  # the worker opens it by name; it is deleted when the block ends
-            temp_path = image_file.name
-
-            request = {"type": "recognize", "image_path": temp_path}
             start = time.time()
-            with self._worker_lock:
-                if self._worker_proc is None or self._worker_proc.poll() is not None:
-                    return None
-                try:
-                    self._worker_proc.stdin.write((json.dumps(request) + "\n").encode())
-                    self._worker_proc.stdin.flush()
-                    response_line = python_runtime.readline_with_timeout(self._worker_proc.stdout, OCR_TIMEOUT_SECONDS)
-                except Exception as e:
-                    logger.error(f"Chrome Screen AI worker I/O error: {e}")
-                    self._kill_worker_unlocked()
-                    return None
-
-                if not response_line:
-                    logger.error("Chrome Screen AI worker: no response (died or timed out)")
-                    self._kill_worker_unlocked()
-                    return None
-
-                try:
-                    response = json.loads(response_line.decode().strip())
-                except json.JSONDecodeError as e:
-                    # the real reply may still be in the pipe and would answer the next request: restart the worker
-                    logger.error(f"Chrome Screen AI worker: bad JSON: {e}")
-                    self._kill_worker_unlocked()
-                    return None
-
-            elapsed = time.time() - start
-            if response.get("error"):
-                raise OCRError(f"On-device OCR failed: {response['error']}")
-
-            regions = []
-            for r in response.get("regions", []):
-                regions.append(TextRegion(
-                    text=r["text"],
-                    rect=r["rect"],
-                    confidence=r["confidence"],
-                    is_dialog=r.get("is_dialog", False),
-                ))
-            logger.debug(f"Chrome Screen AI (worker): {len(regions)} regions in {elapsed:.2f}s")
-            return regions
+            response = self._worker.request({"type": "recognize", "image_path": image_file.name}, OCR_TIMEOUT_SECONDS)
+        if response is None:
+            return None
+        if response.get("error"):
+            raise OCRError(f"On-device OCR failed: {response['error']}")
+        regions = [TextRegion(text=r["text"], rect=r["rect"], confidence=r["confidence"],
+                              is_dialog=r.get("is_dialog", False)) for r in response.get("regions", [])]
+        logger.debug(f"Chrome Screen AI (worker): {len(regions)} regions in {time.time() - start:.2f}s")
+        return regions
 
     def _recognize_oneshot(self, image_data: bytes) -> List[TextRegion]:
         with tempfile.NamedTemporaryFile(prefix="chromescreenai_input_", suffix=".png", delete_on_close=False) as image_file:
