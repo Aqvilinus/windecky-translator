@@ -15,11 +15,10 @@ from .base import (
     OCRProvider,
     ProviderType,
     TextRegion,
-    NetworkError,
     ApiKeyError,
-    RateLimitError,
     classify_google_error,
     probe,
+    raise_for_api_error,
 )
 
 logger = logging.getLogger(__name__)
@@ -28,6 +27,20 @@ logger = logging.getLogger(__name__)
 # frame (2026-10-30): gemini-3.5-flash 12 s, gemini-flash-lite-latest 6.5 s, gemini-flash-latest 55-77 s (too slow).
 DEFAULT_MODEL = "gemini-3.5-flash"  # a retired model falls back to gemini_api.FALLBACK_MODEL
 REQUEST_TIMEOUT = 30
+
+# Gemini's reply: each line of text on the screen, its translation and its box (y0, x0, y1, x1 in 0-1000)
+REGIONS_SCHEMA = {
+    "type": "ARRAY",
+    "items": {
+        "type": "OBJECT",
+        "properties": {
+            "text": {"type": "STRING"},
+            "translated_text": {"type": "STRING"},
+            "box_2d": {"type": "ARRAY", "items": {"type": "NUMBER"}},
+        },
+        "required": ["text", "translated_text", "box_2d"],
+    },
+}
 
 # Language code to natural name for the prompt
 LANG_NAMES = {
@@ -177,22 +190,11 @@ class GeminiVisionProvider(OCRProvider):
         return prompt
 
     async def _call_api(self, image_data: bytes, prompt: str) -> str:
-        model = self._model
-
-        image_b64 = base64.b64encode(image_data).decode('utf-8')
-
         payload = {
-            "system_instruction": {
-                "parts": [{"text": self._build_system_instruction()}]
-            },
+            "system_instruction": {"parts": [{"text": self._build_system_instruction()}]},
             "contents": [{
                 "parts": [
-                    {
-                        "inline_data": {
-                            "mime_type": "image/png",
-                            "data": image_b64
-                        }
-                    },
+                    {"inline_data": {"mime_type": "image/png", "data": base64.b64encode(image_data).decode('utf-8')}},
                     {"text": prompt},
                 ]
             }],
@@ -200,69 +202,13 @@ class GeminiVisionProvider(OCRProvider):
                 "temperature": 0.1,
                 "maxOutputTokens": 32768,
                 "responseMimeType": "application/json",
-                "responseSchema": {
-                    "type": "ARRAY",
-                    "items": {
-                        "type": "OBJECT",
-                        "properties": {
-                            "text": {"type": "STRING"},
-                            "translated_text": {"type": "STRING"},
-                            "box_2d": {
-                                "type": "ARRAY",
-                                "items": {"type": "NUMBER"},
-                            },
-                        },
-                        "required": ["text", "translated_text", "box_2d"],
-                    },
-                },
-            }
+                "responseSchema": REGIONS_SCHEMA,
+            },
         }
-
         # retired model -> current alias, thinking setting the model rejects -> less (gemini_api.generate)
-        response, model = await gemini_api.generate(self._api_key, model, payload, REQUEST_TIMEOUT)
-
-        if response.status_code == 400:
-            try:
-                body = response.json()
-            except Exception:
-                body = {}
-            error_msg = body.get("error", {}).get("message", response.text[:200])
-            if "API_KEY_INVALID" in str(error_msg) or "API key" in str(error_msg):
-                raise ApiKeyError(f"Invalid Gemini API key: {error_msg}")
-            raise NetworkError(f"Gemini API error (400): {error_msg}")
-        elif response.status_code == 401 or response.status_code == 403:
-            raise ApiKeyError("Invalid or unauthorized Gemini API key")
-        elif response.status_code == 429:
-            raise RateLimitError("Gemini API rate limit exceeded. Free tier: 15 req/min, 1000 req/day")
-        elif response.status_code != 200:
-            raise NetworkError(f"Gemini API error ({response.status_code}): {response.text[:200]}")
-
-        result = response.json()
-
-        usage = result.get("usageMetadata") or {}
-        if usage:
-            logger.info(
-                f"Gemini tokens: prompt={usage.get('promptTokenCount', '?')}, "
-                f"completion={usage.get('candidatesTokenCount', '?')}"
-            )
-
-        try:
-            candidate = result["candidates"][0]
-            # Log when generation stopped for any reason other than a clean finish
-            finish_reason = candidate.get("finishReason")
-            if finish_reason and finish_reason != "STOP":
-                logger.warning(f"Gemini finishReason={finish_reason} (response likely incomplete)")
-
-            parts = candidate["content"]["parts"]
-            # Response may have multiple parts (e.g. thought + text).
-            # The actual content is in the last part with a "text" key.
-            for part in reversed(parts):
-                if "text" in part:
-                    return part["text"]
-            raise KeyError("No text part found")
-        except (KeyError, IndexError):
-            logger.error(f"Unexpected Gemini response structure: {json.dumps(result)[:500]}")
-            raise NetworkError("Unexpected response from Gemini API")
+        response, _ = await gemini_api.generate(self._api_key, self._model, payload, REQUEST_TIMEOUT)
+        raise_for_api_error(response, "Gemini Vision")
+        return gemini_api.reply_text(response)
 
     async def recognize(self, image_data: bytes, language: str = "auto") -> List[TextRegion]:
         if not self._api_key:

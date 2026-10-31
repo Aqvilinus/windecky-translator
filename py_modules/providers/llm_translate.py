@@ -11,7 +11,7 @@ import time
 from typing import Dict, List, Optional
 
 from .base import (TranslationProvider, ProviderType, NetworkError, ApiKeyError, RateLimitError, Response,
-                   chunk_indices, fetch, probe)
+                   chunk_indices, error_message, fetch, probe, raise_for_api_error)
 from . import gemini_api
 from .free_translate import FreeTranslateProvider
 from .gemini_vision import LANG_NAMES
@@ -32,6 +32,13 @@ BATCH_ITEMS = 80          # lines per request
 BATCH_CHARS = 8000        # characters per request
 RATE_LIMIT_PAUSE = 60     # seconds without the AI after a 429 that names no retry time
 MAX_RATE_LIMIT_PAUSE = 15 * 60
+
+# Gemini's reply: {"translations": [one string per text sent]}
+TRANSLATIONS_SCHEMA = {
+    "type": "OBJECT",
+    "properties": {"translations": {"type": "ARRAY", "items": {"type": "STRING"}}},
+    "required": ["translations"],
+}
 
 # Which engine produced each result of the last batch (main.py caches AI and fallback results under their own tier)
 SOURCE_LLM = "llm"
@@ -99,19 +106,6 @@ def _retry_after(resp: Response) -> float:
     # Gemini: {"error": {"details": [{"retryDelay": "31s"}]}}
     match = re.search(r'"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"', resp.text or "")
     return min(MAX_RATE_LIMIT_PAUSE, float(match.group(1))) if match else RATE_LIMIT_PAUSE
-
-
-def _error_message(resp: Response) -> str:
-    try:
-        body = resp.json()
-        err = body.get("error") if isinstance(body, dict) else None
-        if isinstance(err, dict):
-            return str(err.get("message") or err)[:200]
-        if err:
-            return str(err)[:200]
-    except ValueError:
-        pass
-    return (resp.text or "")[:200]
 
 
 class LLMTranslateProvider(TranslationProvider):
@@ -185,16 +179,11 @@ class LLMTranslateProvider(TranslationProvider):
         return await fetch("POST", url, json=payload, headers=headers, timeout=REQUEST_TIMEOUT)
 
     def _check(self, resp: Response) -> None:
-        if resp.status_code == 200:
-            return
-        message = _error_message(resp)
-        if resp.status_code == 429:
+        if resp.status_code == 429:  # Google/Bing translate while the AI service is paused
             pause = _retry_after(resp)
             self._paused_until = time.time() + pause
-            raise RateLimitError(f"AI rate limit, using Google/Bing for {int(pause)} s: {message}")
-        if resp.status_code in (401, 403) or "API_KEY_INVALID" in message or "API key not valid" in message:
-            raise ApiKeyError(f"{self.name}: invalid API key ({message})")
-        raise NetworkError(f"{self.name} error {resp.status_code}: {message}")
+            raise RateLimitError(f"AI rate limit, using Google/Bing for {int(pause)} s: {error_message(resp)}")
+        raise_for_api_error(resp, self.name)
 
     async def _gemini_request(self, system: str, user: str) -> str:
         payload = {
@@ -203,26 +192,13 @@ class LLMTranslateProvider(TranslationProvider):
             "generationConfig": {
                 "temperature": 0.2,
                 "responseMimeType": "application/json",
-                "responseSchema": {
-                    "type": "OBJECT",
-                    "properties": {"translations": {"type": "ARRAY", "items": {"type": "STRING"}}},
-                    "required": ["translations"],
-                },
+                "responseSchema": TRANSLATIONS_SCHEMA,
             },
         }
         # retired model -> current alias, thinking setting the model rejects -> less (gemini_api.generate)
         resp, _ = await gemini_api.generate(self._keys["gemini"], self.model, payload, REQUEST_TIMEOUT)
         self._check(resp)
-        body = resp.json()
-        usage = body.get("usageMetadata") or {}
-        if usage:
-            logger.debug(f"Gemini tokens: prompt={usage.get('promptTokenCount')}, "
-                         f"output={usage.get('candidatesTokenCount')}")
-        try:
-            parts = body["candidates"][0]["content"]["parts"]
-        except (KeyError, IndexError, TypeError):
-            raise NetworkError(f"Gemini returned no text (blocked? {json.dumps(body)[:200]})")
-        return "".join(p.get("text", "") for p in parts if not p.get("thought"))
+        return gemini_api.reply_text(resp)
 
     async def _openai_request(self, system: str, user: str) -> str:
         payload = {

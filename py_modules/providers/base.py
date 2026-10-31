@@ -81,11 +81,39 @@ async def fetch(method: str, url: str, timeout: float = 10, **kwargs) -> Respons
         _session = aiohttp.ClientSession()
     try:
         async with _session.request(method, url, timeout=aiohttp.ClientTimeout(total=timeout), **kwargs) as resp:
-            return Response(resp.status, await resp.text(), dict(resp.headers))
+            headers = {name.lower(): value for name, value in resp.headers.items()}  # looked up lower-case
+            return Response(resp.status, await resp.text(), headers)
     except asyncio.TimeoutError as e:
         raise NetworkError("Connection timed out") from e
     except aiohttp.ClientConnectionError as e:
         raise NetworkError("No internet connection") from e
+
+
+def error_message(resp: Response) -> str:
+    """The error text of a JSON API answer ({"error": {"message": ...}} or {"error": "..."}), else the start of the body."""
+    try:
+        body = resp.json()
+        err = body.get("error") if isinstance(body, dict) else None
+        if isinstance(err, dict):
+            return str(err.get("message") or err)[:200]
+        if err:
+            return str(err)[:200]
+    except ValueError:
+        pass
+    return (resp.text or "")[:200]
+
+
+def raise_for_api_error(resp: Response, service: str) -> None:
+    """A non-200 answer of an AI API (Gemini, OpenAI-compatible) as the plugin's errors: a bad key -> ApiKeyError,
+    a rate limit -> RateLimitError, anything else -> NetworkError."""
+    if resp.status_code == 200:
+        return
+    message = error_message(resp)
+    if resp.status_code in (401, 403) or "API_KEY_INVALID" in message or "API key not valid" in message:
+        raise ApiKeyError(f"{service}: invalid API key ({message})")
+    if resp.status_code == 429:
+        raise RateLimitError(f"{service}: rate limit ({message})")
+    raise NetworkError(f"{service} error {resp.status_code}: {message}")
 
 
 async def close_session() -> None:
