@@ -53,9 +53,6 @@ class TranslationCache:
             )
             """
         )
-        cols = [r[1] for r in self._conn.execute("PRAGMA table_info(translations)")]
-        if "source_text" not in cols:
-            self._conn.execute("ALTER TABLE translations ADD COLUMN source_text TEXT")
         self._conn.commit()
 
     def get_many(self, texts, source_lang, target_lang, min_tier):

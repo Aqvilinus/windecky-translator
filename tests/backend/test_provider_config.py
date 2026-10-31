@@ -16,10 +16,6 @@ class Configure(unittest.TestCase):
     def test_saved_choices_win(self):
         self.assertEqual(self.prefs(ocr_provider="ocrspace", translation_provider="ct2"), ("ocrspace", "ct2"))
 
-    def test_google_cloud_ocr_without_saved_translation(self):
-        self.assertEqual(self.prefs(ocr_provider="googlecloud"), ("googlecloud", "googlecloud"))
-        self.assertEqual(self.prefs(ocr_provider="windows_ocr"), ("windows_ocr", "freegoogle"))
-
 
 if __name__ == "__main__":
     unittest.main()

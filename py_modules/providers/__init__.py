@@ -133,9 +133,6 @@ class ProviderManager:
             self._ocr_provider_preference = ocr_provider
         if translation_provider:
             self._translation_provider_preference = translation_provider
-        elif ocr_provider:
-            # no translation provider saved yet: Google Cloud OCR goes with Google Cloud translation
-            self._translation_provider_preference = "googlecloud" if ocr_provider == "googlecloud" else "freegoogle"
 
         # Update Google Cloud providers with new API key
         if ProviderType.GOOGLE in self._ocr_providers:

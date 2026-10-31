@@ -81,10 +81,7 @@ if os.path.isdir(os.path.join(BIN_PYTHON_DIR, "python")):
     os.add_dll_directory(os.path.join(BIN_PYTHON_DIR, "python"))
 
 # Now import third-party libraries (after sys.path is configured)
-try:
-    import decky_plugin  # Decky's legacy name for the plugin API module
-except ImportError:
-    import decky as decky_plugin  # the current name, in case a Decky release drops the old one
+import decky  # Decky Loader's plugin API (typings/decky.pyi)
 
 # Import provider system
 from providers import ProviderManager, NetworkError, ApiKeyError, RateLimitError, OCRError, TranslationError
@@ -174,18 +171,9 @@ _url_redact_filter = UrlKeyRedactFilter()
 
 
 # Decky sets these for each plugin backend
-settingsDir = os.environ.get("DECKY_PLUGIN_SETTINGS_DIR", getattr(decky_plugin, "DECKY_PLUGIN_SETTINGS_DIR", ""))
-
-# Set up logging
-logger = decky_plugin.logger
-
-# Make sure we use the right paths
-DECKY_PLUGIN_DIR = os.environ.get("DECKY_PLUGIN_DIR", decky_plugin.DECKY_PLUGIN_DIR)
-DECKY_PLUGIN_LOG_DIR = os.environ.get("DECKY_PLUGIN_LOG_DIR", decky_plugin.DECKY_PLUGIN_LOG_DIR)
-
-# Log configured paths for debugging
-logger.debug(f"DECKY_PLUGIN_DIR: {DECKY_PLUGIN_DIR}")
-logger.debug(f"DECKY_PLUGIN_LOG_DIR: {DECKY_PLUGIN_LOG_DIR}")
+settingsDir = decky.DECKY_PLUGIN_SETTINGS_DIR
+logger = decky.logger
+DECKY_PLUGIN_LOG_DIR = decky.DECKY_PLUGIN_LOG_DIR
 
 # Ensure log directory exists
 os.makedirs(DECKY_PLUGIN_LOG_DIR, exist_ok=True)
@@ -261,7 +249,7 @@ class SettingsManager:
             else:
                 logger.warning(f"Settings file does not exist: {self.settings_path}")
         except (ValueError, UnicodeDecodeError) as e:
-            # damaged file (e.g. written by an older version that was cut off): keep what is in memory, and keep the
+            # damaged file (e.g. a write cut off by a crash): keep what is in memory, and keep the
             # damaged file aside instead of letting the next save replace it
             logger.error(f"Settings file is damaged ({e}); kept as {self.settings_path}.damaged")
             try:
@@ -625,13 +613,8 @@ class Plugin:
     # Windows: Ctrl+Alt+T in a game (hotkey thread) -> the frontend translates or dismisses (src/windows.ts)
     def _emit(self, event, *args):
         """Send an event to the frontend from any thread (the hotkey's)."""
-        try:
-            import decky
-            emit = decky.emit
-        except (ImportError, AttributeError):
-            emit = getattr(decky_plugin, "emit", None)
-        if emit and self._loop:
-            asyncio.run_coroutine_threadsafe(emit(event, *args), self._loop)
+        if self._loop:
+            asyncio.run_coroutine_threadsafe(decky.emit(event, *args), self._loop)
 
     def _on_hotkey(self):
         # A paused game is resumed here too, not only when the frontend hides the translation: if Steam's UI hangs or
@@ -1075,33 +1058,10 @@ class Plugin:
 
             self._google_api_key = load_api_key("google_api_key")
             self._gemini_api_key = load_api_key("gemini_api_key")
-            # One-shot: the old fixed default models answer 404 for new API keys ("no longer available to new
-            # users"); move settings still on them to Google's current-model aliases
-            if not self._settings.get_setting("gemini_alias_migrated_v1", False):
-                for key, old, new in (("gemini_model", "gemini-2.5-flash", "gemini-3.5-flash"),
-                                      ("llm_gemini_model", "gemini-2.5-flash-lite", "gemini-flash-lite-latest")):
-                    if self._settings.get_setting(key) == old:
-                        self._settings.set_setting(key, new)
-                        logger.info(f"Migrated {key} {old} -> {new}")
-                self._settings.set_setting("gemini_alias_migrated_v1", True)
             self._gemini_model = self._settings.get_setting("gemini_model", "gemini-3.5-flash")
 
-            saved_ocr_provider = self._settings.get_setting("ocr_provider")
-            if saved_ocr_provider is not None:
-                self._ocr_provider = saved_ocr_provider
-            else:
-                self._settings.set_setting("ocr_provider", self._ocr_provider)
-
-            # Load translation provider
-            saved_translation_provider = self._settings.get_setting("translation_provider")
-            if saved_translation_provider is not None:
-                self._translation_provider = saved_translation_provider
-            else:
-                if self._ocr_provider == "googlecloud":
-                    self._translation_provider = "googlecloud"
-                else:
-                    self._translation_provider = "freegoogle"
-                self._settings.set_setting("translation_provider", self._translation_provider)
+            self._ocr_provider = load_setting("ocr_provider", self._ocr_provider)
+            self._translation_provider = load_setting("translation_provider", self._translation_provider)
 
             # Downloaded models (NLLB, Chrome Screen AI) live in the settings folder, so they survive plugin
             # updates
