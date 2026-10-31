@@ -7,6 +7,7 @@ import { addEventListener, call, removeEventListener, toaster } from '@decky/api
 import { Router } from '@decky/ui';
 import { ImageState } from './Overlay';
 import type { GameTranslatorLogic } from './Translator';
+import { logger } from './Logger';
 
 // The translate/close hotkey (py_modules/winport/hotkey.py HOTKEY)
 export const WINDOWS_HOTKEY = 'Ctrl+Alt+T';
@@ -60,7 +61,9 @@ export function forwardOverlayToBackend(state: ImageState, dismiss: () => void):
 export function listenForHotkey(logic: GameTranslatorLogic): () => void {
     const onHotkey = () => {
         if (logic.imageState.isVisible()) logic.dismiss();
-        else closeAllSideMenus().then(() => logic.takeScreenshotAndTranslate());
+        else closeAllSideMenus()
+            .then(() => logic.takeScreenshotAndTranslate())
+            .catch(err => logger.error('Hotkey', 'Translation failed', err));
     };
     addEventListener('translator_hotkey', onHotkey);
     return () => removeEventListener('translator_hotkey', onHotkey);
@@ -103,6 +106,8 @@ function anySideMenuOpen(stores = menuStores()): boolean {
 // was captured and translated along with the game. Close them in every window, then wait until none shows a side
 // menu, plus the closing animation.
 export async function closeAllSideMenus(): Promise<void> {
+    // Big Picture's own menu; guarded like the stores below, so a Steam update that renames it doesn't break Translate
+    try { Router.CloseSideMenus?.(); } catch { /* the menu stores below still close theirs */ }
     const stores = menuStores();
     let closed = false;
     for (const s of stores) {
