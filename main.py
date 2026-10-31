@@ -338,11 +338,6 @@ class Plugin:
                                     "width": cap.width, "height": cap.height, "image": cap.image, "ocr_pending": True,
                                     "path": path}
             return {"path": path}
-        except TimeoutError:
-            logger.exception("Screenshot error")
-            # Windows.Graphics.Capture gives no frames for a game in exclusive fullscreen
-            return {"path": "", "error": "Windows gave no picture of the game: if it runs in exclusive fullscreen, "
-                                         "switch it to borderless or windowed"}
         except Exception as e:  # noqa: BLE001 - reported to the user, details in the log
             logger.exception("Screenshot error")
             return {"path": "", "error": f"Screen capture failed: {e}"}
@@ -746,21 +741,16 @@ class Plugin:
 
     async def _unload(self):
         logger.info("Unloading plugin")
-        # each step on its own, so one failure doesn't skip the rest; the quick ones that matter most first
-        steps = [
-            ("resume paused games", self._resume_paused_games),  # never leave a game paused
-            ("release Ctrl+Alt+T", lambda: self._hotkey and self._hotkey.close()),
-            ("close the overlay", lambda: self._overlay and self._overlay.stop()),
-            ("stop the workers", lambda: self._provider_manager and self._provider_manager.shutdown()),
-            ("close the translation cache", lambda: self._translation_cache and self._translation_cache.close()),
-        ]
-        for what, step in steps:
-            try:
-                step()
-            except Exception:  # noqa: BLE001 - go on with the next step
-                logger.exception(f"Unload: could not {what}")
-        self._hotkey = self._overlay = self._translation_cache = None
         try:
+            self._resume_paused_games()  # first: never leave a game paused
+            if self._hotkey:
+                self._hotkey.close()
+            if self._overlay:
+                self._overlay.stop()
+            if self._provider_manager:
+                self._provider_manager.shutdown()
+            if self._translation_cache:
+                self._translation_cache.close()
             await close_session()
         except Exception:  # noqa: BLE001
-            logger.exception("Unload: could not close the HTTP session")
+            logger.exception("Error during plugin unload")
