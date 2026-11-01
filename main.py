@@ -5,7 +5,6 @@ import sys
 import traceback
 import time
 from datetime import datetime
-from pathlib import Path
 import logging
 import json
 import sqlite3
@@ -76,24 +75,12 @@ from plugin_settings import (API_KEY_SETTINGS, PROVIDER_SETTINGS, SETTING_DEFAUL
                              clean_pasted_key, mask_key)
 
 
-
-# Decky sets these for each plugin backend
 SETTINGS_DIR = decky.DECKY_PLUGIN_SETTINGS_DIR
+# The root logger: Decky writes it to a new file in the plugin's log folder on every start and keeps the last 4
 logger = decky.logger
-DECKY_PLUGIN_LOG_DIR = decky.DECKY_PLUGIN_LOG_DIR
-
-os.makedirs(DECKY_PLUGIN_LOG_DIR, exist_ok=True)
-
-from logging.handlers import TimedRotatingFileHandler
-
-log_file = Path(DECKY_PLUGIN_LOG_DIR) / "decky-translator.log"
-log_file_handler = TimedRotatingFileHandler(log_file, when="midnight", backupCount=2, encoding="utf-8")
-log_file_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
-log_file_handler.addFilter(RedactKeysFilter())
-logger.handlers.clear()
-logger.addHandler(log_file_handler)
+for _handler in logger.handlers:
+    _handler.addFilter(RedactKeysFilter())  # a handler filter also sees the providers' records, a logger filter not
 logger.setLevel(logging.INFO)
-logger.info(f"Configured rotating log file: {log_file}")
 
 try:
     with open(os.path.join(PLUGIN_DIR, "package.json"), encoding="utf-8") as _pkg:

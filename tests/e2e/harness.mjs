@@ -5,7 +5,7 @@
 // while it is attached wait for it, and a test that hangs or is killed leaves them frozen (it froze the in-game Steam
 // overlay once). This one attaches only to the windows it uses, one call at a time, each with a timeout.
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -15,7 +15,12 @@ export const ARTIFACTS = join(ROOT, 'tests', 'e2e', 'artifacts');
 const CDP = 'http://127.0.0.1:8080/json';
 const PYTHON = join(ROOT, 'bin', 'python314', 'python', 'python.exe');
 const WIN32 = join(ROOT, 'tests', 'e2e', 'win32.py');
-const LOG = join(process.env.USERPROFILE || '', 'homebrew', 'logs', 'decky-translator', 'decky-translator.log');
+const LOG_DIR = join(process.env.USERPROFILE || '', 'homebrew', 'logs', 'decky-translator');
+// Decky starts a new log file on every plugin start: the newest one is this run's
+const latestLog = () => existsSync(LOG_DIR)
+    ? readdirSync(LOG_DIR).filter(f => f.endsWith('.log')).map(f => join(LOG_DIR, f))
+        .sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)[0]
+    : undefined;
 const QUICK_ACCESS_DECKY_TAB = 999;  // @decky/ui QuickAccessTab.Decky
 
 export const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -43,12 +48,16 @@ export function artifact(name) {
 }
 
 export class Log {
-    mark() { this.offset = existsSync(LOG) ? statSync(LOG).size : 0; }
+    mark() {
+        this.file = latestLog();
+        this.offset = this.file ? statSync(this.file).size : 0;
+    }
     lines() {
-        if (!existsSync(LOG)) return [];
-        const buf = readFileSync(LOG);
-        // after a rotation the file starts over: read it from the start then
-        return buf.subarray(buf.length >= this.offset ? this.offset : 0).toString('utf8').split(/\r?\n/).filter(Boolean);
+        const file = latestLog();
+        if (!file) return [];
+        // a reloaded plugin writes a new file: read that one from the start
+        const buf = readFileSync(file);
+        return buf.subarray(file === this.file ? this.offset : 0).toString('utf8').split(/\r?\n/).filter(Boolean);
     }
     find(rx) { return this.lines().find(l => rx.test(l)); }
 }
