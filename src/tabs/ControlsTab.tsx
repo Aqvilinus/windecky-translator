@@ -38,7 +38,7 @@ const WindowsStatus: VFC = () => {
     );
 };
 
-export const TabControls: VFC = () => {
+export const ControlsTab: VFC = () => {
     const { settings, updateSetting } = useSettings();
 
     return (

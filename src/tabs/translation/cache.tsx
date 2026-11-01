@@ -6,17 +6,17 @@ import { HiTrash, HiXCircle, HiExclamationTriangle } from "react-icons/hi2";
 import { languageOptions } from "./languages";
 
 // who translated a cached line: a translation engine, or Gemini Vision (OCR and translation in one)
-export const cacheProviderLabel = (p: string) =>
+export const providerLabel = (p: string) =>
     ({ ...TRANSLATION_PROVIDER_LABELS, gemini_vision: OCR_PROVIDER_LABELS.gemini_vision } as Record<string, string>)[p] || p || "?";
 
-export const cacheLangFlag = (code: string) => {
+export const languageFlag = (code: string) => {
     const opt = languageOptions.find(o => o.data === code);
     return opt ? opt.label.split(" ")[0] : code;
 };
 
 // compare by word content only, ignoring spacing, punctuation and case
-export const cacheWordContent = (s: string) => (s || "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
-export const cacheSameText = (a: string, b: string) => cacheWordContent(a) === cacheWordContent(b);
+export const normalizeText = (s: string) => (s || "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+export const sameText = (a: string, b: string) => normalizeText(a) === normalizeText(b);
 
 // matches the backend MAX_ROWS eviction cap, so we load every cached entry
 export const CACHE_ENTRY_LIMIT = 50000;
@@ -47,7 +47,7 @@ export const CacheEntriesModal: VFC<{ closeModal?: () => void; onCleared?: () =>
     const all = entries || [];
     const shown = filter === "all"
         ? all
-        : all.filter(e => cacheSameText(e.source, e.translation) === (filter === "identical"));
+        : all.filter(e => sameText(e.source, e.translation) === (filter === "identical"));
     const totalPages = Math.max(1, Math.ceil(shown.length / CACHE_PAGE_SIZE));
     const pageItems = shown.slice(page * CACHE_PAGE_SIZE, (page + 1) * CACHE_PAGE_SIZE);
 
@@ -168,16 +168,16 @@ export const CacheEntriesModal: VFC<{ closeModal?: () => void; onCleared?: () =>
                                         style={{ flex: "1 1 auto", minWidth: 0, display: "flex", flexDirection: "column", gap: "2px", padding: "8px 0 8px 10px", scrollMargin: "8px" }}
                                     >
                                         <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", color: "rgba(255,255,255,0.28)", fontSize: "9px" }}>
-                                            <span><span style={{ fontWeight: "bold" }}>Translated with:</span> {cacheProviderLabel(e.provider)}</span>
+                                            <span><span style={{ fontWeight: "bold" }}>Translated with:</span> {providerLabel(e.provider)}</span>
                                             <span><span style={{ fontWeight: "bold" }}>Date:</span> {e.createdAt ? new Date(e.createdAt * 1000).toLocaleString([], { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : ""}</span>
                                             <span><span style={{ fontWeight: "bold" }}>Reused:</span> {e.hits} {e.hits === 1 ? "time" : "times"}</span>
                                         </div>
                                         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                                            <span style={{ fontSize: "14px", flexShrink: 0, width: "20px", textAlign: "center" }}>{cacheLangFlag(e.sourceLang)}</span>
+                                            <span style={{ fontSize: "14px", flexShrink: 0, width: "20px", textAlign: "center" }}>{languageFlag(e.sourceLang)}</span>
                                             <span style={{ color: "#dcdedf", fontSize: "11px", flex: "1 1 auto", minWidth: 0 }}>{e.source}</span>
                                         </div>
                                         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                                            <span style={{ fontSize: "14px", flexShrink: 0, width: "20px", textAlign: "center" }}>{cacheLangFlag(e.targetLang)}</span>
+                                            <span style={{ fontSize: "14px", flexShrink: 0, width: "20px", textAlign: "center" }}>{languageFlag(e.targetLang)}</span>
                                             <span style={{ color: "#6fcf97", fontStyle: "italic", fontSize: "11px", flex: "1 1 auto", minWidth: 0 }}>{e.translation}</span>
                                         </div>
                                     </Focusable>

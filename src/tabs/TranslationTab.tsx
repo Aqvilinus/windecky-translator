@@ -1,11 +1,10 @@
-import { PanelSection, PanelSectionRow, Dropdown, DropdownItem, SliderField, ToggleField, ButtonItem, DialogButton, Field, Focusable } from "@decky/ui";
+import { PanelSection, PanelSectionRow, Dropdown, DropdownItem, SliderField, ToggleField, ButtonItem, Field, Focusable } from "@decky/ui";
 import { showModal } from "../steam";
 import { VFC, useState, useEffect, useRef, useCallback } from "react";
 import { backend } from "../backend";
 import { useSettings } from "../settings";
-import { CONFIDENCE_OCR_PROVIDERS } from "../providers";
-import { LLM_DEFAULT_MODELS, LLM_KEY_SETTING, LLM_MODEL_SETTING, llmConfigured, llmModel } from "../providers";
-import { HiKey, HiLockClosed, HiInformationCircle } from "react-icons/hi2";
+import { CONFIDENCE_OCR_PROVIDERS, LLM_DEFAULT_MODELS, LLM_KEY_SETTING, LLM_MODEL_SETTING, llmConfigured, llmModel } from "../providers";
+import { HiLockClosed, HiInformationCircle } from "react-icons/hi2";
 import { BsStars, BsWindows } from "react-icons/bs";
 import googlecloudLogo from "../../assets/googlecloud-logo.png";
 import googletranslateLogo from "../../assets/googletranslate-logo.png";
@@ -13,25 +12,25 @@ import geminiLogo from "../../assets/gemini-logo.png";
 import steamdeckLogo from "../../assets/steamdeck-logo.png";
 import chromeLogo from "../../assets/chrome-logo.png";
 import { languageOptions, selectLanguageOption, languageLabel, outputLanguageOptions } from "./translation/languages";
-import { ApiKeyModal, CustomServerModal } from "./translation/dialogs";
+import { ApiKeyModal, CustomServerModal, KeyButton } from "./translation/dialogs";
 import { CacheEntriesModal } from "./translation/cache";
 import { llmBackendOptions, modelOption, ModelPicker, knownGeminiModels } from "./translation/models";
-import { useChromeScreenAIStatus, useNllbModelStatus, ModelActionButton, ModelStatusIndicator, ModelHeadingProgressBar, ModelDownloadError, ProviderRating } from "./translation/downloads";
+import { useModelDownload, ModelActionButton, ModelStatusIndicator, ModelProgressBar, ModelDownloadError, ProviderRating } from "./translation/downloads";
 
 // a scroll before Steam's tab transition and focus router settle gets overridden
 const TAB_TRANSITION_SETTLE_MS = 400;
 
-interface TabTranslationProps {
+interface TranslationTabProps {
     scrollTarget?: string | null;
     onScrolled?: () => void;
 }
 
-export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrolled }) => {
+export const TranslationTab: VFC<TranslationTabProps> = ({ scrollTarget, onScrolled }) => {
     const { settings, updateSetting } = useSettings();
     const chromescreenaiActionRef = useRef<HTMLDivElement>(null);
     const ct2ActionRef = useRef<HTMLDivElement>(null);
-    const csai = useChromeScreenAIStatus();
-    const nllb = useNllbModelStatus();
+    const csai = useModelDownload('chromescreenai', 80);  // sizes until the backend answers
+    const nllb = useModelDownload('nllb', 1410);
     const [cacheEntries, setCacheEntries] = useState<number | null>(null);
     const [windowsOcrLanguages, setWindowsOcrLanguages] = useState<string[] | null>(null);
 
@@ -136,60 +135,28 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                             />
                             </div>
                             {settings.ocrProvider === 'googlecloud' && (
-                                <DialogButton
-                                    onClick={() => {
-                                        showModal(
-                                            <ApiKeyModal
-                                                currentKey={settings.googleApiKey}
-                                                onSave={(key) => updateSetting('googleApiKey', key, 'Google API Key')}
-                                                title="Google Cloud API Key"
-                                                description="Enter your Google Cloud API key for Vision and Translation services."
-                                            />
-                                        );
-                                    }}
-                                    style={{ minWidth: "40px", width: "40px", padding: "10px 0" }}
-                                >
-                                    <div style={{ position: "relative", display: "inline-flex" }}>
-                                        <HiKey />
-                                        <div style={{
-                                            position: "absolute",
-                                            bottom: "-8px",
-                                            right: "-6px",
-                                            width: "6px",
-                                            height: "6px",
-                                            borderRadius: "50%",
-                                            backgroundColor: settings.googleApiKey ? "#4caf50" : "#ff6b6b"
-                                        }} />
-                                    </div>
-                                </DialogButton>
+                                <KeyButton hasKey={!!settings.googleApiKey} onClick={() => {
+                                    showModal(
+                                        <ApiKeyModal
+                                            currentKey={settings.googleApiKey}
+                                            onSave={(key) => updateSetting('googleApiKey', key, 'Google API Key')}
+                                            title="Google Cloud API Key"
+                                            description="Enter your Google Cloud API key for Vision and Translation services."
+                                        />
+                                    );
+                                }} />
                             )}
                             {settings.ocrProvider === 'gemini_vision' && (
-                                <DialogButton
-                                    onClick={() => {
-                                        showModal(
-                                            <ApiKeyModal
-                                                currentKey={settings.geminiApiKey}
-                                                onSave={(key) => updateSetting('geminiApiKey', key, 'Gemini API Key')}
-                                                title="Gemini API Key"
-                                                description="Enter your free Gemini API key from aistudio.google.com."
-                                            />
-                                        );
-                                    }}
-                                    style={{ minWidth: "40px", width: "40px", padding: "10px 0" }}
-                                >
-                                    <div style={{ position: "relative", display: "inline-flex" }}>
-                                        <HiKey />
-                                        <div style={{
-                                            position: "absolute",
-                                            bottom: "-8px",
-                                            right: "-6px",
-                                            width: "6px",
-                                            height: "6px",
-                                            borderRadius: "50%",
-                                            backgroundColor: settings.geminiApiKey ? "#4caf50" : "#ff6b6b"
-                                        }} />
-                                    </div>
-                                </DialogButton>
+                                <KeyButton hasKey={!!settings.geminiApiKey} onClick={() => {
+                                    showModal(
+                                        <ApiKeyModal
+                                            currentKey={settings.geminiApiKey}
+                                            onSave={(key) => updateSetting('geminiApiKey', key, 'Gemini API Key')}
+                                            title="Gemini API Key"
+                                            description="Enter your free Gemini API key from aistudio.google.com."
+                                        />
+                                    );
+                                }} />
                             )}
                             {settings.ocrProvider === 'chromescreenai' && (
                                 <ModelActionButton state={csai} actionRef={chromescreenaiActionRef} />
@@ -222,7 +189,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                             <img src={chromeLogo} alt="" style={{ height: "18px" }} />
                                             <span style={{ fontWeight: "bold", color: "#dcdedf" }}>On-Device (Chrome Screen AI)</span>
                                         </div>
-                                        <ModelHeadingProgressBar state={csai} />
+                                        <ModelProgressBar state={csai} />
                                     </div>
                                     <ModelStatusIndicator state={csai} />
                                     <ModelDownloadError state={csai} />
@@ -358,79 +325,47 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                 />
                             </div>
                             {settings.translationProvider === 'llm' && (
-                                <DialogButton
-                                    onClick={() => {
-                                        if (settings.llmBackend === 'custom') {
-                                            showModal(
-                                                <CustomServerModal
-                                                    url={settings.llmCustomUrl}
-                                                    apiKey={settings.llmCustomApiKey}
-                                                    model={settings.llmCustomModel}
-                                                    onSave={(url, key, model) => {
-                                                        updateSetting('llmCustomUrl', url, 'AI server address');
-                                                        updateSetting('llmCustomApiKey', key, 'AI server key');
-                                                        updateSetting('llmCustomModel', model, 'AI model');
-                                                    }}
-                                                />
-                                            );
-                                            return;
-                                        }
-                                        const isGemini = settings.llmBackend === 'gemini';
-                                        const keySetting = LLM_KEY_SETTING[settings.llmBackend];
+                                <KeyButton hasKey={llmConfigured(settings)} onClick={() => {
+                                    if (settings.llmBackend === 'custom') {
                                         showModal(
-                                            <ApiKeyModal
-                                                currentKey={String(settings[keySetting] || '')}
-                                                onSave={(key) => updateSetting(keySetting, key, isGemini ? 'Gemini API Key' : 'Groq API Key')}
-                                                title={isGemini ? "Gemini API Key" : "Groq API Key"}
-                                                description={isGemini
-                                                    ? "Free key at aistudio.google.com. In the EU/EEA, UK and Switzerland Google's terms allow only paid use: enable billing on the key's project (game text costs cents a month). Also used by Gemini Vision."
-                                                    : "Free key at console.groq.com (no card needed)."}
+                                            <CustomServerModal
+                                                url={settings.llmCustomUrl}
+                                                apiKey={settings.llmCustomApiKey}
+                                                model={settings.llmCustomModel}
+                                                onSave={(url, key, model) => {
+                                                    updateSetting('llmCustomUrl', url, 'AI server address');
+                                                    updateSetting('llmCustomApiKey', key, 'AI server key');
+                                                    updateSetting('llmCustomModel', model, 'AI model');
+                                                }}
                                             />
                                         );
-                                    }}
-                                    style={{ minWidth: "40px", width: "40px", padding: "10px 0" }}
-                                >
-                                    <div style={{ position: "relative", display: "inline-flex" }}>
-                                        <HiKey />
-                                        <div style={{
-                                            position: "absolute",
-                                            bottom: "-8px",
-                                            right: "-6px",
-                                            width: "6px",
-                                            height: "6px",
-                                            borderRadius: "50%",
-                                            backgroundColor: llmConfigured(settings) ? "#4caf50" : "#ff6b6b"
-                                        }} />
-                                    </div>
-                                </DialogButton>
+                                        return;
+                                    }
+                                    const isGemini = settings.llmBackend === 'gemini';
+                                    const keySetting = LLM_KEY_SETTING[settings.llmBackend];
+                                    showModal(
+                                        <ApiKeyModal
+                                            currentKey={String(settings[keySetting] || '')}
+                                            onSave={(key) => updateSetting(keySetting, key, isGemini ? 'Gemini API Key' : 'Groq API Key')}
+                                            title={isGemini ? "Gemini API Key" : "Groq API Key"}
+                                            description={isGemini
+                                                ? "Free key at aistudio.google.com. In the EU/EEA, UK and Switzerland Google's terms allow only paid use: enable billing on the key's project (game text costs cents a month). Also used by Gemini Vision."
+                                                : "Free key at console.groq.com (no card needed)."}
+                                        />
+                                    );
+                                }} />
                             )}
                             {settings.translationProvider === 'googlecloud' && (
-                                <DialogButton
-                                    onClick={() => {
-                                        showModal(
-                                            <ApiKeyModal
-                                                currentKey={settings.googleApiKey}
-                                                onSave={(key) => updateSetting('googleApiKey', key, 'Google API Key')}
-                                                title="Google Cloud API Key"
-                                                description="Enter your Google Cloud API key for Translation services."
-                                            />
-                                        );
-                                    }}
-                                    style={{ minWidth: "40px", width: "40px", padding: "10px 0" }}
-                                >
-                                    <div style={{ position: "relative", display: "inline-flex" }}>
-                                        <HiKey />
-                                        <div style={{
-                                            position: "absolute",
-                                            bottom: "-8px",
-                                            right: "-6px",
-                                            width: "6px",
-                                            height: "6px",
-                                            borderRadius: "50%",
-                                            backgroundColor: settings.googleApiKey ? "#4caf50" : "#ff6b6b"
-                                        }} />
-                                    </div>
-                                </DialogButton>
+                                <KeyButton hasKey={!!settings.googleApiKey} onClick={() => {
+                                    showModal(
+                                        <ApiKeyModal
+                                            currentKey={settings.googleApiKey}
+                                            onSave={(key) => updateSetting('googleApiKey', key, 'Google API Key')}
+                                            title="Google Cloud API Key"
+                                            description="Enter your Google Cloud API key for Translation services."
+                                        />
+                                    );
+                                }} />
                             )}
                             {settings.translationProvider === 'ct2' && (
                                 <ModelActionButton state={nllb} actionRef={ct2ActionRef} />
@@ -544,7 +479,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                             <img src={steamdeckLogo} alt="" style={{ height: "18px" }} />
                                             <span style={{ fontWeight: "bold", color: "#dcdedf" }}>On-Device (NLLB-200 1.3B)</span>
                                         </div>
-                                        <ModelHeadingProgressBar state={nllb} />
+                                        <ModelProgressBar state={nllb} />
                                     </div>
                                     <ModelStatusIndicator state={nllb} />
                                     <ModelDownloadError state={nllb} />

@@ -19,8 +19,9 @@ import { SettingsProvider, useSettings, loadSettings } from "./settings";
 import { logger } from "./log";
 import { WEB_OCR_PROVIDERS, WEB_TRANSLATION_PROVIDERS } from "./providers";
 
-import { TabMain, TabTranslation, TabControls } from "./tabs";
-import type { InstalledModels } from "./tabs/TabMain";
+import { MainTab, type InstalledModels } from "./tabs/MainTab";
+import { TranslationTab } from "./tabs/TranslationTab";
+import { ControlsTab } from "./tabs/ControlsTab";
 
 const IconTranslate = () => (
     <svg style={{ display: "block" }} width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -168,19 +169,19 @@ const GameTranslator: VFC<{ translator: Translator }> = ({ translator }) => {
                         {
                             // @ts-ignore
                             title: <IconTranslate />,
-                            content: <TabMain translator={translator} overlayVisible={overlayVisible} models={models} webReachability={webReachability} onNavigateToTab={handleNavigateToTab} />,
+                            content: <MainTab translator={translator} overlayVisible={overlayVisible} models={models} webReachability={webReachability} onNavigateToTab={handleNavigateToTab} />,
                             id: "main",
                         },
                         {
                             // @ts-ignore
                             title: <IconLanguage />,
-                            content: <TabTranslation scrollTarget={pendingScrollTarget} onScrolled={() => setPendingScrollTarget(null)} />,
+                            content: <TranslationTab scrollTarget={pendingScrollTarget} onScrolled={() => setPendingScrollTarget(null)} />,
                             id: "translation",
                         },
                         {
                             // @ts-ignore
                             title: <IconGear />,
-                            content: <TabControls />,
+                            content: <ControlsTab />,
                             id: "controls",
                         }
                     ]}

@@ -79,14 +79,6 @@ export function useModelDownload(kind: ModelKind, approxMb: number): ModelDownlo
     return { status, isDownloading, isDownloaded, progressPct, statusColor, statusText, ActionIcon, onActionClick };
 }
 
-export function useChromeScreenAIStatus() {
-    return useModelDownload('chromescreenai', 80);  // until the backend answers (chrome_screen_ai.py)
-}
-
-export function useNllbModelStatus() {
-    return useModelDownload('nllb', 1410);
-}
-
 export const ModelActionButton: VFC<{
     state: ModelDownloadState;
     actionRef?: RefObject<HTMLDivElement>;
@@ -132,7 +124,7 @@ export const ModelStatusIndicator: VFC<{ state: ModelDownloadState }> = ({ state
     </div>
 );
 
-export const ModelHeadingProgressBar: VFC<{ state: ModelDownloadState }> = ({ state }) => (
+export const ModelProgressBar: VFC<{ state: ModelDownloadState }> = ({ state }) => (
     state.isDownloading ? (
         <div style={{ margin: "2px 0 4px 26px" }}>
             <ProgressBar nProgress={state.progressPct} />

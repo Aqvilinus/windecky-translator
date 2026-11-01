@@ -16,39 +16,12 @@ import { LLM_BACKEND_LABELS, llmModel } from "../providers";
 import { logger } from "../log";
 import { closeAllSideMenus } from "../steam";
 
-const StatusDot: VFC<{ ok: boolean }> = ({ ok }) => (
-    <span style={{
-        display: 'inline-block',
-        width: '5px',
-        height: '5px',
-        borderRadius: '50%',
-        backgroundColor: ok ? '#4caf50' : '#ff6b6b',
-        marginRight: '6px',
-        flexShrink: 0
-    }} />
-);
+const DOT_OK = '#4caf50', DOT_FAILED = '#ff6b6b', DOT_PENDING = '#888', DOT_INSTALLING = '#ffa726';
 
-const PendingDot: VFC = () => (
+const Dot: VFC<{ color: string }> = ({ color }) => (
     <span style={{
-        display: 'inline-block',
-        width: '5px',
-        height: '5px',
-        borderRadius: '50%',
-        backgroundColor: '#888',
-        marginRight: '6px',
-        flexShrink: 0
-    }} />
-);
-
-const InstallingDot: VFC = () => (
-    <span style={{
-        display: 'inline-block',
-        width: '5px',
-        height: '5px',
-        borderRadius: '50%',
-        backgroundColor: '#ffa726',
-        marginRight: '6px',
-        flexShrink: 0
+        display: 'inline-block', width: '5px', height: '5px', borderRadius: '50%', backgroundColor: color,
+        marginRight: '6px', flexShrink: 0
     }} />
 );
 
@@ -58,14 +31,14 @@ const ReachabilityRow: VFC<{ result: ReachResult; expectedProvider: string }> = 
     if (!result || result.provider !== expectedProvider) {
         return (
             <div style={{ color: '#666', fontSize: '10px', display: 'flex', alignItems: 'center' }}>
-                <PendingDot />
+                <Dot color={DOT_PENDING} />
                 <span>Checking...</span>
             </div>
         );
     }
     return (
         <div style={{ color: '#666', fontSize: '10px', display: 'flex', alignItems: 'center' }}>
-            <StatusDot ok={result.ok} />
+            <Dot color={result.ok ? DOT_OK : DOT_FAILED} />
             <span>{result.ok ? 'Ready' : `Not ready (${result.reason || 'unreachable'})`}</span>
         </div>
     );
@@ -73,7 +46,7 @@ const ReachabilityRow: VFC<{ result: ReachResult; expectedProvider: string }> = 
 
 export type InstalledModels = Record<ModelKind, ModelStatus | null>;
 
-interface TabMainProps {
+interface MainTabProps {
     translator: Translator;
     overlayVisible: boolean;
     models: InstalledModels | null;
@@ -84,7 +57,7 @@ interface TabMainProps {
     onNavigateToTab: (tabId: string, scrollTargetId?: string) => void;
 }
 
-export const TabMain: VFC<TabMainProps> = ({ translator, overlayVisible, models, webReachability, onNavigateToTab }) => {
+export const MainTab: VFC<MainTabProps> = ({ translator, overlayVisible, models, webReachability, onNavigateToTab }) => {
     const { settings, updateSetting } = useSettings();
 
     const ocrNeedsDownload =
@@ -98,7 +71,7 @@ export const TabMain: VFC<TabMainProps> = ({ translator, overlayVisible, models,
     const handleButtonClick = () => {
         if (overlayVisible) {
             translator.dismiss();
-            closeAllSideMenus().catch(err => logger.error('TabMain', 'Closing the side menu failed', err));
+            closeAllSideMenus().catch(err => logger.error('MainTab', 'Closing the side menu failed', err));
             return;
         }
         if (ocrNeedsDownload) {
@@ -111,7 +84,7 @@ export const TabMain: VFC<TabMainProps> = ({ translator, overlayVisible, models,
         }
         closeAllSideMenus()
             .then(() => translator.translateScreen())
-            .catch(err => logger.error('TabMain', 'Screenshot failed', err));
+            .catch(err => logger.error('MainTab', 'Screenshot failed', err));
     };
 
     const renderButtonContent = () => {
@@ -173,12 +146,12 @@ export const TabMain: VFC<TabMainProps> = ({ translator, overlayVisible, models,
                                         <div style={{ color: '#666', fontSize: '10px', display: 'flex', alignItems: 'center' }}>
                                             {models?.chromescreenai?.downloading ? (
                                                 <>
-                                                    <InstallingDot />
+                                                    <Dot color={DOT_INSTALLING} />
                                                     <span>Installing...</span>
                                                 </>
                                             ) : (
                                                 <>
-                                                    <StatusDot ok={!!models?.chromescreenai?.downloaded} />
+                                                    <Dot color={!!models?.chromescreenai?.downloaded ? DOT_OK : DOT_FAILED} />
                                                     <span>{models?.chromescreenai?.downloaded ? 'Ready' : 'Not ready (Engine not installed)'}</span>
                                                 </>
                                             )}
@@ -236,12 +209,12 @@ export const TabMain: VFC<TabMainProps> = ({ translator, overlayVisible, models,
                                             <div style={{ color: '#666', fontSize: '10px', display: 'flex', alignItems: 'center' }}>
                                                 {models?.nllb?.downloading ? (
                                                     <>
-                                                        <InstallingDot />
+                                                        <Dot color={DOT_INSTALLING} />
                                                         <span>Installing...</span>
                                                     </>
                                                 ) : (
                                                     <>
-                                                        <StatusDot ok={!!models?.nllb?.downloaded} />
+                                                        <Dot color={!!models?.nllb?.downloaded ? DOT_OK : DOT_FAILED} />
                                                         <span>{models?.nllb?.downloaded ? 'Ready' : 'Not ready (Model not installed)'}</span>
                                                     </>
                                                 )}

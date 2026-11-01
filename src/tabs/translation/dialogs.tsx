@@ -2,10 +2,22 @@ import { ModalRoot, DialogButton, TextField, Focusable } from "@decky/ui";
 import { VFC, useState, useEffect, useRef } from "react";
 import { backend } from "../../backend";
 import { maskKey } from "../../settings";
+import { HiKey } from "react-icons/hi2";
+
+// The key button beside a provider that needs one: its dot says whether a key is set
+export const KeyButton: VFC<{ hasKey: boolean; onClick: () => void }> = ({ hasKey, onClick }) => (
+    <DialogButton onClick={onClick} style={{ minWidth: "40px", width: "40px", padding: "10px 0" }}>
+        <div style={{ position: "relative", display: "inline-flex" }}>
+            <HiKey />
+            <div style={{ position: "absolute", bottom: "-8px", right: "-6px", width: "6px", height: "6px",
+                          borderRadius: "50%", backgroundColor: hasKey ? "#4caf50" : "#ff6b6b" }} />
+        </div>
+    </DialogButton>
+);
 
 // Windows: Steam's text fields have no Paste in their right-click menu and a gamepad has no Ctrl+V, so the key
 // dialogs get a Paste button that reads the Windows clipboard through the backend.
-export const WithPaste: VFC<{ onPaste: (text: string) => void; children: any }> = ({ onPaste, children }) => {
+export const PasteField: VFC<{ onPaste: (text: string) => void; children: any }> = ({ onPaste, children }) => {
     const fieldRef = useRef<HTMLDivElement>(null);
     // the text field has its label above and some space below the input, so line the button up with the input itself
     const [inputBox, setInputBox] = useState<{ top: number; height: number } | null>(null);
@@ -57,7 +69,7 @@ export const ApiKeyModal: VFC<{
                         Current key: <span style={{ fontFamily: "monospace", color: "#fff" }}>{maskKey(currentKey)}</span>
                     </p>
                 )}
-                <WithPaste onPaste={setApiKey}>
+                <PasteField onPaste={setApiKey}>
                     <TextField
                         label="API Key"
                         value={apiKey}
@@ -65,7 +77,7 @@ export const ApiKeyModal: VFC<{
                         bShowClearAction={true}
                         onChange={(e) => setApiKey(e.target.value)}
                     />
-                </WithPaste>
+                </PasteField>
                 <Focusable
                     style={{ display: "flex", gap: "10px", marginTop: "20px", justifyContent: "flex-end" }}
                 >
@@ -105,8 +117,8 @@ export const CustomServerModal: VFC<{
                     Any OpenAI-compatible API, e.g. https://openrouter.ai/api/v1 or a local llama.cpp server at
                     http://127.0.0.1:8080/v1. The key can stay empty for local servers.
                 </p>
-                <WithPaste onPaste={setU}><TextField label="Server Address" value={u} bShowClearAction={true} onChange={(e) => setU(e.target.value)} /></WithPaste>
-                <WithPaste onPaste={setK}><TextField label="API Key" value={k} bIsPassword={true} bShowClearAction={true} onChange={(e) => setK(e.target.value)} /></WithPaste>
+                <PasteField onPaste={setU}><TextField label="Server Address" value={u} bShowClearAction={true} onChange={(e) => setU(e.target.value)} /></PasteField>
+                <PasteField onPaste={setK}><TextField label="API Key" value={k} bIsPassword={true} bShowClearAction={true} onChange={(e) => setK(e.target.value)} /></PasteField>
                 {apiKey && (
                     <p style={{ margin: "4px 0 10px", color: "#aaa", fontSize: "13px" }}>
                         Current key: <span style={{ fontFamily: "monospace", color: "#fff" }}>{maskKey(apiKey)}</span>
