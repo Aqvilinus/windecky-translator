@@ -192,6 +192,13 @@ def test_translation_cache(start, net):
     assert len(net.calls(harness.GOOGLE_URL)) == 4
 
 
+def test_lines_below_the_confidence_setting_are_dropped(start, net):
+    b = start({"confidence_threshold": 0.99})  # the stub's lines come with 0.98
+    assert b.call("recognize_capture", b.call("capture_screen")["id"]) == []
+    b.call("set_setting", "confidence_threshold", 0.9)
+    assert len(b.call("recognize_capture", b.call("capture_screen")["id"])) == len(harness.SCREEN)
+
+
 def test_a_google_vision_failure_is_shown_not_taken_for_no_text(backend, net):
     net.routes[("POST", harness.VISION_URL)] = lambda params, body: (500, "backend error")
     shot = backend.call("capture_screen")
@@ -203,7 +210,7 @@ def test_no_network(backend, net):
     net.down |= {harness.GOOGLE_URL, harness.VISION_URL}
     shot = backend.call("capture_screen")
     assert backend.call("recognize_capture", shot["id"]) == {"error": "network_error", "message": "No internet connection"}
-    regions = [{"text": "Hallo Welt", "rect": {"left": 0, "top": 0, "right": 10, "bottom": 10}, "confidence": 1}]
+    regions = [{"text": "Hallo Welt", "rect": {"left": 0, "top": 0, "right": 10, "bottom": 10}}]
     assert backend.call("translate_text", regions, "en", "auto") == {"error": "network_error", "message": "No internet connection"}
 
 

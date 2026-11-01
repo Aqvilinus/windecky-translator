@@ -10,7 +10,6 @@ export interface TextRegion {
         right: number;
         bottom: number;
     };
-    confidence?: number;
     translatedText?: string;  // from an OCR provider that also translates (Gemini Vision)
 }
 
@@ -75,14 +74,8 @@ const ENDS_WITH_OPENING_PUNCTUATION = /[(\["'（「『【〈《(]\s*$/;
 const MIN_REGION_SIZE_PX = 5;
 
 export class TextRecognizer {
-    private confidenceThreshold: number = 0.6;
-
     constructor() {
         logger.info('TextRecognizer', 'TextRecognizer initialized');
-    }
-
-    setConfidenceThreshold(threshold: number): void {
-        this.confidenceThreshold = threshold;
     }
 
     // Thresholds here and in assembleParagraphs are multiples of the median line height, never absolute pixels.
@@ -281,8 +274,6 @@ export class TextRecognizer {
             let combinedText = sorted[0].text;
             let combinedTranslatedText = sorted[0].translatedText ?? null;
             let combinedRect = { ...sorted[0].rect };
-            let confidenceSum = sorted[0].confidence ?? 0;
-            let confidenceCount = sorted[0].confidence !== undefined ? 1 : 0;
 
             for (let i = 1; i < sorted.length; i++) {
                 const region = sorted[i];
@@ -301,11 +292,6 @@ export class TextRecognizer {
                     right: Math.max(combinedRect.right, region.rect.right),
                     bottom: Math.max(combinedRect.bottom, region.rect.bottom),
                 };
-
-                if (region.confidence !== undefined) {
-                    confidenceSum += region.confidence;
-                    confidenceCount++;
-                }
             }
 
             const result: TextRegion = {
@@ -314,9 +300,6 @@ export class TextRecognizer {
             };
             if (combinedTranslatedText !== null) {
                 result.translatedText = combinedTranslatedText;
-            }
-            if (confidenceCount > 0) {
-                result.confidence = confidenceSum / confidenceCount;
             }
             merged.push(result);
         }
@@ -463,10 +446,6 @@ export class TextRecognizer {
             const text = region.text.trim();
 
             if (!text) return false;
-
-            if (region.confidence !== undefined && region.confidence < this.confidenceThreshold) {
-                return false;
-            }
 
             if (text.length === 1) return false;
 

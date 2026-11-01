@@ -137,7 +137,7 @@ class ChromeScreenAIProvider(OCRProvider):
             return None
         if response.get("error"):
             raise OCRError(f"On-device OCR failed: {response['error']}")
-        regions = [TextRegion(text=r["text"], rect=r["rect"], confidence=r["confidence"])
+        regions = [TextRegion(text=r["text"], rect=r["rect"], confidence=r.get("confidence"))
                    for r in response.get("regions", [])]
         logger.debug(f"Chrome Screen AI (worker): {len(regions)} regions in {time.time() - start:.2f}s")
         return regions
@@ -193,7 +193,7 @@ class ChromeScreenAIProvider(OCRProvider):
                 regions.append(TextRegion(
                     text=r["text"],
                     rect=r["rect"],
-                    confidence=r["confidence"],
+                    confidence=r.get("confidence"),
                 ))
             logger.debug(f"Chrome Screen AI: {len(regions)} regions in {elapsed:.2f}s")
             return regions

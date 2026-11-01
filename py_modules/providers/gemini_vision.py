@@ -242,7 +242,6 @@ class GeminiVisionProvider(OCRProvider):
             text_regions.append(TextRegion(
                 text=text,
                 rect=rect,
-                confidence=0.9,
                 translated_text=translated if translated else text,
             ))
 

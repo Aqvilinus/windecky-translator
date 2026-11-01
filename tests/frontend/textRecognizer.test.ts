@@ -5,8 +5,8 @@ vi.mock('@decky/api', () => ({ callable: () => vi.fn() }));
 
 const { TextRecognizer } = await import('../../src/TextRecognizer');
 
-const box = (text: string, left: number, top: number, width: number, height = 20, confidence = 1) =>
-    ({ text, rect: { left, top, right: left + width, bottom: top + height }, confidence });
+const box = (text: string, left: number, top: number, width: number, height = 20) =>
+    ({ text, rect: { left, top, right: left + width, bottom: top + height } });
 
 describe('applyAutoGlue', () => {
     const recognizer = new TextRecognizer();
@@ -42,10 +42,5 @@ describe('filterUntranslatableText', () => {
 
     it('keeps words, short common ones and CJK', () => {
         expect(kept('Continue', 'OK', 'はい', 'Load game')).toEqual(['Continue', 'OK', 'はい', 'Load game']);
-    });
-
-    it('drops lines below the confidence threshold', () => {
-        recognizer.setConfidenceThreshold(0.6);
-        expect(recognizer.filterUntranslatableText([box('Blurry', 0, 0, 50, 20, 0.4)])).toEqual([]);
     });
 });

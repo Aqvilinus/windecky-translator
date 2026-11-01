@@ -19,6 +19,9 @@ export const TRANSLATION_ENGINE_LABELS: Record<TranslationEngine, string> = {
     llm: 'AI',
 };
 
+// Engines that report how sure they are of each line: the OCR confidence slider is shown for these only
+export const CONFIDENCE_OCR_ENGINES = new Set<string>(['chromescreenai', 'googlecloud']);
+
 // Engines that work over the internet: the main tab checks they can be reached
 export const WEB_OCR_ENGINES = new Set<string>(['gemini_vision', 'googlecloud']);
 export const WEB_TRANSLATION_ENGINES = new Set<string>(['freegoogle', 'googlecloud', 'llm']);

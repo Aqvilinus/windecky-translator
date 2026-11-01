@@ -155,7 +155,7 @@ async def probe(method: str, url: str, **kwargs) -> tuple:
 class TextRegion:
     text: str
     rect: Dict[str, int]  # left, top, right, bottom
-    confidence: float = 0.0
+    confidence: Optional[float] = None  # None: the engine reports none
     translated_text: Optional[str] = None  # from an engine that translates while it reads (Gemini Vision)
 
     def to_dict(self) -> Dict:
@@ -163,7 +163,6 @@ class TextRegion:
         d = {
             "text": self.text,
             "rect": self.rect,
-            "confidence": self.confidence,
         }
         if self.translated_text is not None:
             d["translatedText"] = self.translated_text

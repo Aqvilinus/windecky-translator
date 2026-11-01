@@ -21,10 +21,8 @@ SETTING_DEFAULTS = {
     "pause_game_on_overlay": False,
     "translation_cache_enabled": True,
     "debug_mode": False,
-    # read by the frontend only
-    "font_scale": 1.0,
-    "confidence_threshold": 0.6,
-    "custom_recognition_settings": False,
+    "confidence_threshold": 0.6,            # OCR lines the engine is less sure of are dropped
+    "font_scale": 1.0,                      # read by the frontend only
     "llm_backend": "gemini",                # or "groq", "custom" (any OpenAI-compatible server)
     "llm_gemini_model": "gemini-flash-lite-latest",
     "llm_groq_model": "openai/gpt-oss-120b",

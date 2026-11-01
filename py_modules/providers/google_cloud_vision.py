@@ -72,4 +72,4 @@ def _paragraph_region(paragraph: dict) -> Optional[TextRegion]:
     xs = [v.get("x", 0) for v in vertices]  # a zero coordinate is left out of Google's JSON
     ys = [v.get("y", 0) for v in vertices]
     return TextRegion(text=text, rect={"left": min(xs), "top": min(ys), "right": max(xs), "bottom": max(ys)},
-                      confidence=paragraph.get("confidence", 0.0))
+                      confidence=paragraph.get("confidence"))

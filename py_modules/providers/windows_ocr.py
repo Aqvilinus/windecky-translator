@@ -114,7 +114,6 @@ class WindowsOCRProvider(OCRProvider):
                 text=line.text,
                 rect={"left": int(left / scale), "top": int(top / scale),
                       "right": int(right / scale), "bottom": int(bottom / scale)},
-                confidence=1.0,  # Windows OCR reports no confidence
             ))
         logger.info(f"Windows OCR ({engine.recognizer_language.language_tag}): {len(regions)} lines")
         return regions

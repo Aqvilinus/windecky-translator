@@ -200,16 +200,14 @@ class ProviderRegistry:
         logger.error(f"Unknown translation engine: {engine}")
         return None
 
-    async def recognize_text(
-        self,
-        image_data: bytes,
-        language: str = "auto"
-    ) -> List[TextRegion]:
+    async def recognize_text(self, image_data: bytes, language: str, min_confidence: float) -> List[TextRegion]:
+        """The regions the chosen engine found, without those it is less sure of than min_confidence."""
         provider = self.get_ocr_provider()
         if not provider or not provider.is_available():
             raise OCRError(f"{provider.name if provider else 'The OCR engine'} is unavailable")
         logger.debug(f"Using {provider.name} for OCR")
-        return await provider.recognize(image_data, language)
+        regions = await provider.recognize(image_data, language)
+        return [r for r in regions if r.confidence is None or r.confidence >= min_confidence]
 
     async def translate_text(
         self,

@@ -414,9 +414,7 @@ class Plugin:
 
         start_time = time.time()
         text_regions = await self._providers.recognize_text(
-            png,
-            language=self._settings.get("input_language")
-        )
+            png, self._settings.get("input_language"), self._settings.get("confidence_threshold"))
         logger.info(f"OCR completed in {time.time() - start_time:.2f}s, found {len(text_regions)} regions")
 
         return [region.to_dict() for region in text_regions]

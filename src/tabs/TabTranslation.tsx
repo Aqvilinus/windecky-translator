@@ -3,6 +3,7 @@ import { showModal } from "../modal";
 import { VFC, useState, useEffect, useRef, useCallback } from "react";
 import { backend } from "../backend";
 import { useSettings } from "../SettingsContext";
+import { CONFIDENCE_OCR_ENGINES } from "../providers";
 import { LLM_DEFAULT_MODELS, LLM_KEY_SETTING, LLM_MODEL_SETTING, llmConfigured, llmModel } from "../llm";
 import { HiKey, HiLockClosed, HiInformationCircle } from "react-icons/hi2";
 import { BsStars, BsWindows } from "react-icons/bs";
@@ -305,23 +306,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                     </PanelSectionRow>
                 )}
 
-                {settings.ocrProvider === 'googlecloud' && (
-                    <PanelSectionRow>
-                        <ToggleField
-                            label="Customize Recognition"
-                            description="Fine-tune text recognition parameters. Can make things better or worse"
-                            checked={settings.customRecognitionSettings}
-                            onChange={(value) => {
-                                updateSetting('customRecognitionSettings', value, 'Custom recognition settings');
-                                if (!value) {
-                                    updateSetting('confidenceThreshold', 0.6, 'Text recognition confidence');
-                                }
-                            }}
-                        />
-                    </PanelSectionRow>
-                )}
-
-                {settings.customRecognitionSettings && settings.ocrProvider === 'googlecloud' && (
+                {CONFIDENCE_OCR_ENGINES.has(settings.ocrProvider) && (
                     <PanelSectionRow>
                         <SliderField
                             value={settings.confidenceThreshold}
@@ -329,7 +314,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                             min={0.0}
                             step={0.05}
                             label="Text Recognition Confidence"
-                            description="Minimum confidence level for detected text (higher = fewer false positives)"
+                            description="Lines the engine is less sure of are skipped: higher = fewer false finds, lower = more faint text"
                             showValue={true}
                             valueSuffix=""
                             onChange={(value) => {

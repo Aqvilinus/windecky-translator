@@ -171,8 +171,6 @@ def _load_image_rgba(image_path, max_dim):
     return img.tobytes(), w, h, scale_x, scale_y
 
 
-MIN_CONFIDENCE = 0.5  # the engine's lines below this are mostly noise
-
 
 def _proto_to_regions(proto_bytes, scale_x, scale_y):
     # from this script's folder, not the plugin's providers package (that runs in Decky's Python, with aiohttp)
@@ -186,10 +184,7 @@ def _proto_to_regions(proto_bytes, scale_x, scale_y):
         text = (line.utf8_string or "").strip()
         if not text:
             continue
-        # in [0,1]; drop low-confidence noise
-        confidence = float(line.confidence) if line.confidence else 0.0
-        if confidence and confidence < MIN_CONFIDENCE:
-            continue
+        confidence = float(line.confidence) if line.confidence else None  # in [0,1]; 0 when the engine gives none
 
         # Treat the proto's rotated rect as axis-aligned; good enough for the overlay.
         bb = line.bounding_box

@@ -31,7 +31,6 @@ export interface Settings {
     geminiModel: string; // Gemini Vision's
     debugMode: boolean;
     fontScale: number; // the overlay's text, for external monitors
-    customRecognitionSettings: boolean;
     translationCacheEnabled: boolean;
     // AI translation (providers/llm_translate.py)
     llmBackend: 'gemini' | 'groq' | 'custom';
@@ -64,7 +63,6 @@ const initialSettings: Settings = {
     geminiModel: "gemini-3.5-flash",
     debugMode: false,
     fontScale: 1.0,
-    customRecognitionSettings: false,
     translationCacheEnabled: true,
     llmBackend: "gemini",
     llmGeminiModel: LLM_DEFAULT_MODELS.gemini[0],
@@ -94,7 +92,6 @@ const BACKEND_KEYS: Record<keyof SavedSettings, string> = {
     geminiModel: 'gemini_model',
     debugMode: 'debug_mode',
     fontScale: 'font_scale',
-    customRecognitionSettings: 'custom_recognition_settings',
     translationCacheEnabled: 'translation_cache_enabled',
     llmBackend: 'llm_backend',
     llmGeminiModel: 'llm_gemini_model',
@@ -119,7 +116,6 @@ function applyToLogic(logic: GameTranslatorLogic, key: keyof SavedSettings, valu
         case 'inputLanguage': logic.setInputLanguage(value); break;
         case 'targetLanguage': logic.setTargetLanguage(value); break;
         case 'enabled': logic.setEnabled(value); break;
-        case 'confidenceThreshold': logic.setConfidenceThreshold(value); break;
         case 'debugMode': logger.setEnabled(value); break;
         case 'fontScale': logic.setFontScale(value); break;
         case 'ocrProvider': logic.setOcrProvider(value); break;

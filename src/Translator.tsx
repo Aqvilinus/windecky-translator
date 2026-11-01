@@ -40,10 +40,6 @@ export class GameTranslatorLogic {
         }
     }
 
-    setConfidenceThreshold(threshold: number): void {
-        this.textRecognizer.setConfidenceThreshold(threshold);
-    }
-
     notify = async (message: string, duration: number = 1000, body?: string): Promise<void> => {
         toaster.toast({
             title: message,

@@ -39,7 +39,7 @@ describe('GameTranslatorLogic errors', () => {
     });
 
     it('shows why translation failed', async () => {
-        replies.recognize_capture = [{ text: 'Neues Spiel', rect: { left: 0, top: 0, right: 90, bottom: 20 }, confidence: 1 }];
+        replies.recognize_capture = [{ text: 'Neues Spiel', rect: { left: 0, top: 0, right: 90, bottom: 20 } }];
         replies.translate_text = { error: 'translation_failed', message: 'The translation service did not answer' };
         const { logic, steps } = startTranslator();
         await logic.takeScreenshotAndTranslate();
