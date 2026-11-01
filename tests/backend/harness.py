@@ -321,7 +321,7 @@ class Backend:
         self.plugin = None
 
     def start(self):
-        self.main.settingsDir = self.settings_dir
+        self.main.SETTINGS_DIR = self.settings_dir
         self.plugin = self.main.Plugin()
         self.loop.run_until_complete(self.plugin._main())
         return self

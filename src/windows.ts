@@ -39,7 +39,7 @@ export function forwardOverlayToBackend(state: ImageState, dismiss: () => void):
 
     const unsubscribe = state.subscribe((s: OverlayState) => {
         if (s.visible) watchMenus(); else stopWatchingMenus();
-        backend.nativeOverlayUpdate(s).catch(() => { /* the backend logs its own errors */ });
+        backend.updateOverlay(s).catch(() => { /* the backend logs its own errors */ });
     });
     return () => {
         stopWatchingMenus();
@@ -61,12 +61,12 @@ export function listenForHotkey(logic: GameTranslatorLogic): () => void {
     return () => removeEventListener('translator_hotkey', onHotkey);
 }
 
-// Problems the backend found while loading (main.py get_boot_status), e.g. a Decky update that changed its Python so
+// Problems the backend found while loading (main.py get_startup_errors), e.g. a Decky update that changed its Python so
 // the capture or overlay modules no longer load: a toast for each, instead of a shortcut that silently does nothing.
-export async function showBootProblems(title: string): Promise<void> {
+export async function showStartupErrors(title: string): Promise<void> {
     let problems: string[] = [];
     try {
-        problems = await backend.getBootStatus();
+        problems = await backend.getStartupErrors();
     } catch {
         return;  // the backend didn't load at all: Decky shows that itself
     }

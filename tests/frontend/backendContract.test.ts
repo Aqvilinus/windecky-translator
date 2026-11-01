@@ -14,7 +14,7 @@ const backendMethods = new Set(
 describe('frontend -> backend calls', () => {
     it('finds the calls', () => {
         expect(frontendCalls.length).toBeGreaterThan(20);  // the pattern still finds them
-        expect(frontendCalls).toContain('native_overlay_update');
+        expect(frontendCalls).toContain('update_overlay');
     });
 
     it.each(frontendCalls.sort())('%s exists in main.py', name => {

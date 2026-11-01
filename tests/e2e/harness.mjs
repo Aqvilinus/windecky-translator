@@ -177,7 +177,7 @@ export class Steam {
     }
 
     async hotkeyRegistered() {
-        const s = await this.js(name => DeckyBackend.call('loader/call_plugin_method', name, 'get_windows_status'), NAME);
+        const s = await this.js(name => DeckyBackend.call('loader/call_plugin_method', name, 'get_diagnostics'), NAME);
         return !!s?.hotkey?.registered;
     }
 

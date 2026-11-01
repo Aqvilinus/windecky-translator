@@ -104,18 +104,18 @@ def test_capture_ocr_translate_overlay(backend, windows, net):
     assert len(net.calls(harness.GOOGLE_URL)) == 1  # one request for all lines
     assert net.calls(harness.BING_URL) == []
 
-    assert backend.call("native_overlay_update", overlay_state(translated)) is True
+    assert backend.call("update_overlay", overlay_state(translated)) is True
     overlay = windows.overlay
     state, target = overlay.shown[-1]
     assert overlay.visible and target["hwnd"] == harness.GAME_HWND and state["regions"] == translated
 
-    assert backend.call("native_overlay_update", {"visible": False}) is True
+    assert backend.call("update_overlay", {"visible": False}) is True
     assert not overlay.visible
 
 
 def test_overlay_draws_the_labels_over_the_text(backend, windows, net):
     _, _, translated = translate_screen(backend)
-    backend.call("native_overlay_update", overlay_state(translated))
+    backend.call("update_overlay", overlay_state(translated))
     shot = windows.capture_image.convert("RGBA")
     drawn = windows.overlay.image()
     assert drawn.size == shot.size
@@ -274,11 +274,11 @@ def test_an_old_capture_id_is_refused(backend):
 def test_pause_game_while_translating(start, windows, net):
     b = start({"pause_game_on_overlay": True})
     _, _, translated = translate_screen(b)
-    b.call("native_overlay_update", overlay_state(translated))
+    b.call("update_overlay", overlay_state(translated))
     assert windows.processes.suspended == {harness.GAME_PID}
-    b.call("native_overlay_update", overlay_state(translated, fontScale=1.2))  # an update: no second pause
+    b.call("update_overlay", overlay_state(translated, fontScale=1.2))  # an update: no second pause
     assert windows.processes.log.count(("suspend", harness.GAME_PID)) == 1
-    b.call("native_overlay_update", {"visible": False})
+    b.call("update_overlay", {"visible": False})
     assert windows.processes.suspended == set()
 
 
@@ -292,7 +292,7 @@ def test_a_game_that_cannot_be_paused_is_reported_once(start, windows, net, main
     async def show_twice():
         for _ in range(2):
             b.plugin._overlay_visible = False
-            await b.plugin.native_overlay_update(overlay_state(translated))
+            await b.plugin.update_overlay(overlay_state(translated))
         await harness.asyncio.sleep(0.05)
     b.run(show_twice())
     assert [e for e in main.test_events if e[0] == "translator_problem"] == [
@@ -303,22 +303,22 @@ def test_a_game_that_cannot_be_paused_is_reported_once(start, windows, net, main
 def test_switching_the_plugin_off_resumes_a_paused_game(start, windows, net):
     b = start({"pause_game_on_overlay": True})
     _, _, translated = translate_screen(b)
-    b.call("native_overlay_update", overlay_state(translated))
+    b.call("update_overlay", overlay_state(translated))
     b.call("set_setting", "enabled", False)
     assert windows.processes.suspended == set()
 
 
 def test_a_taken_hotkey_is_reported(backend):
-    assert backend.call("get_boot_status") == []
+    assert backend.call("get_startup_errors") == []
     backend.plugin._hotkey.error = 1409
-    [problem] = backend.call("get_boot_status")
+    [problem] = backend.call("get_startup_errors")
     assert "Ctrl+Alt+T is taken by another program" in problem
 
 
 def test_hotkey_resumes_a_paused_game_even_without_the_frontend(start, windows, net):
     b = start({"pause_game_on_overlay": True})
     _, _, translated = translate_screen(b)
-    b.call("native_overlay_update", overlay_state(translated))
+    b.call("update_overlay", overlay_state(translated))
     assert windows.processes.suspended == {harness.GAME_PID}
 
     async def press():  # no frontend answers the event

@@ -1,4 +1,4 @@
-// The backend reports a failure as {error: code, message} (main.py answers_errors); these are its errors here.
+// The backend reports a failure as {error: code, message} (main.py catch_errors); these are its errors here.
 
 export interface ErrorResponse {
     error: string;

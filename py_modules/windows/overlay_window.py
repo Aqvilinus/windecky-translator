@@ -124,7 +124,7 @@ class OverlayWindow:
         self._target = None
         self._shown = False
         self._dib = None  # (width, height, memory DC, bitmap, old bitmap, bits), kept while the size stays
-        self.error = None  # for get_windows_status
+        self.error = None  # for get_diagnostics
         self._thread = threading.Thread(target=self._run, name="translator-overlay", daemon=True)
         self._thread.start()
 

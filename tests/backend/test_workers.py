@@ -15,7 +15,7 @@ def test_workers_import_no_plugin_package():
 
 def test_providers_load_without_compiled_modules():
     """main.py imports the providers package unguarded: it must load even when Pillow (built for one Python version)
-    can't, so the plugin still starts and reports what is missing (main.py _BOOT_ERRORS)."""
+    can't, so the plugin still starts and reports what is missing (main.py STARTUP_ERRORS)."""
     import subprocess
     import sys
     code = ("import sys; sys.modules['PIL'] = None; sys.modules['numpy'] = None; "

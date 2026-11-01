@@ -42,7 +42,7 @@ class ProviderRegistry:
         self._gemini_target_language = "en"
         self._ocr_provider_preference = "chromescreenai"  # engine ids as the frontend names them (main.py)
         self._translation_provider_preference = "freegoogle"
-        # main.py _sync_workers decides: the worker of the chosen local engine stays up between requests
+        # main.py _update_workers decides: the worker of the chosen local engine stays up between requests
         self._chromescreenai_persistent_mode = False
         self._ct2_persistent_mode = False
 

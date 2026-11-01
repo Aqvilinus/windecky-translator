@@ -19,7 +19,7 @@ import {
 import { BsTranslate } from "react-icons/bs";
 import { ImageState } from "./Overlay";
 import { GameTranslatorLogic } from "./Translator";
-import { forwardOverlayToBackend, listenForHotkey, listenForProblems, showBootProblems } from "./windows";
+import { forwardOverlayToBackend, listenForHotkey, listenForProblems, showStartupErrors } from "./windows";
 import { adoptActivePlugin } from "./deckyState";
 import { SettingsProvider, useSettings, loadSettingsIntoLogic } from "./SettingsContext";
 import { logger } from "./Logger";
@@ -251,8 +251,8 @@ export default definePlugin(() => {
         p => (p.content as { props?: { logic?: unknown } } | undefined)?.props?.logic === logic);
     // a Steam UI reload leaves the backend running: hide a translation the old UI left on screen (and resume a game
     // it paused), since this UI starts with none
-    backend.nativeOverlayUpdate({ visible: false }).catch(() => { /* logged by the backend */ });
-    showBootProblems(PLUGIN_NAME);
+    backend.updateOverlay({ visible: false }).catch(() => { /* logged by the backend */ });
+    showStartupErrors(PLUGIN_NAME);
 
     loadSettingsIntoLogic(logic);  // Ctrl+Alt+T needs them before the panel is ever opened
 

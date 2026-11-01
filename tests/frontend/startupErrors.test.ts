@@ -1,4 +1,4 @@
-// src/windows.ts showBootProblems / listenForProblems: what the backend couldn't load or later finds broken is shown
+// src/windows.ts showStartupErrors / listenForProblems: what the backend couldn't load or later finds broken is shown
 // as toasts.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -14,27 +14,27 @@ vi.mock('@decky/api', () => ({
 }));
 vi.mock('@decky/ui', () => ({ Router: {} }));
 
-const { showBootProblems, listenForProblems } = await import('../../src/windows');
+const { showStartupErrors, listenForProblems } = await import('../../src/windows');
 
-describe('showBootProblems', () => {
+describe('showStartupErrors', () => {
     beforeEach(() => { toasts.length = 0; });
 
     it('shows one toast per problem', async () => {
         reply = () => Promise.resolve(['Screen capture is unavailable: x', 'The translation overlay is unavailable: y']);
-        await showBootProblems('WinDecky Translator');
+        await showStartupErrors('WinDecky Translator');
         expect(toasts.map(t => t.body)).toEqual(['Screen capture is unavailable: x', 'The translation overlay is unavailable: y']);
         expect(toasts[0].title).toBe('WinDecky Translator');
     });
 
     it('shows nothing when all is well', async () => {
         reply = () => Promise.resolve([]);
-        await showBootProblems('t');
+        await showStartupErrors('t');
         expect(toasts).toEqual([]);
     });
 
     it('stays quiet when the backend call fails', async () => {
         reply = () => Promise.reject(new Error('no backend'));
-        await showBootProblems('t');
+        await showStartupErrors('t');
         expect(toasts).toEqual([]);
     });
 });

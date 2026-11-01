@@ -3,7 +3,7 @@
 
 import { TranslatedRegion } from "./TextTranslator";
 
-// What the backend draws (main.py native_overlay_update -> overlay.py render)
+// What the backend draws (main.py update_overlay -> overlay.py render)
 export interface OverlayState {
     visible: boolean;
     regions: TranslatedRegion[];

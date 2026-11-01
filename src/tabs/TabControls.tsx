@@ -11,11 +11,11 @@ import { backend } from "../backend";
 import { useSettings } from "../SettingsContext";
 import { WINDOWS_HOTKEY } from "../windows";
 
-// The Windows parts' state (main.py get_windows_status), shown in debug mode
+// The Windows parts' state (main.py get_diagnostics), shown in debug mode
 const WindowsStatus: VFC = () => {
     const [status, setStatus] = useState<any>(null);
     useEffect(() => {
-        const refresh = () => backend.getWindowsStatus().then(setStatus).catch(() => setStatus(null));
+        const refresh = () => backend.getDiagnostics().then(setStatus).catch(() => setStatus(null));
         refresh();
         const id = setInterval(refresh, 1000);
         return () => clearInterval(id);

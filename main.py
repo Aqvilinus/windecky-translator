@@ -77,7 +77,7 @@ from settings import (API_KEY_SETTINGS, PROVIDER_SETTINGS, SETTING_DEFAULTS, WOR
 
 
 # Decky sets these for each plugin backend
-settingsDir = decky.DECKY_PLUGIN_SETTINGS_DIR
+SETTINGS_DIR = decky.DECKY_PLUGIN_SETTINGS_DIR
 logger = decky.logger
 DECKY_PLUGIN_LOG_DIR = decky.DECKY_PLUGIN_LOG_DIR
 
@@ -102,30 +102,30 @@ except (OSError, ValueError):
 logger.info(f"WinDecky Translator v{_plugin_version} starting")
 
 
-# What keeps parts of the plugin from working, for the frontend to show (get_boot_status). Capture and overlay load
+# What keeps parts of the plugin from working, for the frontend to show (get_startup_errors). Capture and overlay load
 # compiled modules (winrt, Pillow) built for one Python version into Decky's own interpreter: after a Decky update
 # that changes its Python they fail to import, and the rest of the plugin should still load and say why.
-_BOOT_ERRORS = []
+STARTUP_ERRORS = []
 if sys.version_info[:2] != (3, 14):
-    _BOOT_ERRORS.append(f"Decky Loader runs Python {sys.version_info[0]}.{sys.version_info[1]}, this build of the "
+    STARTUP_ERRORS.append(f"Decky Loader runs Python {sys.version_info[0]}.{sys.version_info[1]}, this build of the "
                         "plugin was made for 3.14: update the plugin")
 try:
     from windows.capture import capture_foreground, encode_png
 except Exception as _e:  # noqa: BLE001 - ImportError, or OSError from a DLL that won't load
     capture_foreground = encode_png = None
-    _BOOT_ERRORS.append(f"Screen capture is unavailable: {_e}")
+    STARTUP_ERRORS.append(f"Screen capture is unavailable: {_e}")
 try:
     from windows.overlay_window import OverlayWindow
 except Exception as _e:  # noqa: BLE001
     OverlayWindow = None
-    _BOOT_ERRORS.append(f"The translation overlay is unavailable: {_e}")
+    STARTUP_ERRORS.append(f"The translation overlay is unavailable: {_e}")
 from windows.hotkey import Hotkey  # ctypes only
 try:
     import game_process
 except Exception as _e:  # noqa: BLE001
     game_process = None
-    _BOOT_ERRORS.append(f"Pause Game While Translating is unavailable: {_e}")
-for _error in _BOOT_ERRORS:
+    STARTUP_ERRORS.append(f"Pause Game While Translating is unavailable: {_e}")
+for _error in STARTUP_ERRORS:
     logger.error(_error)
 
 
@@ -134,7 +134,7 @@ _ERROR_CODES = ((NetworkError, "network_error"), (ApiKeyError, "api_key_error"),
                 (OCRError, "ocr_failed"), (TranslationError, "translation_failed"))
 
 
-def answers_errors(fallback_code, fallback_message):
+def catch_errors(fallback_code, fallback_message):
     """A backend call whose failures reach the frontend as {error, message}: the plugin's own errors with their
     message, anything else (a bug) as fallback_code with fallback_message, logged with its traceback."""
     def wrap(method):
@@ -185,13 +185,13 @@ class Plugin:
         if not self._settings.set(key, value):
             return False
         try:
-            self._apply_setting(key)
+            self._on_setting_changed(key)
         except Exception:  # noqa: BLE001 - stored; tell the frontend it didn't take effect
             logger.exception(f"Applying {key} failed")
             return False
         return True
 
-    def _apply_setting(self, key):
+    def _on_setting_changed(self, key):
         """What a changed setting changes in the backend now (the others are read where they are used)."""
         if key == "enabled":
             enabled = bool(self._settings.get("enabled"))
@@ -204,7 +204,7 @@ class Plugin:
         if key in PROVIDER_SETTINGS:
             self._configure_providers()
         if key in WORKER_SETTINGS:
-            self._sync_workers()
+            self._update_workers()
 
     def _configure_providers(self):
         pm = self._providers
@@ -222,7 +222,7 @@ class Plugin:
             custom_url=self._settings.get("llm_custom_url"),
         )
 
-    def _sync_workers(self):
+    def _update_workers(self):
         """The Screen AI and NLLB workers stay up between requests only while the plugin is on, their engine is the
         chosen one and its "Faster ..." setting is on; otherwise each request starts and stops its own."""
         pm = self._providers
@@ -299,7 +299,7 @@ class Plugin:
 
     # Windows: the frontend sends upstream's overlay state on every change; overlay.py draws it over the
     # captured window (Steam's UI can't sit over other windows on Windows)
-    async def native_overlay_update(self, state):
+    async def update_overlay(self, state):
         try:
             if OverlayWindow is None:
                 return False
@@ -315,15 +315,15 @@ class Plugin:
             else:
                 self._overlay.hide()
                 self._resume_paused_games()
-                self._release_capture()
+                self._free_capture_image()
             return True
         except Exception as e:
-            logger.error(f"native_overlay_update failed: {e}")
+            logger.error(f"update_overlay failed: {e}")
             return False
 
-    def _release_capture(self):
+    def _free_capture_image(self):
         """Drop the capture's pixels (megabytes) once nothing needs them; the window position stays for
-        get_windows_status."""
+        get_diagnostics."""
         if self._capture:
             self._capture.pop("image", None)
             self._capture.pop("ocr_pending", None)
@@ -333,7 +333,7 @@ class Plugin:
     # it was started (Ctrl+Alt+T, the side menu, a controller shortcut) and even if the game exited meanwhile.
     def _pause_captured_game(self):
         if not game_process:
-            return  # reported at start (_BOOT_ERRORS)
+            return  # reported at start (STARTUP_ERRORS)
         try:
             game_process.suspend((self._capture or {}).get("hwnd"))
         except game_process.SuspendError as e:
@@ -374,17 +374,17 @@ class Plugin:
         from windows import clipboard
         return clipboard.get_text()
 
-    async def get_boot_status(self):
-        """Problems found while the plugin loaded (see _BOOT_ERRORS) and a shortcut another program took; the
+    async def get_startup_errors(self):
+        """Problems found while the plugin loaded (see STARTUP_ERRORS) and a shortcut another program took; the
         frontend shows them once."""
-        problems = list(_BOOT_ERRORS)
+        problems = list(STARTUP_ERRORS)
         hotkey = self._hotkey.status() if self._hotkey else None
         if hotkey and hotkey["error"]:
             problems.append(f"{hotkey['hotkey']} is taken by another program (error {hotkey['error']}): "
                             "close that program or change its shortcut, then switch the plugin off and on")
         return problems
 
-    async def get_windows_status(self):
+    async def get_diagnostics(self):
         return {
             "hotkey": self._hotkey.status() if self._hotkey else None,
             "overlay_error": self._overlay.error if self._overlay else None,
@@ -426,10 +426,10 @@ class Plugin:
         """The translation was cancelled after the capture: its pixels go."""
         if not self._is_current_capture(capture_id):
             return False
-        self._release_capture()
+        self._free_capture_image()
         return True
 
-    @answers_errors("ocr_failed", "Text recognition failed (details in the plugin log)")
+    @catch_errors("ocr_failed", "Text recognition failed (details in the plugin log)")
     async def recognize_capture(self, capture_id: int):
         if not self._is_current_capture(capture_id):
             logger.error(f"Not the current capture: {capture_id}")
@@ -440,7 +440,7 @@ class Plugin:
             return []
         return await self._recognize(await asyncio.to_thread(encode_png, image))
 
-    @answers_errors("translation_failed", "Translation failed (details in the plugin log)")
+    @catch_errors("translation_failed", "Translation failed (details in the plugin log)")
     async def translate_text(self, text_regions, target_lang, input_lang):
         if not text_regions:
             return []
@@ -581,7 +581,7 @@ class Plugin:
     async def delete_model(self, kind):
         return bool(self._providers and self._providers.delete_model(kind))
 
-    def _start_windows(self):
+    def _start_windows_integration(self):
         """Windows parts, first and each on its own: a failure anywhere else in the start must not leave a game paused
         by an earlier run or the shortcut dead."""
         try:
@@ -597,20 +597,20 @@ class Plugin:
 
     async def _main(self):
         logger.info("Plugin initialization started")
-        self._start_windows()
+        self._start_windows_integration()
         try:
-            self._settings = SettingsStore(os.path.join(settingsDir, "decky-translator-settings.json"))
+            self._settings = SettingsStore(os.path.join(SETTINGS_DIR, "decky-translator-settings.json"))
             self._settings.load()
 
             # Downloaded models (NLLB, Chrome Screen AI) live in the settings folder, so they survive plugin
             # updates
-            models_dir = os.path.join(settingsDir, "decky-translator", "models")
+            models_dir = os.path.join(SETTINGS_DIR, "decky-translator", "models")
             ct2_models_dir = os.path.join(models_dir, "nllb")
             os.makedirs(ct2_models_dir, exist_ok=True)
 
             try:
                 self._translation_cache = TranslationCache(
-                    os.path.join(settingsDir, "translation_cache.db")
+                    os.path.join(SETTINGS_DIR, "translation_cache.db")
                 )
             except Exception as e:
                 logger.error(f"Failed to open translation cache, continuing without it: {e}")
@@ -619,9 +619,9 @@ class Plugin:
             self._providers = ProviderRegistry()
             self._providers.configure(ct2_models_dir=ct2_models_dir, screenai_models_dir=models_dir)
             for key in ("debug_mode", "enabled"):  # log level; Ctrl+Alt+T on or off
-                self._apply_setting(key)
+                self._on_setting_changed(key)
             self._configure_providers()
-            self._sync_workers()
+            self._update_workers()
 
             logger.info(f"Initialized - OCR: {self._settings.get('ocr_provider')}, "
                         f"Translation: {self._settings.get('translation_provider')}, "
