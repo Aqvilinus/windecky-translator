@@ -53,44 +53,26 @@ def install_decky(base_dir):
     mod.logger = logging.getLogger("decky-translator-test")
     mod.emit = emit
     sys.modules["decky"] = mod
-    sys.modules["settings"] = decky_settings_module()  # what Decky registers before main.py loads
+    sys.modules["settings"] = decky_settings_module()
     os.environ.update(DECKY_PLUGIN_SETTINGS_DIR=dirs["settings"], DECKY_PLUGIN_LOG_DIR=dirs["logs"],
                       DECKY_PLUGIN_DIR=ROOT, DECKY_HOME=dirs["home"], TEMP=dirs["runtime"])
     return mod, events
 
 
 def decky_settings_module():
-    """decky_loader.settings (v3.3.1) as plugins get it: Decky aliases its own modules under their short names, so
-    `import settings` in a plugin is always this one, never a py_modules/settings.py."""
-    import json as _json
-
+    """Decky's settings module (from settings import SettingsManager): a JSON file of key/value pairs."""
     class SettingsManager:
-        def __init__(self, name, settings_directory=None):
-            os.makedirs(settings_directory, exist_ok=True)
+        def __init__(self, name, settings_directory):
             self.path = os.path.join(settings_directory, name + ".json")
-            self.settings = {}
-            try:
-                open(self.path, "x", encoding="utf-8").close()
-            except FileExistsError:
-                self.read()
-
-        def read(self):
-            try:
-                with open(self.path, "r", encoding="utf-8") as f:
-                    self.settings = _json.load(f)
-            except Exception as e:  # noqa: BLE001 - Decky prints and keeps what it had
-                print(e)
-
-        def commit(self):
-            with open(self.path, "w+", encoding="utf-8") as f:
-                _json.dump(self.settings, f, indent=4, ensure_ascii=False)
+            self.settings = json.load(open(self.path, encoding="utf-8")) if os.path.exists(self.path) else {}
 
         def getSetting(self, key, default=None):  # noqa: N802 - Decky's name
             return self.settings.get(key, default)
 
         def setSetting(self, key, value):  # noqa: N802 - Decky's name
             self.settings[key] = value
-            self.commit()
+            with open(self.path, "w", encoding="utf-8") as f:
+                json.dump(self.settings, f)
 
     mod = types.ModuleType("settings")
     mod.SettingsManager = SettingsManager
