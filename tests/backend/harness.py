@@ -54,8 +54,6 @@ def install_decky(base_dir):
     mod.emit = emit
     sys.modules["decky"] = mod
     sys.modules["settings"] = decky_settings_module()
-    os.environ.update(DECKY_PLUGIN_SETTINGS_DIR=dirs["settings"], DECKY_PLUGIN_LOG_DIR=dirs["logs"],
-                      DECKY_PLUGIN_DIR=ROOT, DECKY_HOME=dirs["home"], TEMP=dirs["runtime"])
     return mod, events
 
 
@@ -331,18 +329,22 @@ def block_sockets():
 class Backend:
     """A started Plugin on an event loop of its own; call() runs a frontend call to completion."""
 
-    def __init__(self, main, settings_dir, settings=None):
+    def __init__(self, main, data_dir, settings=None):
+        """data_dir holds this backend's settings and runtime folders (Decky's DECKY_PLUGIN_SETTINGS/RUNTIME_DIR)."""
         self.main = main
-        self.settings_dir = settings_dir
-        os.makedirs(settings_dir, exist_ok=True)
+        self.settings_dir = os.path.join(data_dir, "settings")
+        self.runtime_dir = os.path.join(data_dir, "runtime")
+        os.makedirs(self.settings_dir, exist_ok=True)
+        os.makedirs(self.runtime_dir, exist_ok=True)
         if settings:
-            with open(os.path.join(settings_dir, "decky-translator-settings.json"), "w", encoding="utf-8") as f:
+            with open(os.path.join(self.settings_dir, "decky-translator-settings.json"), "w", encoding="utf-8") as f:
                 json.dump(settings, f)
         self.loop = asyncio.new_event_loop()
         self.plugin = None
 
     def start(self):
         self.main.SETTINGS_DIR = self.settings_dir
+        self.main.RUNTIME_DIR = self.runtime_dir
         self.plugin = self.main.Plugin()
         self.loop.run_until_complete(self.plugin._main())
         return self

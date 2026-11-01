@@ -6,11 +6,12 @@ import traceback
 import time
 from datetime import datetime
 import logging
-import json
 import sqlite3
 import tarfile
 
-PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
+import decky  # Decky Loader's plugin API (typings/decky.pyi)
+
+PLUGIN_DIR = decky.DECKY_PLUGIN_DIR
 if PLUGIN_DIR not in sys.path:
     sys.path.insert(0, PLUGIN_DIR)
 
@@ -65,8 +66,6 @@ if os.path.exists(BIN_PY_MODULES_DIR) and BIN_PY_MODULES_DIR not in sys.path:
 if os.path.isdir(os.path.join(BIN_PYTHON_DIR, "python")):
     os.add_dll_directory(os.path.join(BIN_PYTHON_DIR, "python"))
 
-import decky  # Decky Loader's plugin API (typings/decky.pyi)
-
 from providers import ProviderRegistry
 from providers.base import ApiKeyError, NetworkError, OCRError, RateLimitError, TranslationError, close_session
 from providers.translation_cache import TranslationCache, PROVIDER_TIERS, normalize
@@ -76,18 +75,14 @@ from plugin_settings import (API_KEY_SETTINGS, PROVIDER_SETTINGS, SETTING_DEFAUL
 
 
 SETTINGS_DIR = decky.DECKY_PLUGIN_SETTINGS_DIR
+RUNTIME_DIR = decky.DECKY_PLUGIN_RUNTIME_DIR  # data, not configuration: downloaded models, the translation cache
 # The root logger: Decky writes it to a new file in the plugin's log folder on every start and keeps the last 4
 logger = decky.logger
 for _handler in logger.handlers:
     _handler.addFilter(RedactKeysFilter())  # a handler filter also sees the providers' records, a logger filter not
 logger.setLevel(logging.INFO)
 
-try:
-    with open(os.path.join(PLUGIN_DIR, "package.json"), encoding="utf-8") as _pkg:
-        _plugin_version = json.load(_pkg).get("version", "unknown")
-except (OSError, ValueError):
-    _plugin_version = "unknown"
-logger.info(f"WinDecky Translator v{_plugin_version} starting")
+logger.info(f"WinDecky Translator v{decky.DECKY_PLUGIN_VERSION} starting")
 
 
 # What keeps parts of the plugin from working, for the frontend to show (get_startup_errors). Capture and overlay load
@@ -595,16 +590,12 @@ class Plugin:
         try:
             self._settings = SettingsManager(name="decky-translator-settings", settings_directory=SETTINGS_DIR)
 
-            # Downloaded models (NLLB, Chrome Screen AI) live in the settings folder, so they survive plugin
-            # updates
-            models_dir = os.path.join(SETTINGS_DIR, "decky-translator", "models")
+            models_dir = os.path.join(RUNTIME_DIR, "models")
             ct2_models_dir = os.path.join(models_dir, "nllb")
             os.makedirs(ct2_models_dir, exist_ok=True)
 
             try:
-                self._translation_cache = TranslationCache(
-                    os.path.join(SETTINGS_DIR, "translation_cache.db")
-                )
+                self._translation_cache = TranslationCache(os.path.join(RUNTIME_DIR, "translation_cache.db"))
             except Exception as e:
                 logger.error(f"Failed to open translation cache, continuing without it: {e}")
                 self._translation_cache = None

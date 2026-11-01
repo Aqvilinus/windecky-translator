@@ -10,6 +10,7 @@ import logging
 import os
 from ctypes import wintypes
 
+import decky
 import psutil
 
 logger = logging.getLogger(__name__)
@@ -17,7 +18,7 @@ logger = logging.getLogger(__name__)
 user32 = ctypes.WinDLL("user32", use_last_error=True)
 user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
 
-STATE_FILE = os.path.join(os.environ.get("TEMP", "."), "decky-translator", "suspended.json")
+STATE_FILE = os.path.join(decky.DECKY_PLUGIN_RUNTIME_DIR, "suspended.json")
 
 _suspended = []  # [pid, creation time] in suspend order
 
