@@ -20,10 +20,13 @@ Self-terminates after 10 minutes of inactivity.
 import json
 import os
 import sys
+import threading
 import time
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import unicode_scripts
+import ctranslate2
+import sentencepiece as spm
+
+import unicode_scripts  # beside this script, which Python puts first on sys.path
 
 IDLE_TIMEOUT_SECONDS = 600
 
@@ -119,34 +122,15 @@ def main():
     translator = None
     tokenizer = None
     last_activity = time.monotonic()
-    loaded_model_dir = None
-
-    try:
-        import ctranslate2
-        import sentencepiece as spm
-    except ImportError as e:
-        resp = {"ok": False, "error": f"Import failed: {e}"}
-        sys.stdout.write(json.dumps(resp) + "\n")
-        sys.stdout.flush()
-        sys.exit(1)
 
     def send(obj):
         sys.stdout.write(json.dumps(obj) + "\n")
         sys.stdout.flush()
 
     def load_model(model_dir):
-        nonlocal translator, tokenizer, loaded_model_dir
+        nonlocal translator, tokenizer
 
         unload_model()
-
-        model_bin = os.path.join(model_dir, "model.bin")
-        sp_model = os.path.join(model_dir, "sentencepiece.bpe.model")
-
-        if not os.path.exists(model_bin):
-            return {"ok": False, "error": f"model.bin not found in {model_dir}"}
-        if not os.path.exists(sp_model):
-            return {"ok": False, "error": f"sentencepiece.bpe.model not found in {model_dir}"}
-
         try:
             translator = ctranslate2.Translator(
                 model_dir,
@@ -155,8 +139,7 @@ def main():
                 intra_threads=4,
                 compute_type="int8",
             )
-            tokenizer = spm.SentencePieceProcessor(sp_model)
-            loaded_model_dir = model_dir
+            tokenizer = spm.SentencePieceProcessor(os.path.join(model_dir, "sentencepiece.bpe.model"))
 
             try:
                 translator.translate_batch(
@@ -177,10 +160,9 @@ def main():
             return {"ok": False, "error": f"Failed to load model: {e}"}
 
     def unload_model():
-        nonlocal translator, tokenizer, loaded_model_dir
+        nonlocal translator, tokenizer
         translator = None
         tokenizer = None
-        loaded_model_dir = None
 
     def translate_texts(texts, src_langs, tgt_lang):
         if translator is None or tokenizer is None:
@@ -237,17 +219,11 @@ def main():
             for i, result in enumerate(results):
                 src_text = texts[i]
                 input_token_count = len(tokenized[i]) - 2  # minus lang token and </s>
-                # NLLB occasionally returns no hypothesis on weird input: keep the source rather than ""
-                if not result.hypotheses or not result.hypotheses[0]:
-                    translations.append(src_text)
-                    token_counts.append({"input": input_token_count, "output": 0})
-                    fallbacks.append(True)
-                    continue
-                tokens = result.hypotheses[0]
+                tokens = result.hypotheses[0] if result.hypotheses else []
                 score = result.scores[0] if result.scores else 0.0
                 if tokens and tokens[0] == tgt_lang:
                     tokens = tokens[1:]
-                # only the target-lang prefix came out: keep the source rather than ""
+                # no hypothesis on weird input, or only the target-language tag: keep the source rather than ""
                 if not tokens:
                     translations.append(src_text)
                     token_counts.append({"input": input_token_count, "output": 0})
@@ -299,8 +275,6 @@ def main():
     # thread ends an idle worker. (Reading stdin in a second thread instead blocks the main thread's own use of the
     # stdin handle while that read is pending.) When the plugin goes away its end of the pipe closes, readline
     # returns "" and the worker exits, so there's no orphan check.
-    import threading
-
     def _idle_watch():
         while True:
             time.sleep(30)
@@ -315,44 +289,17 @@ def main():
             break
 
         last_activity = time.monotonic()
-        line = line.strip()
-        if not line:
-            continue
-
-        try:
-            cmd = json.loads(line)
-        except json.JSONDecodeError:
-            send({"ok": False, "error": "Invalid JSON"})
-            continue
-
-        command = cmd.get("cmd")
+        cmd = json.loads(line)
+        command = cmd["cmd"]
 
         if command == "load":
-            model_dir = cmd.get("model_dir", "")
-            result = load_model(model_dir)
-            send(result)
+            send(load_model(cmd["model_dir"]))
 
         elif command == "translate":
-            texts = cmd.get("texts", [])
-            src_langs = cmd.get("src_langs")
-            tgt_lang = cmd.get("tgt_lang", "")
-            if not texts:
-                send({"ok": True, "translations": []})
-            elif not src_langs or not tgt_lang:
-                send({"ok": False, "error": "src_langs and tgt_lang required"})
-            elif len(src_langs) != len(texts):
-                send({"ok": False, "error": "src_langs length mismatch"})
-            else:
-                result = translate_texts(texts, src_langs, tgt_lang)
-                send(result)
+            send(translate_texts(cmd["texts"], cmd["src_langs"], cmd["tgt_lang"]))
 
         elif command == "lid":
-            texts = cmd.get("texts", [])
-            candidates = cmd.get("candidates", [])
-            if len(candidates) != len(texts):
-                send({"ok": False, "error": "candidates length mismatch"})
-            else:
-                send(lid_texts(texts, candidates))
+            send(lid_texts(cmd["texts"], cmd["candidates"]))
 
         elif command == "unload":
             unload_model()
