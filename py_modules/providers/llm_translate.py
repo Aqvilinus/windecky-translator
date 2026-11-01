@@ -50,13 +50,9 @@ class Translations(list):
     sources: List[Optional[str]] = []
 
 
-def _lang_name(code: str) -> str:
-    return LANGUAGE_NAMES.get(code, code)
-
-
 def _system_prompt(source_lang: str, target_lang: str) -> str:
-    src = "" if not source_lang or source_lang == "auto" else f" from {_lang_name(source_lang)}"
-    tgt = _lang_name(target_lang)
+    src = "" if not source_lang or source_lang == "auto" else f" from {LANGUAGE_NAMES.get(source_lang, source_lang)}"
+    tgt = LANGUAGE_NAMES.get(target_lang, target_lang)
     return (
         f"You translate text that OCR read from one video game screen{src} into {tgt}.\n"
         "The input is a JSON object {\"texts\": [...]}: the screen's text blocks in reading order. Use the whole "

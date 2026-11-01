@@ -39,7 +39,6 @@ _NLLB_CODES = {
     "ro": "ron_Latn",
     "bg": "bul_Cyrl",
     "hi": "hin_Deva",
-    "id": "ind_Latn",
     "hr": "hrv_Latn",
     "cs": "ces_Latn",
     "hu": "hun_Latn",

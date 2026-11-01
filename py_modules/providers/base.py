@@ -20,7 +20,6 @@ logger = logging.getLogger(__name__)
 
 # The plugin's language codes in English: for the AI engines' prompts and the plugin's messages
 LANGUAGE_NAMES = {
-    "auto": "auto-detect",
     "en": "English", "ja": "Japanese", "ko": "Korean",
     "zh-CN": "Simplified Chinese", "zh-TW": "Traditional Chinese",
     "de": "German", "fr": "French", "es": "Spanish",
@@ -29,9 +28,8 @@ LANGUAGE_NAMES = {
     "vi": "Vietnamese", "fi": "Finnish", "ru": "Russian",
     "uk": "Ukrainian", "el": "Greek", "th": "Thai",
     "bg": "Bulgarian", "ar": "Arabic", "hi": "Hindi",
-    "id": "Indonesian", "ms": "Malay", "sv": "Swedish",
-    "da": "Danish", "no": "Norwegian", "cs": "Czech",
-    "hu": "Hungarian", "he": "Hebrew", "hr": "Croatian",
+    "sv": "Swedish", "da": "Danish", "no": "Norwegian",
+    "cs": "Czech", "hu": "Hungarian", "hr": "Croatian",
 }
 
 

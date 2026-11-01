@@ -20,7 +20,7 @@ MAX_CHARS = 1000  # the web page's limit per request
 _TOKEN_REFRESH_MARGIN_SECONDS = 120
 
 # plugin language codes Bing spells differently
-_LANG = {"auto": "auto-detect", "zh-CN": "zh-Hans", "zh-TW": "zh-Hant", "no": "nb", "tl": "fil", "iw": "he"}
+_LANG = {"auto": "auto-detect", "zh-CN": "zh-Hans", "zh-TW": "zh-Hant", "no": "nb"}
 
 
 class RateLimited(Exception):
