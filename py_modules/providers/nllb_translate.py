@@ -6,11 +6,11 @@ import os
 import re
 import threading
 import unicodedata
-from typing import List, Optional
+from typing import List
 
 from .base import DownloadError, Downloader, TranslationError, TranslationProvider
 from .unicode_scripts import CJK_FAMILIES, dominant_family, flores_families
-from .worker import Worker, find_python, worker_pythonpath
+from .worker import Worker
 
 logger = logging.getLogger(__name__)
 
@@ -369,30 +369,17 @@ class NLLBTranslateProvider(TranslationProvider):
     def __init__(self, model: NLLBDownloader):
         self._model = model
         self._loaded_model_dir = None
-        self._python_path = None
         self._persistent_mode = False
 
-        self._py_modules_path = worker_pythonpath()
         self._worker = Worker("NLLB", os.path.join(os.path.dirname(__file__), "nllb_worker.py"),
                               env={"OMP_NUM_THREADS": "4", "MKL_NUM_THREADS": "4"})
-
-    def _find_python_interpreter(self) -> Optional[str]:
-        if self._python_path:
-            return self._python_path
-        self._python_path = find_python()
-        return self._python_path
 
     def _ensure_worker(self) -> bool:
         if self._worker.alive:
             return True
-        python_path = self._find_python_interpreter()
-        if not python_path:
-            logger.error("CT2 translation: No Python interpreter found")
-            return False
         self._loaded_model_dir = None
         # a persistent worker skips its idle timeout (nllb_worker.py)
-        return self._worker.start(python_path, self._py_modules_path,
-                                  env={"CT2_PERSISTENT": "1" if self._persistent_mode else None})
+        return self._worker.start(env={"CT2_PERSISTENT": "1" if self._persistent_mode else None})
 
     def _send_command(self, cmd: dict, timeout: float = WORKER_TIMEOUT_SECONDS) -> dict:
         reply = self._worker.request(cmd, timeout)

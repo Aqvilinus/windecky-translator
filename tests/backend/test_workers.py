@@ -18,7 +18,8 @@ def test_providers_load_without_compiled_modules():
     can't, so the plugin still starts and reports what is missing (main.py STARTUP_ERRORS)."""
     import subprocess
     import sys
-    code = ("import sys; sys.modules['PIL'] = None; sys.modules['numpy'] = None; "
+    code = ("import sys, types; sys.modules['PIL'] = None; sys.modules['numpy'] = None; "
+            "sys.modules['decky'] = types.SimpleNamespace(DECKY_PLUGIN_DIR='.'); "  # Decky's module, as far as used
             f"sys.path.insert(0, {os.path.dirname(PROVIDERS)!r}); import providers")
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr

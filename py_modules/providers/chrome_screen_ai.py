@@ -16,7 +16,7 @@ import zipfile
 from typing import List, Optional
 
 from .base import DownloadError, Downloader, OCRError, OCRProvider, TextRegion
-from .worker import Worker, find_python, missing_message, worker_pythonpath
+from .worker import PYTHON_EXE, PYTHON_MISSING, Worker
 
 logger = logging.getLogger(__name__)
 
@@ -42,12 +42,10 @@ class ChromeScreenAIProvider(OCRProvider):
         # model_dir holds the DLL and TFLite files (ChromeScreenAIDownloader below).
         self._model_dir = model_dir
         self._init_error: Optional[str] = None
-        self._python_path: Optional[str] = None
 
         self._persistent_mode = False
         self._lock = threading.Lock()
 
-        self._py_modules_dir = worker_pythonpath()
         # the engine picks its own thread count: don't pass the plugin's limits on
         self._worker = Worker("Chrome Screen AI", WORKER_SCRIPT,
                               env={k: None for k in _THREAD_LIMIT_VARS})
@@ -64,9 +62,8 @@ class ChromeScreenAIProvider(OCRProvider):
             self._init_error = "Chrome Screen AI engine not downloaded"
             return False
 
-        self._python_path = find_python()
-        if not self._python_path:
-            self._init_error = missing_message()
+        if not os.path.exists(PYTHON_EXE):
+            self._init_error = PYTHON_MISSING
             logger.warning(self._init_error)
             return False
 
@@ -98,7 +95,7 @@ class ChromeScreenAIProvider(OCRProvider):
     def _start_worker(self) -> None:
         if self._worker.alive:
             return
-        if not self._worker.start(self._python_path, self._py_modules_dir):
+        if not self._worker.start():
             raise OCRError("On-device OCR could not start (details in the plugin log)")
         start = time.time()
         ready = self._worker.request({"type": "init", "model_dir": self._model_dir}, WORKER_READY_TIMEOUT_SECONDS)

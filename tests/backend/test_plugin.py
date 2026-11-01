@@ -243,7 +243,7 @@ def test_chrome_screen_ai_failures_raise(tmp_path):
         def __init__(self, replies):
             self.replies, self.alive, self.stops = list(replies), False, 0
 
-        def start(self, python_path, pythonpath):
+        def start(self):
             self.alive = True
             return True
 
@@ -254,7 +254,6 @@ def test_chrome_screen_ai_failures_raise(tmp_path):
             self.alive, self.stops = False, self.stops + 1
 
     provider = ChromeScreenAIProvider(model_dir=str(tmp_path))
-    provider._python_path = "python.exe"
     for replies, reason in (
         ([{"type": "ready"}, None], "didn't answer"),
         ([{"type": "ready"}, {"error": "PerformOCR null"}], "PerformOCR null"),

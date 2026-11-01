@@ -2,7 +2,15 @@
 import sys
 import textwrap
 
+import pytest
+
+from providers import worker as worker_module
 from providers.worker import Worker
+
+
+@pytest.fixture(autouse=True)
+def this_python(monkeypatch):
+    monkeypatch.setattr(worker_module, "PYTHON_EXE", sys.executable)
 
 WORKER = textwrap.dedent('''
     import json, os, sys, time
@@ -23,7 +31,7 @@ def worker(tmp_path, **kw):
     script = tmp_path / "worker.py"
     script.write_text(WORKER, encoding="utf-8")
     w = Worker("test", str(script), **kw)
-    assert w.start(sys.executable, "", env={"TEST_VAR": "on"})
+    assert w.start(env={"TEST_VAR": "on"})
     return w
 
 
@@ -39,7 +47,7 @@ def test_a_worker_that_doesnt_answer_in_time_is_stopped(tmp_path):
     w = worker(tmp_path)
     assert w.request({"cmd": "sleep"}, timeout=0.3) is None
     assert not w.alive  # its late answer must not reach the next request
-    assert w.start(sys.executable, "")
+    assert w.start()
     assert w.request({"cmd": "echo", "text": "again"}, timeout=10)["text"] == "again"
     w.stop()
 
