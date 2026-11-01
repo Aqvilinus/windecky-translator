@@ -26,6 +26,7 @@ import { logger } from "./Logger";
 import { WEB_OCR_ENGINES, WEB_TRANSLATION_ENGINES } from "./providers";
 
 import { TabMain, TabTranslation, TabControls } from "./tabs";
+import type { InstalledModels } from "./tabs/TabMain";
 
 const IconTranslate = () => (
     <svg style={{ display: "block" }} width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -81,7 +82,7 @@ const STATUS_POLL_INTERVAL_MS = 10000;
 const GameTranslator: VFC<{ logic: GameTranslatorLogic }> = ({ logic }) => {
     const { settings, initialized } = useSettings();
     const [overlayVisible, setOverlayVisible] = useState<boolean>(logic.isOverlayVisible());
-    const [providerStatus, setProviderStatus] = useState<any>(null);
+    const [models, setModels] = useState<InstalledModels | null>(null);
     const [currentTabRoute, setCurrentTabRoute] = useState<string>("main");
     const [pendingScrollTarget, setPendingScrollTarget] = useState<string | null>(null);
     const [webReachability, setWebReachability] = useState<{
@@ -118,30 +119,29 @@ const GameTranslator: VFC<{ logic: GameTranslatorLogic }> = ({ logic }) => {
         }
     }, []);
 
-    const fetchProviderStatus = useCallback(async () => {
+    const refreshStatus = useCallback(async () => {
         try {
-            const result = await backend.getProviderStatus();
-            if (result) {
-                setProviderStatus(result);
-            }
+            const [chromescreenai, nllb] = await Promise.all(
+                [backend.getModelStatus('chromescreenai'), backend.getModelStatus('nllb')]);
+            setModels({ chromescreenai, nllb });
         } catch (error) {
-            logger.error('GameTranslator', 'Failed to fetch provider status', error);
+            logger.error('GameTranslator', 'Failed to fetch the model status', error);
         }
         await probeReachability();
     }, [probeReachability]);
 
     useEffect(() => {
-        fetchProviderStatus();
-        const intervalId = setInterval(fetchProviderStatus, STATUS_POLL_INTERVAL_MS);
+        refreshStatus();
+        const intervalId = setInterval(refreshStatus, STATUS_POLL_INTERVAL_MS);
 
         return () => {
             clearInterval(intervalId);
         };
-    }, [fetchProviderStatus]);
+    }, [refreshStatus]);
 
     useEffect(() => {
-        if (currentTabRoute === 'main') fetchProviderStatus();
-    }, [currentTabRoute, fetchProviderStatus]);
+        if (currentTabRoute === 'main') refreshStatus();
+    }, [currentTabRoute, refreshStatus]);
 
     useEffect(() => {
         setWebReachability(null);
@@ -184,7 +184,7 @@ const GameTranslator: VFC<{ logic: GameTranslatorLogic }> = ({ logic }) => {
                         {
                             // @ts-ignore
                             title: <IconTranslate />,
-                            content: <TabMain logic={logic} overlayVisible={overlayVisible} providerStatus={providerStatus} webReachability={webReachability} onNavigateToTab={handleNavigateToTab} />,
+                            content: <TabMain logic={logic} overlayVisible={overlayVisible} models={models} webReachability={webReachability} onNavigateToTab={handleNavigateToTab} />,
                             id: "main",
                         },
                         {

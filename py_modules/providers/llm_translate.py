@@ -117,7 +117,6 @@ class LLMTranslateProvider(TranslationProvider):
         self._models: Dict[str, str] = dict(DEFAULT_MODELS)
         self._custom_url = ""
         self._paused_until = 0.0
-        self.last_error = ""
 
     # -- configuration --
 
@@ -134,10 +133,6 @@ class LLMTranslateProvider(TranslationProvider):
                 self._models[name] = value or DEFAULT_MODELS[name]
         if custom_url is not None:
             self._custom_url = custom_url.strip().rstrip("/")
-
-    @property
-    def backend(self) -> str:
-        return self._backend
 
     @property
     def model(self) -> str:
@@ -229,7 +224,6 @@ class LLMTranslateProvider(TranslationProvider):
         order = [i for i, t in enumerate(texts) if t and t.strip()]
         chunks = chunk_indices(texts, MAX_CHARS_PER_REQUEST, max_items=MAX_TEXTS_PER_REQUEST)
 
-        self.last_error = ""
         for chunk in chunks:
             if not self.is_configured() or time.time() < self._paused_until:
                 break
@@ -238,11 +232,9 @@ class LLMTranslateProvider(TranslationProvider):
             except ApiKeyError:
                 raise
             except (RateLimitError, NetworkError) as e:
-                self.last_error = str(e)
                 logger.warning(f"{self.name}: {e}; Google/Bing translates the rest")
                 break
             except Exception as e:
-                self.last_error = str(e)
                 logger.warning(f"{self.name} failed: {e}")
                 break
             if out is None:

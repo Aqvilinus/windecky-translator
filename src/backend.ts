@@ -32,7 +32,6 @@ export const backend = {
         TranslatedRegion[] | ErrorResponse | null>('translate_text'),
     nativeOverlayUpdate: callable<[state: Partial<OverlayState>], boolean>('native_overlay_update'),
     getBootStatus: callable<[], string[]>('get_boot_status'),
-    getProviderStatus: callable<[], Record<string, any>>('get_provider_status'),
     checkWebReachability: callable<[],
         { ocr?: Reachability | null; translation?: Reachability | null; error?: string }>('check_web_reachability'),
     getWindowsStatus: callable<[], Record<string, any>>('get_windows_status'),

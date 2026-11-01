@@ -10,6 +10,7 @@ import { OCR_ENGINE_LABELS, TRANSLATION_ENGINE_LABELS } from "../providers";
 import { BsTranslate, BsXLg, BsEye, BsStars } from "react-icons/bs";
 import { HiInboxArrowDown } from "react-icons/hi2";
 import { useSettings } from "../SettingsContext";
+import type { ModelKind, ModelStatus } from "../backend";
 import { GameTranslatorLogic } from "../Translator";
 import { LLM_BACKEND_LABELS, llmModel } from "../llm";
 import { logger } from "../Logger";
@@ -70,10 +71,12 @@ const ReachabilityRow: VFC<{ result: ReachResult; expectedProvider: string }> = 
     );
 };
 
+export type InstalledModels = Record<ModelKind, ModelStatus | null>;
+
 interface TabMainProps {
     logic: GameTranslatorLogic;
     overlayVisible: boolean;
-    providerStatus: any;
+    models: InstalledModels | null;
     webReachability: {
         ocr?: ReachResult;
         translation?: ReachResult;
@@ -81,18 +84,16 @@ interface TabMainProps {
     onNavigateToTab: (tabId: string, scrollTargetId?: string) => void;
 }
 
-export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStatus, webReachability, onNavigateToTab }) => {
+export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, models, webReachability, onNavigateToTab }) => {
     const { settings, updateSetting } = useSettings();
 
     const ocrNeedsDownload =
-        !!providerStatus
-        && settings.ocrProvider === 'chromescreenai' && !providerStatus.chromescreenai_downloaded;
+        !!models && settings.ocrProvider === 'chromescreenai' && !models.chromescreenai?.downloaded;
 
     const translationNeedsDownload =
         settings.ocrProvider !== 'gemini_vision'
         && settings.translationProvider === 'ct2'
-        && !!providerStatus
-        && !providerStatus.nllb_downloaded;
+        && !!models && !models.nllb?.downloaded;
 
     const handleButtonClick = () => {
         if (overlayVisible) {
@@ -166,19 +167,19 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                                 )}
                                 {settings.ocrProvider === 'chromescreenai' && (
                                     <div style={{ marginLeft: '22px', marginBottom: '6px' }}>
-                                        {providerStatus?.chromescreenai_downloaded && (
+                                        {models?.chromescreenai?.downloaded && (
                                             <div style={{ color: '#666', fontSize: '10px', marginBottom: '4px' }}>Engine: Chrome Screen AI</div>
                                         )}
                                         <div style={{ color: '#666', fontSize: '10px', display: 'flex', alignItems: 'center' }}>
-                                            {providerStatus?.chromescreenai_downloading ? (
+                                            {models?.chromescreenai?.downloading ? (
                                                 <>
                                                     <InstallingDot />
                                                     <span>Installing...</span>
                                                 </>
                                             ) : (
                                                 <>
-                                                    <StatusDot ok={!!providerStatus?.chromescreenai_downloaded} />
-                                                    <span>{providerStatus?.chromescreenai_downloaded ? 'Ready' : 'Not ready (Engine not installed)'}</span>
+                                                    <StatusDot ok={!!models?.chromescreenai?.downloaded} />
+                                                    <span>{models?.chromescreenai?.downloaded ? 'Ready' : 'Not ready (Engine not installed)'}</span>
                                                 </>
                                             )}
                                         </div>
@@ -229,19 +230,19 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                                     )}
                                     {settings.ocrProvider !== 'gemini_vision' && settings.translationProvider === 'ct2' && (
                                         <>
-                                            {providerStatus?.nllb_downloaded && (
+                                            {models?.nllb?.downloaded && (
                                                 <div style={{ color: '#666', fontSize: '10px' }}>Model: NLLB-200 1.3B</div>
                                             )}
                                             <div style={{ color: '#666', fontSize: '10px', display: 'flex', alignItems: 'center' }}>
-                                                {providerStatus?.nllb_downloading ? (
+                                                {models?.nllb?.downloading ? (
                                                     <>
                                                         <InstallingDot />
                                                         <span>Installing...</span>
                                                     </>
                                                 ) : (
                                                     <>
-                                                        <StatusDot ok={!!providerStatus?.nllb_downloaded} />
-                                                        <span>{providerStatus?.nllb_downloaded ? 'Ready' : 'Not ready (Model not installed)'}</span>
+                                                        <StatusDot ok={!!models?.nllb?.downloaded} />
+                                                        <span>{models?.nllb?.downloaded ? 'Ready' : 'Not ready (Model not installed)'}</span>
                                                     </>
                                                 )}
                                             </div>

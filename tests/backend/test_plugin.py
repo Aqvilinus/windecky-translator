@@ -35,8 +35,6 @@ def test_start_on_windows(backend, windows):
     assert windows.hotkey.enabled is True
     s = backend.call("get_all_settings")
     assert s["ocr_provider"] == "googlecloud" and s["translation_provider"] == "freegoogle" and s["enabled"] is True
-    status = backend.call("get_provider_status")
-    assert status["ocr_provider"] == "Google Cloud Vision" and status["translation_available"] is True
 
 
 def test_settings_persist_across_a_restart(start, windows):

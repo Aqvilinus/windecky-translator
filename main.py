@@ -270,15 +270,6 @@ class Plugin:
             logger.error(f"Error fetching Gemini models: {e}")
             return []
 
-    async def get_provider_status(self):
-        try:
-            if self._providers:
-                return self._providers.get_provider_status()
-            return {"error": "Provider manager not initialized"}
-        except Exception as e:
-            logger.error(f"Error getting provider status: {str(e)}")
-            return {"error": str(e)}
-
     async def check_web_reachability(self):
         try:
             if self._providers:
@@ -689,9 +680,8 @@ class Plugin:
             self._configure_providers()
             self._sync_workers()
 
-            provider_status = self._providers.get_provider_status()
-            logger.info(f"Initialized - OCR: {provider_status.get('ocr_provider', '?')}, "
-                        f"Translation: {provider_status.get('translation_provider', '?')}, "
+            logger.info(f"Initialized - OCR: {self._settings.get('ocr_provider')}, "
+                        f"Translation: {self._settings.get('translation_provider')}, "
                         f"Target lang: {self._settings.get('target_language')}")
 
         except Exception as e:

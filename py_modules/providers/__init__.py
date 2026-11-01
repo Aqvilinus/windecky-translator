@@ -250,36 +250,6 @@ class ProviderRegistry:
         logger.debug(f"Using {provider.name} for translation")
         return await provider.translate_batch(texts, source_lang, target_lang)
 
-    def get_provider_status(self) -> dict:
-        ocr_provider = self.get_ocr_provider()
-        trans_provider = self.get_translation_provider()
-
-        status = {
-            "ocr_provider_preference": self._ocr_provider_preference,
-            "translation_provider_preference": self._translation_provider_preference,
-            "google_api_configured": bool(self._google_api_key),
-            "gemini_api_configured": bool(self._gemini_api_key),
-            "ocr_provider": ocr_provider.name if ocr_provider else "None",
-            "translation_provider": trans_provider.name if trans_provider else "None",
-            "ocr_available": ocr_provider.is_available() if ocr_provider else False,
-            "translation_available": trans_provider.is_available("auto", "en") if trans_provider else False,
-        }
-
-        llm = self._translation_providers.get("llm")
-        if llm:
-            status["llm_backend"] = llm.backend
-            status["llm_model"] = llm.model
-            status["llm_configured"] = llm.is_configured()
-            status["llm_last_error"] = llm.last_error
-
-        for kind in ("nllb", "chromescreenai"):
-            s = self.model_status(kind) or {}
-            status[f"{kind}_downloaded"] = bool(s.get("downloaded"))
-            status[f"{kind}_downloading"] = bool(s.get("downloading"))
-            status[f"{kind}_progress"] = float(s.get("progress") or 0)
-
-        return status
-
     async def check_web_reachability(self) -> dict:
         """Probe reachability of the currently selected web providers."""
         ocr_pref = self._ocr_provider_preference
