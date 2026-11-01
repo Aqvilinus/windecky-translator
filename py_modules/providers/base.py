@@ -1,6 +1,4 @@
-# providers/base.py
-# What the providers share: their interfaces, errors, HTTP requests and the background download of
-# a model's files.
+"""What the providers share: their interfaces, errors, HTTP requests and the background download of a model's files."""
 
 import asyncio
 import hashlib
@@ -22,17 +20,14 @@ logger = logging.getLogger(__name__)
 
 
 class NetworkError(Exception):
-    """Raised when a network connection error occurs."""
     pass
 
 
 class ApiKeyError(Exception):
-    """Raised when the API key is invalid or missing."""
-    pass
+    """The API key is invalid or missing."""
 
 
 class RateLimitError(Exception):
-    """Raised when API rate limit is exceeded."""
     pass
 
 
@@ -158,15 +153,14 @@ async def probe(method: str, url: str, **kwargs) -> tuple:
 
 @dataclass
 class TextRegion:
-    """Represents a detected text region from OCR."""
     text: str
     rect: Dict[str, int]  # left, top, right, bottom
     confidence: float = 0.0
     is_dialog: bool = False
-    translated_text: Optional[str] = None  # Pre-translated text
+    translated_text: Optional[str] = None  # from an engine that translates while it reads (Gemini Vision)
 
     def to_dict(self) -> Dict:
-        """Convert to dictionary for JSON serialization."""
+        """The region as the frontend reads it."""
         d = {
             "text": self.text,
             "rect": self.rect,
@@ -179,79 +173,33 @@ class TextRegion:
 
 
 class OCRProvider(ABC):
-    """Abstract base class for OCR providers."""
-
     @property
     @abstractmethod
     def name(self) -> str:
-        """Return the provider name."""
-        pass
+        """Shown to the user, e.g. in error messages."""
 
     @abstractmethod
     async def recognize(self, image_data: bytes, language: str = "auto") -> List[TextRegion]:
-        """
-        Perform OCR on image data and return text regions.
-
-        Args:
-            image_data: Raw image bytes (PNG/JPEG)
-            language: Language code or "auto" for auto-detection
-
-        Returns:
-            List of TextRegion objects with detected text and positions
-        """
-        pass
+        """The text regions of a PNG or JPEG image; language is a code or "auto"."""
 
     @abstractmethod
     def is_available(self, language: str = "auto") -> bool:
-        """
-        Check if OCR is available for the given language.
-
-        Args:
-            language: Language code to check
-
-        Returns:
-            True if the provider can handle this language
-        """
-        pass
+        """Whether the provider can handle this language."""
 
 
 class TranslationProvider(ABC):
-    """Abstract base class for translation providers."""
-
     @property
     @abstractmethod
     def name(self) -> str:
-        """Return the provider name."""
-        pass
+        """Shown to the user, e.g. in error messages."""
 
     @abstractmethod
     async def translate_batch(self, texts: List[str], source_lang: str, target_lang: str) -> List[str]:
-        """
-        Translate multiple texts efficiently.
-
-        Args:
-            texts: List of texts to translate
-            source_lang: Source language code
-            target_lang: Target language code
-
-        Returns:
-            List of translated texts
-        """
-        pass
+        """The translations, in the order of texts."""
 
     @abstractmethod
     def is_available(self, source_lang: str, target_lang: str) -> bool:
-        """
-        Check if translation is available for the language pair.
-
-        Args:
-            source_lang: Source language code
-            target_lang: Target language code
-
-        Returns:
-            True if the provider can handle this language pair
-        """
-        pass
+        """Whether the provider can handle this language pair."""
 
 
 def chunk_indices(texts: List[str], max_chars: int, max_items: Optional[int] = None,
@@ -278,7 +226,7 @@ def chunk_indices(texts: List[str], max_chars: int, max_items: Optional[int] = N
 
 # -- the background download of a model's files
 
-CHUNK = 256 * 1024
+_DOWNLOAD_CHUNK_BYTES = 256 * 1024
 
 
 class DownloadError(Exception):
@@ -317,7 +265,6 @@ class Downloader:
             return {"downloaded": self.is_installed(), "size": size, "approx_size_mb": self.approx_size_mb,
                     "downloading": self._downloading, "progress": self._progress, "error": self._error}
 
-    # ---- actions
     def start(self) -> bool:
         """Start the download in a thread; False if one is running."""
         with self._lock:
@@ -372,7 +319,7 @@ class Downloader:
                 if total > limit:
                     raise DownloadError(f"The server offers {total // 2**20} MB, more than expected: not downloaded")
                 done = 0
-                while chunk := resp.read(CHUNK):
+                while chunk := resp.read(_DOWNLOAD_CHUNK_BYTES):
                     self._check_cancel()
                     done += len(chunk)
                     if done > limit:

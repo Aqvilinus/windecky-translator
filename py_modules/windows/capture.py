@@ -113,7 +113,6 @@ async def _capture_window(hwnd, timeout):
 
 
 def bitmap_to_image(bmp):
-    """The frame as a PIL RGB image."""
     from PIL import Image
     w, h = bmp.pixel_width, bmp.pixel_height
     buf = Buffer(w * h * 4)

@@ -1,5 +1,3 @@
-// src/tabs/TabTranslation.tsx - Language and provider settings (its parts are in ./translation/)
-
 import { PanelSection, PanelSectionRow, Dropdown, DropdownItem, SliderField, ToggleField, ButtonItem, DialogButton, Field, Focusable } from "@decky/ui";
 import { showModal } from "../modal";
 import { VFC, useState, useEffect, useRef, useCallback } from "react";
@@ -18,6 +16,9 @@ import { ApiKeyModal, CustomServerModal } from "./translation/dialogs";
 import { CacheEntriesModal } from "./translation/cache";
 import { llmBackendOptions, modelOption, ModelPicker, knownGeminiModels } from "./translation/models";
 import { useChromeScreenAIStatus, useNllbModelStatus, ModelActionButton, ModelStatusIndicator, ModelHeadingProgressBar, ModelDownloadError, ProviderRating } from "./translation/downloads";
+
+// a scroll before Steam's tab transition and focus router settle gets overridden
+const TAB_TRANSITION_SETTLE_MS = 400;
 
 interface TabTranslationProps {
     scrollTarget?: string | null;
@@ -57,7 +58,6 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                   : scrollTarget === 'ct2-action' ? ct2ActionRef
                   : null;
 
-        // Wait for Steam's tab transition + focus router to settle before scrolling, otherwise our scroll gets overridden.
         const timeoutId = setTimeout(() => {
             const el = ref?.current as HTMLElement | null;
             if (el) {
@@ -65,7 +65,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                 el.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }
             onScrolled?.();
-        }, 400);
+        }, TAB_TRANSITION_SETTLE_MS);
 
         return () => clearTimeout(timeoutId);
     }, [scrollTarget]);
@@ -78,7 +78,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
     const placeholderOption = settings.inputLanguage === '' ? [selectLanguageOption] : [];
     const inputLanguageOptions = [...placeholderOption, ...filteredLanguageOptions];
 
-    // When switching to CT2, if source is auto-detect, clear it so user picks a specific language
+    // CT2 can't detect the source language: the user picks one
     useEffect(() => {
         if (settings.initialized && isCT2 && settings.inputLanguage === 'auto') {
             updateSetting('inputLanguage', '', 'Input language');
@@ -114,7 +114,6 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
             </PanelSection>
 
             <PanelSection title="Recognition">
-                {/* OCR Provider Selection */}
                 <PanelSectionRow>
                     <Field
                         label="Text Recognition Method"

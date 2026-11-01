@@ -1,4 +1,3 @@
-// src/SettingsContext.tsx
 import React, { createContext, useContext, useEffect, useReducer } from 'react';
 import { backend, BackendSettings } from './backend';
 import { GameTranslatorLogic } from './Translator';
@@ -16,56 +15,54 @@ export function displayKey(value: string): string {
     return `${value.slice(0, 3)}…${value.slice(-4)}`;
 }
 
-// Define the settings interface
 export interface Settings {
     inputLanguage: string;
     targetLanguage: string;
     enabled: boolean;
     initialized: boolean;
-    confidenceThreshold: number; // New setting for confidence threshold
-    chromeScreenAiPersistentMode: boolean; // Keep Chrome Screen AI worker alive between requests
-    ct2PersistentMode: boolean; // Keep CT2/NLLB worker alive between requests
-    pauseGameOnOverlay: boolean; // Setting to control pausing game when overlay is shown
+    confidenceThreshold: number;
+    chromeScreenAiPersistentMode: boolean; // its worker stays alive between requests
+    ct2PersistentMode: boolean; // the CT2/NLLB worker stays alive between requests
+    pauseGameOnOverlay: boolean;
     ocrProvider: OcrEngine;
     translationProvider: TranslationEngine;
-    googleApiKey: string; // Google Cloud Vision API key for text recognition
-    geminiApiKey: string; // Gemini API key for Gemini Vision (free tier available)
-    geminiModel: string; // Gemini model to use
-    debugMode: boolean; // Debug mode for verbose console logging
-    fontScale: number; // Overlay font scale multiplier for external monitors
+    googleApiKey: string; // Google Cloud: OCR and translation
+    geminiApiKey: string;
+    geminiModel: string; // Gemini Vision's
+    debugMode: boolean;
+    fontScale: number; // the overlay's text, for external monitors
     customRecognitionSettings: boolean;
     translationCacheEnabled: boolean;
-    llmBackend: 'gemini' | 'groq' | 'custom'; // AI translation (providers/llm_translate.py)
-    llmGeminiModel: string; // AI translation (providers/llm_translate.py)
-    llmGroqModel: string; // AI translation (providers/llm_translate.py)
-    llmCustomModel: string; // AI translation (providers/llm_translate.py)
-    llmCustomUrl: string; // AI translation (providers/llm_translate.py)
-    groqApiKey: string; // AI translation (providers/llm_translate.py)
-    llmCustomApiKey: string; // AI translation (providers/llm_translate.py)
+    // AI translation (providers/llm_translate.py)
+    llmBackend: 'gemini' | 'groq' | 'custom';
+    llmGeminiModel: string;
+    llmGroqModel: string;
+    llmCustomModel: string;
+    llmCustomUrl: string;
+    groqApiKey: string;
+    llmCustomApiKey: string;
 }
 
-// Define action types
 type SettingsAction =
     | { type: 'INITIALIZE_SETTINGS', settings: Partial<Settings> }
     | { type: 'UPDATE_SETTING', key: keyof Settings, value: any }
     | { type: 'SET_INITIALIZED', initialized: boolean };
 
-// Define the initial state
 const initialSettings: Settings = {
     inputLanguage: "",
     targetLanguage: "",
     enabled: true,
     initialized: false,
-    confidenceThreshold: 0.6, // Default confidence threshold
+    confidenceThreshold: 0.6,
     chromeScreenAiPersistentMode: false,
     ct2PersistentMode: false,
-    pauseGameOnOverlay: false, // Default to not pausing game
-    ocrProvider: "chromescreenai", // Default to chromescreenai (Chrome Screen AI) provider
-    translationProvider: "freegoogle", // Default to free Google Translate
-    googleApiKey: "", // Empty by default, only needed for Google Cloud
-    geminiApiKey: "", // Empty by default, needed for Gemini Vision
-    geminiModel: "gemini-3.5-flash", // Default Gemini model
-    debugMode: false, // Debug mode off by default
+    pauseGameOnOverlay: false,
+    ocrProvider: "chromescreenai",
+    translationProvider: "freegoogle",
+    googleApiKey: "",
+    geminiApiKey: "",
+    geminiModel: "gemini-3.5-flash",
+    debugMode: false,
     fontScale: 1.0,
     customRecognitionSettings: false,
     translationCacheEnabled: true,
@@ -146,7 +143,6 @@ export async function loadSettingsIntoLogic(logic: GameTranslatorLogic): Promise
     }
 }
 
-// Create the reducer
 function settingsReducer(state: Settings, action: SettingsAction): Settings {
     switch (action.type) {
         case 'INITIALIZE_SETTINGS':
@@ -160,7 +156,6 @@ function settingsReducer(state: Settings, action: SettingsAction): Settings {
     }
 }
 
-// Create the context
 interface SettingsContextType {
     settings: Settings;
     updateSetting: (key: keyof Settings, value: any, label?: string) => Promise<boolean>;
@@ -169,7 +164,6 @@ interface SettingsContextType {
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
 
-// Create the provider component
 interface SettingsProviderProps {
     children: React.ReactNode;
     logic: GameTranslatorLogic;
@@ -187,7 +181,6 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
         dispatch({ type: 'SET_INITIALIZED', initialized: true });
     };
 
-    // Save one setting: the panel's state, the logic, the backend
     const updateSetting = async (key: keyof Settings, value: any, label?: string): Promise<boolean> => {
         if (key === 'initialized') return true;
         dispatch({
@@ -204,7 +197,6 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
         return false;
     };
 
-    // Initialize settings on mount
     useEffect(() => {
         loadAllSettings();
     }, []);
@@ -220,7 +212,6 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
     );
 };
 
-// Create a hook for using the settings
 export const useSettings = () => {
     const context = useContext(SettingsContext);
     if (!context) {

@@ -1,7 +1,7 @@
-# providers/bing_translate.py
-# Microsoft's free web translator (bing.com/translator), the fallback of the free Google provider when Google rate-limits
-# (HTTP 429/403). Like the web page: read IG/IID and the anti-abuse key/token from bing.com/translator (the token lives
-# an hour), then POST to /ttranslatev3. Several texts go in one request, one per line; Bing keeps the line breaks.
+"""Microsoft's free web translator (bing.com/translator), the fallback of the free Google provider when Google
+rate-limits (HTTP 429/403). Like the web page: read IG/IID and the anti-abuse key/token from bing.com/translator (the
+token lives an hour), then POST to /ttranslatev3. Several texts go in one request, one per line; Bing keeps the line
+breaks."""
 
 import logging
 import re
@@ -17,6 +17,7 @@ TRANSLATE_URL = "https://www.bing.com/ttranslatev3"
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
                          "Chrome/130.0.0.0 Safari/537.36"}
 MAX_CHARS = 1000  # the web page's limit per request
+_TOKEN_REFRESH_MARGIN_SECONDS = 120
 
 # plugin language codes Bing spells differently
 _LANG = {"auto": "auto-detect", "zh-CN": "zh-Hans", "zh-TW": "zh-Hant", "no": "nb", "tl": "fil", "iw": "he"}
@@ -41,7 +42,7 @@ class BingTranslator:
         if not (ig and ab):
             raise RuntimeError("Bing translator page changed: token not found")
         self._params = (ig.group(1), iid.group(1) if iid else "translator.5023", ab.group(1), ab.group(2))
-        self._expires = time.time() + int(ab.group(3)) / 1000 - 120
+        self._expires = time.time() + int(ab.group(3)) / 1000 - _TOKEN_REFRESH_MARGIN_SECONDS
 
     async def _request(self, text: str, src: str, tgt: str) -> str:
         if self._params is None or time.time() > self._expires:

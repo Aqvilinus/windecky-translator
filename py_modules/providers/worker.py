@@ -1,7 +1,6 @@
-# providers/worker.py
-# A worker: a subprocess on the bundled Python that answers each JSON line on its stdin with one JSON line on its
-# stdout. The Chrome Screen AI OCR worker (chrome_screen_ai_worker.py) and the offline NLLB translation worker
-# (nllb_worker.py).
+"""A worker: a subprocess on the bundled Python that answers each JSON line on its stdin with one JSON line on its
+stdout. The Chrome Screen AI OCR worker (chrome_screen_ai_worker.py) and the offline NLLB translation worker
+(nllb_worker.py)."""
 
 import json
 import logging
@@ -63,7 +62,6 @@ def find_python(plugin_dir: str) -> Optional[str]:
 
 
 def _is_compatible(path: str) -> bool:
-    """Verify the interpreter at path matches REQUIRED_PYTHON."""
     try:
         result = subprocess.run(
             [path, "-c", "import sys; print(sys.version_info[0], sys.version_info[1])"],

@@ -1,4 +1,3 @@
-// The translation cache: its entries in a dialog
 import { ModalRoot, DialogButton, Focusable } from "@decky/ui";
 import { VFC, useState, useEffect, useRef } from "react";
 import { OCR_ENGINE_LABELS, TRANSLATION_ENGINE_LABELS } from "../../providers";

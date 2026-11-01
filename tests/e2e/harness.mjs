@@ -30,7 +30,6 @@ export async function waitFor(what, fn, timeoutMs = 10000, everyMs = 150) {
     }
 }
 
-// -- screen and keyboard (win32.py)
 export function win32(...args) {
     if (!existsSync(PYTHON)) throw new Error(`${PYTHON} missing: the plugin's dependencies are not unpacked in bin/`);
     const r = spawnSync(PYTHON, ['-I', WIN32, ...args.map(String)], { encoding: 'utf8', timeout: 30000 });
@@ -43,7 +42,6 @@ export function artifact(name) {
     return join(ARTIFACTS, name);
 }
 
-// -- the plugin's log
 export class Log {
     mark() { this.offset = existsSync(LOG) ? statSync(LOG).size : 0; }
     lines() {
@@ -117,7 +115,6 @@ async function withTarget(info, use) {
     try { return await use(t); } finally { t.close(); }
 }
 
-// -- Steam
 export class Steam {
     async connect() {
         const info = await Target.open('SharedJSContext');
@@ -179,7 +176,6 @@ export class Steam {
         });
     }
 
-    // the backend has Ctrl+Alt+T registered
     async hotkeyRegistered() {
         const s = await this.js(name => DeckyBackend.call('loader/call_plugin_method', name, 'get_windows_status'), NAME);
         return !!s?.hotkey?.registered;

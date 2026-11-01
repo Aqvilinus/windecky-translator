@@ -15,6 +15,8 @@ import sys
 
 _WORKER_MODE = '--worker' in sys.argv
 
+_SK_COLOR_TYPE_RGBA_8888 = 4
+_SK_ALPHA_TYPE_OPAQUE = 1
 
 # Skia structs PerformOCR reads. Only populated fields matter.
 class _SkColorInfo(ctypes.Structure):
@@ -131,8 +133,8 @@ class ScreenAIEngine:
         self._buffer = ctypes.c_char_p(rgba_bytes)
         bitmap.fPixmap.fPixels = ctypes.cast(self._buffer, ctypes.c_void_p)
         bitmap.fPixmap.fRowBytes = width * 4
-        bitmap.fPixmap.fInfo.fColorInfo.fColorType = 4   # kRGBA_8888
-        bitmap.fPixmap.fInfo.fColorInfo.fAlphaType = 1   # kOpaque
+        bitmap.fPixmap.fInfo.fColorInfo.fColorType = _SK_COLOR_TYPE_RGBA_8888
+        bitmap.fPixmap.fInfo.fColorInfo.fAlphaType = _SK_ALPHA_TYPE_OPAQUE
         bitmap.fPixmap.fInfo.fDimensions.fWidth = width
         bitmap.fPixmap.fInfo.fDimensions.fHeight = height
 
@@ -181,7 +183,7 @@ def _proto_to_regions(proto_bytes, scale_x, scale_y, min_confidence):
         text = (line.utf8_string or "").strip()
         if not text:
             continue
-        # Per-line confidence is in [0,1]; drop low-confidence noise.
+        # in [0,1]; drop low-confidence noise
         confidence = float(line.confidence) if line.confidence else 0.0
         if confidence and confidence < min_confidence:
             continue

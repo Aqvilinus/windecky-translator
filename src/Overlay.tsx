@@ -1,4 +1,4 @@
-// Overlay.tsx - the translation overlay's state. The backend draws it over the game window
+// The translation overlay's state. The backend draws it over the game window
 // (py_modules/overlay.py); src/windows.ts forwards every change there.
 
 import { TranslatedRegion } from "./TextTranslator";
@@ -36,7 +36,6 @@ export class ImageState {
         return this.state.visible;
     }
 
-    // Show the overlay with a status pill
     startLoading(step: string, detail: string = ""): void {
         this.update({ visible: true, regions: [], loading: true, processingStep: step, processingDetail: detail,
                       processingIsError: false });

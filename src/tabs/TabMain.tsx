@@ -1,5 +1,3 @@
-// src/tabs/TabMain.tsx - Main tab with enable toggle and translate button
-
 import {
     ButtonItem,
     PanelSection,
@@ -110,7 +108,6 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
             onNavigateToTab('translation', 'ct2-action');
             return;
         }
-        // close the side menu (in every Steam window) and wait until it is gone before taking the screenshot
         closeAllSideMenus()
             .then(() => logic.takeScreenshotAndTranslate())
             .catch(err => logger.error('TabMain', 'Screenshot failed', err));
@@ -149,7 +146,6 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                             </ButtonItem>
                         </PanelSectionRow>
 
-                        {/* Provider Status */}
                         <PanelSectionRow>
                             <div style={{ fontSize: '12px', marginTop: '8px' }}>
                                 {settings.ocrProvider === 'gemini_vision' && (

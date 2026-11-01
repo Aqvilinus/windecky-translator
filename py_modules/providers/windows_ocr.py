@@ -1,8 +1,7 @@
-# providers/windows_ocr.py
-# OCR with Windows' own engine (Windows.Media.Ocr), for Decky Loader on Windows.
-# On-device, no download: Windows ships the engine, and each language needs its OCR language pack
-# (Settings > Time & language > Language, or `Add-WindowsCapability -Online -Name Language.OCR~~~ja-JP~0.0.1.0`).
-# Returns one region per text line; the frontend groups lines into paragraphs (TextRecognizer.tsx).
+"""OCR with Windows' own engine (Windows.Media.Ocr), for Decky Loader on Windows.
+On-device, no download: Windows ships the engine, and each language needs its OCR language pack
+(Settings > Time & language > Language, or `Add-WindowsCapability -Online -Name Language.OCR~~~ja-JP~0.0.1.0`).
+Returns one region per text line; the frontend groups lines into paragraphs (TextRecognizer.tsx)."""
 
 import asyncio
 import io
@@ -75,7 +74,7 @@ class WindowsOCRProvider(OCRProvider):
         return sys.platform == "win32" and bool(self.installed_languages())
 
     def get_supported_languages(self) -> List[str]:
-        """The installed OCR packs as plugin codes ("en-US" -> "en", "zh-Hans-CN" -> "zh-CN")."""
+        """The installed OCR packs as plugin codes."""
         return sorted({plugin_code(t) for t in self.installed_languages()})
 
     async def recognize(self, image_data: bytes, language: str = "auto") -> List[TextRegion]:

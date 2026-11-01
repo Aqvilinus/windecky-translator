@@ -1,6 +1,5 @@
-# providers/unicode_scripts.py
-# Which Unicode scripts text is written in: NLLB routes and checks lines with it (nllb_translate.py, and
-# nllb_worker.py in its own process, which is why this is a module of its own).
+"""Which Unicode scripts text is written in: NLLB routes and checks lines with it (nllb_translate.py, and
+nllb_worker.py in its own process, which is why this is a module of its own)."""
 
 SCRIPT_RANGES = [
     ((0x0041, 0x005A), "Latin"),

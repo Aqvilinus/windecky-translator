@@ -1,5 +1,4 @@
-# providers/__init__.py
-# ProviderRegistry: creates the provider the settings choose by its id, keeps it, and owns the model downloads
+"""ProviderRegistry: creates the provider the settings choose by its id, keeps it, and owns the model downloads."""
 
 import hashlib
 import logging
@@ -27,12 +26,11 @@ from .llm_translate import LLMTranslateProvider
 
 logger = logging.getLogger(__name__)
 
-_REACHABILITY_TTL = 4.0
+_REACHABILITY_CACHE_SECONDS = 4.0
 
 _WEB_OCR_PROVIDERS = {"gemini_vision", "googlecloud"}
 _WEB_TRANSLATION_PROVIDERS = {"googlecloud", "freegoogle", "llm"}
 
-# Export all public classes
 __all__ = [
     'OCRProvider',
     'TranslationProvider',
@@ -58,18 +56,15 @@ class ProviderRegistry:
     """The OCR and translation providers by id, created on first use with the settings main.py passes in."""
 
     def __init__(self):
-        """Initialize the provider manager."""
-        # Provider instances (created on demand)
         self._ocr_providers = {}
         self._translation_providers = {}
 
-        # Configuration
         self._google_api_key = ""
         self._gemini_api_key = ""
         self._gemini_model = "gemini-3.5-flash"
         self._gemini_target_language = "en"
         self._ocr_provider_preference = "chromescreenai"  # engine ids as the frontend names them (main.py)
-        self._translation_provider_preference = "freegoogle"  # "freegoogle", "googlecloud", or "ct2"
+        self._translation_provider_preference = "freegoogle"
         # main.py _sync_workers decides: the worker of the chosen local engine stays up between requests
         self._chromescreenai_persistent_mode = False
         self._ct2_persistent_mode = False
@@ -80,7 +75,7 @@ class ProviderRegistry:
 
         self._reachability_cache: dict = {}
 
-        # AI translation settings (applied to the provider when it's created)
+        # configure_llm()'s settings, for the provider when it's created
         self._llm_config: dict = {}
 
         logger.debug("ProviderRegistry initialized")
@@ -94,15 +89,6 @@ class ProviderRegistry:
         ct2_models_dir: str = "",
         screenai_models_dir: str = "",
     ) -> None:
-        """
-        Configure provider preferences.
-
-        Args:
-            google_api_key: Google Cloud API key (only needed for googlecloud providers)
-            ocr_provider: OCR engine id - "chromescreenai", "windows_ocr", "googlecloud", "gemini_vision"
-            translation_provider: Translation provider preference - "freegoogle", "googlecloud", or "ct2"
-            ct2_models_dir: Directory for CT2 translation model storage
-        """
         if ct2_models_dir and "nllb" not in self.downloads:
             self.downloads["nllb"] = NLLBDownloader(ct2_models_dir)
         if screenai_models_dir and "chromescreenai" not in self.downloads:
@@ -115,13 +101,11 @@ class ProviderRegistry:
         if translation_provider:
             self._translation_provider_preference = translation_provider
 
-        # Update Google Cloud providers with new API key
         if "googlecloud" in self._ocr_providers:
             self._ocr_providers["googlecloud"].set_api_key(google_api_key)
         if "googlecloud" in self._translation_providers:
             self._translation_providers["googlecloud"].set_api_key(google_api_key)
 
-        # Update Gemini Vision provider with new API key
         if "gemini_vision" in self._ocr_providers:
             self._ocr_providers["gemini_vision"].set_api_key(gemini_api_key)
 
@@ -157,10 +141,9 @@ class ProviderRegistry:
             gemini.set_target_language(target_lang)
 
     def set_gemini_model(self, model: str) -> None:
-        """Update the Gemini model. Recreates the provider on next use if model changed."""
         if self._gemini_model != model:
             self._gemini_model = model
-            # Remove cached provider so it gets recreated with the new model
+            # recreated with the new model on next use
             self._ocr_providers.pop("gemini_vision", None)
 
     def set_chromescreenai_persistent_mode(self, enabled: bool) -> None:
@@ -245,16 +228,6 @@ class ProviderRegistry:
         image_data: bytes,
         language: str = "auto"
     ) -> List[TextRegion]:
-        """
-        Perform OCR with automatic provider selection.
-
-        Args:
-            image_data: Raw image bytes
-            language: Language code or "auto"
-
-        Returns:
-            List of TextRegion objects
-        """
         provider = self.get_ocr_provider()
         if not provider or not provider.is_available(language):
             raise OCRError(f"{provider.name if provider else 'The OCR engine'} is unavailable")
@@ -267,17 +240,6 @@ class ProviderRegistry:
         source_lang: str,
         target_lang: str
     ) -> List[str]:
-        """
-        Perform translation with automatic provider selection.
-
-        Args:
-            texts: List of texts to translate
-            source_lang: Source language code
-            target_lang: Target language code
-
-        Returns:
-            List of translated texts
-        """
         if not texts:
             return []
 
@@ -289,12 +251,6 @@ class ProviderRegistry:
         return await provider.translate_batch(texts, source_lang, target_lang)
 
     def get_provider_status(self) -> dict:
-        """
-        Get current provider configuration and availability status.
-
-        Returns:
-            Dictionary with provider status information
-        """
         ocr_provider = self.get_ocr_provider()
         trans_provider = self.get_translation_provider()
 
@@ -353,7 +309,7 @@ class ProviderRegistry:
         cache_key = (provider, kind, key_hash)
         cached = self._reachability_cache.get(cache_key)
         now = time.time()
-        if cached and (now - cached[0]) < _REACHABILITY_TTL:
+        if cached and (now - cached[0]) < _REACHABILITY_CACHE_SECONDS:
             return cached[1]
 
         ok, reason = await self._probe_provider(provider, kind)

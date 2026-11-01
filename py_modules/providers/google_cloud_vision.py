@@ -1,5 +1,4 @@
-# providers/google_cloud_vision.py
-# Google Cloud Vision OCR provider
+"""Google Cloud Vision OCR (needs the user's API key)."""
 
 import asyncio
 import base64
@@ -13,8 +12,6 @@ logger = logging.getLogger(__name__)
 
 
 class GoogleCloudVisionProvider(OCRProvider):
-    """OCR provider using Google Cloud Vision API."""
-
     SUPPORTED_LANGUAGES = [
         'auto', 'en', 'ja', 'zh-CN', 'zh-TW', 'ko', 'de', 'fr', 'es', 'it',
         'pt', 'ru', 'ar', 'nl', 'no', 'pl', 'tr', 'uk', 'hi', 'el', 'th', 'vi', 'fi', 'id', 'ro', 'bg', 'hr',
@@ -22,13 +19,11 @@ class GoogleCloudVisionProvider(OCRProvider):
     ]
 
     def __init__(self, api_key: str = ""):
-        """Initialize the Google Vision provider."""
         self._api_key = api_key
         self._endpoint = "https://vision.googleapis.com/v1/images:annotate"
         logger.debug("GoogleCloudVisionProvider initialized")
 
     def set_api_key(self, api_key: str) -> None:
-        """Update the API key."""
         self._api_key = api_key
 
     @property
@@ -36,20 +31,10 @@ class GoogleCloudVisionProvider(OCRProvider):
         return "Google Cloud Vision"
 
     def is_available(self, language: str = "auto") -> bool:
-        """Check if OCR is available."""
         return bool(self._api_key) and language in self.SUPPORTED_LANGUAGES
 
     async def recognize(self, image_data: bytes, language: str = "auto") -> List[TextRegion]:
-        """
-        Perform OCR using Google Cloud Vision API.
-
-        Args:
-            image_data: Raw image bytes
-            language: Language hint (not used by Google Vision, it auto-detects)
-
-        Returns:
-            List of TextRegion objects
-        """
+        """language is unused: Google Vision detects it."""
         if not self._api_key:
             logger.error("Google Vision API key not configured")
             return []
@@ -88,7 +73,6 @@ class GoogleCloudVisionProvider(OCRProvider):
         return False, reason
 
     def _parse_response(self, result: dict) -> List[TextRegion]:
-        """Parse Google Vision API response into TextRegion objects."""
         text_regions = []
 
         try:
@@ -101,7 +85,6 @@ class GoogleCloudVisionProvider(OCRProvider):
             pages = full_text_annotation.get('pages', [])
 
             if pages:
-                # Extract blocks from the first page
                 blocks = pages[0].get('blocks', [])
                 logger.debug(f"Found {len(blocks)} text blocks")
 
@@ -112,7 +95,7 @@ class GoogleCloudVisionProvider(OCRProvider):
                         if region:
                             text_regions.append(region)
             else:
-                # Fallback to text annotations
+                # textAnnotations[0] is the whole text, the rest single words
                 text_annotations = response.get('textAnnotations', [])
                 logger.debug(f"Using {len(text_annotations)} text annotations")
 
@@ -128,7 +111,6 @@ class GoogleCloudVisionProvider(OCRProvider):
         return text_regions
 
     def _parse_paragraph(self, paragraph: dict, block_idx: int, para_idx: int) -> TextRegion:
-        """Parse a paragraph from the response."""
         try:
             confidence = paragraph.get('confidence', 0.0)
             vertices = paragraph.get('boundingBox', {}).get('vertices', [])
@@ -142,7 +124,6 @@ class GoogleCloudVisionProvider(OCRProvider):
             if not x_coords or not y_coords:
                 return None
 
-            # Extract text from words
             para_text = ""
             for word in paragraph.get('words', []):
                 word_text = ""
@@ -155,7 +136,6 @@ class GoogleCloudVisionProvider(OCRProvider):
             if not para_text:
                 return None
 
-            # Determine if dialog
             is_dialog = len(para_text) > 15 or any(p in para_text for p in '.?!,:;"')
 
             return TextRegion(
@@ -174,7 +154,6 @@ class GoogleCloudVisionProvider(OCRProvider):
             return None
 
     def _parse_annotation(self, annotation: dict, idx: int) -> TextRegion:
-        """Parse a text annotation from the response."""
         try:
             text = annotation.get('description', '')
             vertices = annotation.get('boundingPoly', {}).get('vertices', [])
@@ -198,7 +177,7 @@ class GoogleCloudVisionProvider(OCRProvider):
                     "right": max(x_coords),
                     "bottom": max(y_coords)
                 },
-                confidence=0.8,  # Default confidence for annotations
+                confidence=0.8,  # textAnnotations come without one
                 is_dialog=is_dialog
             )
         except Exception as e:

@@ -1,4 +1,3 @@
-// Model choice for Gemini Vision and AI translation
 import { PanelSectionRow, Dropdown, DialogButton, Field, Focusable, type SingleDropdownOption } from "@decky/ui";
 import { VFC, useState, useEffect, useRef } from "react";
 import { BsArrowRepeat } from "react-icons/bs";

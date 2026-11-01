@@ -20,12 +20,10 @@ export interface TextRegion {
     indent?: number;
     typographyType?: string;
     alignment?: string;
-    translatedText?: string;  // Pre-translated text from combined OCR+translation providers
+    translatedText?: string;  // from an OCR provider that also translates (Gemini Vision)
 }
 
-// Union-Find with path compression and union by rank.
-// Enables transitive merging: if A merges with B and B with C,
-// all three end up in the same group regardless of check order.
+// Transitive merging: if A merges with B and B with C, all three end up in one group whatever the check order.
 class UnionFind {
     private parent: number[];
     private rank: number[];
@@ -80,6 +78,11 @@ function computeMedianHeight(regions: TextRegion[]): number {
 // How readily lines are glued into paragraphs (0.25 normal .. 1.0 huge): scales the vertical gap threshold
 const GROUPING_POWER = 0.25;
 
+const SEPARATOR_LINE = /^[-=_*~.]{3,}$/;
+const STARTS_WITH_CLOSING_PUNCTUATION = /^[.,!?:;)\]"'。、）」』】〉》)]/;
+const ENDS_WITH_OPENING_PUNCTUATION = /[(\["'（「『【〈《(]\s*$/;
+const MIN_REGION_SIZE_PX = 5;
+
 export class TextRecognizer {
     private confidenceThreshold: number = 0.6;
 
@@ -91,16 +94,13 @@ export class TextRecognizer {
         this.confidenceThreshold = threshold;
     }
 
-    // Phase 1: group OCR boxes that sit on the same horizontal line.
-    // Checks: Y-center alignment, height compatibility, horizontal gap.
-    // All thresholds relative to median line height -- never absolute pixels.
+    // Thresholds here and in assembleParagraphs are multiples of the median line height, never absolute pixels.
     private assembleLines(regions: TextRegion[], medianH: number): TextRegion[] {
         const n = regions.length;
         if (n <= 1) return [...regions];
 
         const uf = new UnionFind(n);
 
-        // Sort by top edge so we can break early on large vertical gaps
         const indexed = regions.map((r, i) => ({ r, i }));
         indexed.sort((a, b) => a.r.rect.top - b.r.rect.top);
 
@@ -108,8 +108,7 @@ export class TextRecognizer {
             for (let b = a + 1; b < n; b++) {
                 const ra = indexed[a].r, rb = indexed[b].r;
 
-                // If the top of b is way past the bottom of a, everything
-                // further is even lower -- stop checking
+                // sorted by top edge: every box after b is even lower
                 if (rb.rect.top - ra.rect.bottom > medianH) break;
 
                 const yCenterA = (ra.rect.top + ra.rect.bottom) / 2;
@@ -120,7 +119,7 @@ export class TextRecognizer {
                 const hB = rb.rect.bottom - rb.rect.top;
                 if (hA > 0 && hB > 0 && Math.max(hA, hB) / Math.min(hA, hB) > 1.5) continue;
 
-                // Horizontal gap: positive means space between boxes, negative means overlap
+                // negative when the boxes overlap
                 const gap = Math.max(ra.rect.left, rb.rect.left) - Math.min(ra.rect.right, rb.rect.right);
                 if (gap > 1.0 * medianH) continue;
 
@@ -132,9 +131,6 @@ export class TextRecognizer {
         return this.extractMergedRegions(groups, regions, "horizontal", medianH);
     }
 
-    // Phase 2: group text lines into paragraphs.
-    // Checks: vertical gap, horizontal overlap ratio, height compatibility.
-    // GROUPING_POWER scales the vertical gap threshold.
     private assembleParagraphs(lines: TextRegion[], medianH: number): TextRegion[] {
         const n = lines.length;
         if (n <= 1) return [...lines];
@@ -149,14 +145,11 @@ export class TextRecognizer {
             for (let b = a + 1; b < n; b++) {
                 const la = indexed[a].l, lb = indexed[b].l;
 
-                // Early exit on large vertical distance
                 if (lb.rect.top - la.rect.bottom > 3.0 * medianH * power) break;
 
-                // Vertical gap
                 const vertGap = Math.max(0, lb.rect.top - la.rect.bottom);
                 if (vertGap > 1.5 * medianH * power) continue;
 
-                // Horizontal overlap ratio -- how much do the two lines share horizontally?
                 const overlapLeft = Math.max(la.rect.left, lb.rect.left);
                 const overlapRight = Math.min(la.rect.right, lb.rect.right);
                 const overlapWidth = Math.max(0, overlapRight - overlapLeft);
@@ -166,10 +159,7 @@ export class TextRecognizer {
 
                 if (minWidth > 0 && overlapWidth / minWidth < 0.3) continue;
 
-                // Height ratio (font size similarity).
-                // For multi-line regions (e.g. OCR returned a block spanning
-                // multiple visual lines), normalize by estimated line count
-                // so the comparison reflects per-line font size, not total height.
+                // compare font sizes per line: OCR may return one box for several visual lines
                 const hA = la.rect.bottom - la.rect.top;
                 const hB = lb.rect.bottom - lb.rect.top;
                 const estLinesA = Math.max(1, Math.round(hA / medianH));
@@ -178,10 +168,7 @@ export class TextRecognizer {
                 const lineHB = hB / estLinesB;
                 if (lineHA > 0 && lineHB > 0 && Math.max(lineHA, lineHB) / Math.min(lineHA, lineHB) > 1.4) continue;
 
-                // Alignment check: reject pairs whose left edges, right edges,
-                // AND horizontal centers are all far apart.  This allows
-                // left-aligned, right-aligned, and center-aligned text to merge
-                // while still separating unrelated UI elements.
+                // left-, right- or center-aligned lines merge; lines aligned no way at all are separate UI elements
                 const leftEdgeDist = Math.abs(la.rect.left - lb.rect.left);
                 const rightEdgeDist = Math.abs(la.rect.right - lb.rect.right);
                 const centerA = (la.rect.left + la.rect.right) / 2;
@@ -191,14 +178,10 @@ export class TextRecognizer {
                 const centerThresh = 1.0 * medianH;
                 if (leftEdgeDist > edgeThresh && rightEdgeDist > edgeThresh && centerDist > centerThresh) continue;
 
-                // Width ratio: a very narrow line next to a wide one is probably
-                // a stray label, not a continuation. Skip this check for the
-                // shorter of two lines when it could be a paragraph's last line
-                // (i.e. when it's the lower one)
+                // a very narrow line above a wide one is a stray label; below it, it can be a paragraph's last line
                 const maxWidth = Math.max(widthA, widthB);
                 if (maxWidth > 0) {
                     const widthRatio = minWidth / maxWidth;
-                    // If the narrow line is the upper one, it's unlikely a paragraph tail
                     const narrowIsUpper = (widthA < widthB && la.rect.top < lb.rect.top) ||
                                           (widthB < widthA && lb.rect.top < la.rect.top);
                     if (widthRatio < 0.15 && narrowIsUpper) continue;
@@ -214,26 +197,22 @@ export class TextRecognizer {
         return this.extractMergedRegions(refined, lines, "vertical", medianH);
     }
 
-    // Post-merge split pass: break apart over-merged groups by checking
-    // for internal gap inconsistencies and separator lines.
     private splitOvermerged(groups: number[][], lines: TextRegion[], medianH: number): number[][] {
         const result: number[][] = [];
 
         for (const group of groups) {
-            // Groups of 1-2 lines can't have internal inconsistencies
+            // at most one gap: nothing to compare it with
             if (group.length <= 2) {
                 result.push(group);
                 continue;
             }
 
-            // Sort constituent lines top-to-bottom
             const sorted = [...group].sort((a, b) => {
                 const yA = (lines[a].rect.top + lines[a].rect.bottom) / 2;
                 const yB = (lines[b].rect.top + lines[b].rect.bottom) / 2;
                 return yA - yB;
             });
 
-            // Compute vertical gaps between consecutive lines
             const gaps: number[] = [];
             for (let i = 0; i < sorted.length - 1; i++) {
                 gaps.push(Math.max(0, lines[sorted[i + 1]].rect.top - lines[sorted[i]].rect.bottom));
@@ -242,12 +221,10 @@ export class TextRecognizer {
             const sortedGaps = [...gaps].sort((a, b) => a - b);
             const medianGap = sortedGaps[Math.floor(sortedGaps.length / 2)];
 
-            // Find indices after which to split (between sorted[i] and sorted[i+1])
             const splitAfter = new Set<number>();
 
             for (let i = 0; i < gaps.length; i++) {
-                // Gap inconsistency: this gap is much larger than the group's typical gap,
-                // and large enough to not just be bounding box jitter
+                // much wider than the group's usual gap, and too wide to be bounding box jitter
                 if (medianGap > 0 && gaps[i] > 2.5 * medianGap && gaps[i] > 0.8 * medianH) {
                     splitAfter.add(i);
                 }
@@ -256,15 +233,14 @@ export class TextRecognizer {
                     splitAfter.add(i);
                 }
 
-                // Separator line: text is just dashes, equals, underscores, etc.
                 const text = lines[sorted[i]].text.trim();
-                if (/^[-=_*~.]{3,}$/.test(text)) {
+                if (SEPARATOR_LINE.test(text)) {
                     if (i > 0) splitAfter.add(i - 1);
                     splitAfter.add(i);
                 }
                 if (i + 1 < sorted.length) {
                     const nextText = lines[sorted[i + 1]].text.trim();
-                    if (/^[-=_*~.]{3,}$/.test(nextText)) {
+                    if (SEPARATOR_LINE.test(nextText)) {
                         splitAfter.add(i);
                     }
                 }
@@ -275,7 +251,6 @@ export class TextRecognizer {
                 continue;
             }
 
-            // Build sub-groups at split points
             let subGroup: number[] = [];
             for (let i = 0; i < sorted.length; i++) {
                 subGroup.push(sorted[i]);
@@ -290,7 +265,6 @@ export class TextRecognizer {
         return result;
     }
 
-    // Extract connected components from Union-Find, merge text and bounding boxes.
     private extractMergedRegions(
         groups: number[][],
         regions: TextRegion[],
@@ -305,7 +279,6 @@ export class TextRecognizer {
                 continue;
             }
 
-            // Sort: left-to-right for horizontal, top-to-bottom for vertical
             const sorted = indices
                 .map(i => regions[i])
                 .sort((a, b) => {
@@ -364,14 +337,11 @@ export class TextRecognizer {
         return merged;
     }
 
-    // Spacing for horizontal (same-line) merging
     private getHorizontalSpacing(a: TextRegion, b: TextRegion, _medianH: number): string {
-        // No space before closing punctuation
-        if (/^[.,!?:;)\]"'\u3002\u3001\uFF09\u300D\u300F\u3011\u3009\u300B)]/.test(b.text)) {
+        if (STARTS_WITH_CLOSING_PUNCTUATION.test(b.text)) {
             return "";
         }
-        // No space after opening punctuation
-        if (/[(\["'\uFF08\u300C\u300E\u3010\u3008\u300A(]\s*$/.test(a.text)) {
+        if (ENDS_WITH_OPENING_PUNCTUATION.test(a.text)) {
             return "";
         }
 
@@ -383,7 +353,6 @@ export class TextRecognizer {
         return " ";
     }
 
-    // Post-merge dialog detection on complete text blocks
     private detectDialog(region: TextRegion): boolean {
         if (region.isDialog) return true;
 
@@ -406,17 +375,15 @@ export class TextRecognizer {
         return score >= 3;
     }
 
-    // Resolve overlapping rects in the final region list.
-    // Merged paragraphs can have union rects that extend into neighbors.
-    // For each overlapping pair: absorb the smaller if mostly contained,
-    // otherwise trim the smaller region's rect at the overlapping edge.
+    // A merged paragraph's rect (the union of its lines) can reach into its neighbours. Of two overlapping regions
+    // the smaller is dropped when mostly inside the other, otherwise trimmed at the edge that loses the least area.
     private resolveOverlaps(regions: TextRegion[]): TextRegion[] {
         if (regions.length <= 1) return regions;
 
-        // Work on copies so we can mutate rects
+        // copies: their rects get trimmed
         const result = regions.map(r => ({ ...r, rect: { ...r.rect } }));
 
-        // Sort by area descending so larger (merged) regions take priority
+        // larger (merged) regions first: they win
         const byArea = result
             .map((r, i) => ({ i, area: (r.rect.right - r.rect.left) * (r.rect.bottom - r.rect.top) }))
             .sort((a, b) => b.area - a.area);
@@ -433,7 +400,6 @@ export class TextRecognizer {
                 if (removed.has(idxB)) continue;
                 const b = result[idxB].rect;
 
-                // Check overlap
                 const oLeft = Math.max(a.left, b.left);
                 const oTop = Math.max(a.top, b.top);
                 const oRight = Math.min(a.right, b.right);
@@ -444,35 +410,28 @@ export class TextRecognizer {
                 const overlapArea = (oRight - oLeft) * (oBottom - oTop);
                 const bArea = (b.right - b.left) * (b.bottom - b.top);
 
-                // If b is mostly inside a, absorb it
                 if (bArea > 0 && overlapArea / bArea > 0.5) {
                     removed.add(idxB);
                     continue;
                 }
 
-                // Partial overlap: trim b at the edge that loses the least area
                 const bW = b.right - b.left;
                 const bH = b.bottom - b.top;
                 const oW = oRight - oLeft;
                 const oH = oBottom - oTop;
 
-                // For each possible trim, how much of b's area is lost?
-                // Only consider trims where the overlap is actually on that edge
+                // b's area each trim loses, for the edges the overlap is on
                 const candidates: { edge: string; loss: number }[] = [];
 
-                // Trim b's left edge rightward (overlap is on b's left side)
                 if (oLeft === b.left || oLeft - b.left < oW) {
                     candidates.push({ edge: 'left', loss: oW * bH });
                 }
-                // Trim b's right edge leftward (overlap is on b's right side)
                 if (oRight === b.right || b.right - oRight < oW) {
                     candidates.push({ edge: 'right', loss: oW * bH });
                 }
-                // Trim b's top edge downward
                 if (oTop === b.top || oTop - b.top < oH) {
                     candidates.push({ edge: 'top', loss: bW * oH });
                 }
-                // Trim b's bottom edge upward
                 if (oBottom === b.bottom || b.bottom - oBottom < oH) {
                     candidates.push({ edge: 'bottom', loss: bW * oH });
                 }
@@ -482,7 +441,6 @@ export class TextRecognizer {
                     continue;
                 }
 
-                // Pick the trim with least area loss
                 candidates.sort((x, y) => x.loss - y.loss);
                 switch (candidates[0].edge) {
                     case 'left': b.left = oRight; break;
@@ -491,8 +449,7 @@ export class TextRecognizer {
                     case 'bottom': b.bottom = oTop; break;
                 }
 
-                // If trimmed to nothing useful, remove it
-                if (b.right - b.left < 5 || b.bottom - b.top < 5) {
+                if (b.right - b.left < MIN_REGION_SIZE_PX || b.bottom - b.top < MIN_REGION_SIZE_PX) {
                     removed.add(idxB);
                 }
             }
@@ -509,15 +466,13 @@ export class TextRecognizer {
         const medianH = computeMedianHeight(regions);
         logger.debug('TextRecognizer', `Auto-glue: Median line height = ${medianH}px`);
 
-        // Phase 1: assemble word-level boxes into lines
         const lines = this.assembleLines(regions, medianH);
         logger.debug('TextRecognizer', `Auto-glue: Phase 1 produced ${lines.length} lines from ${regions.length} boxes`);
 
-        // Phase 2: assemble lines into paragraphs
         const paragraphs = this.assembleParagraphs(lines, medianH);
         logger.debug('TextRecognizer', `Auto-glue: Phase 2 produced ${paragraphs.length} paragraphs from ${lines.length} lines`);
 
-        // Sort into reading order: top-to-bottom, left-to-right with tolerance
+        // reading order: rows top to bottom, each row left to right
         paragraphs.sort((a, b) => {
             const yCenterA = (a.rect.top + a.rect.bottom) / 2;
             const yCenterB = (b.rect.top + b.rect.bottom) / 2;
@@ -527,13 +482,12 @@ export class TextRecognizer {
             return yCenterA - yCenterB;
         });
 
-        // Post-merge: dialog detection on complete blocks
+        // on whole paragraphs: the cues (quotes, length, several lines) only show after merging
         const annotated = paragraphs.map(p => ({
             ...p,
             isDialog: this.detectDialog(p),
         }));
 
-        // Final pass: resolve any overlapping rects caused by merge union rects
         const resolved = this.resolveOverlaps(annotated);
         if (resolved.length !== annotated.length) {
             logger.debug('TextRecognizer', `Auto-glue: Overlap resolution reduced ${annotated.length} to ${resolved.length} regions`);

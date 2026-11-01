@@ -1,6 +1,5 @@
-# providers/nllb_translate.py
-# Offline translation: the NLLB-200 1.3B model (CTranslate2, int8) in a worker (nllb_worker.py), and its download
-# from Hugging Face
+"""Offline translation: the NLLB-200 1.3B model (CTranslate2, int8) in a worker (nllb_worker.py), and its download
+from Hugging Face."""
 
 import logging
 import os
@@ -15,7 +14,6 @@ from .worker import PLUGIN_DIR, Worker, find_python, worker_pythonpath
 
 logger = logging.getLogger(__name__)
 
-# Map plugin language codes to NLLB-200 language codes
 NLLB_LANG_MAP = {
     "en": "eng_Latn",
     "ja": "jpn_Jpan",
@@ -87,9 +85,9 @@ class NLLBDownloader(Downloader):
                 raise DownloadError(f"{filename} is damaged or changed upstream (hash mismatch)")
 
 
-WORKER_TIMEOUT = 120
+WORKER_TIMEOUT_SECONDS = 120
 
-# UI strings NLLB sometimes mistranslates things ("STEAM MENU" -> "СТОМ МЕНУ")
+# UI strings NLLB mangles ("STEAM MENU" -> "СТОМ МЕНУ"): kept as they are
 _SKIP_TRANSLATE_TOKENS = {
     "steam menu", "quick menu", "quick access", "main menu",
     "b back", "a select", "a confirm", "x confirm", "y menu",
@@ -108,8 +106,8 @@ _SHORT_TEXT_CHAR_LIMIT = 20
 # extra fragments.
 _SPLIT_SENTENCES_CHAR_LIMIT = 60
 
-# End punctuation + whitespace (ASCII and CJK). Candidates shorter than
-# 5 chars are rejected so "Mr." and "e.g." don't get split.
+_MIN_PIECE_CHARS = 5  # so "Mr." and "e.g." don't end a sentence
+# End punctuation + whitespace (ASCII and CJK)
 _SENTENCE_END_RE = re.compile(r"[.!?。！？]+[\s　]+")
 
 # Comma/semicolon fallback for long prose without periods. Only runs when
@@ -328,8 +326,7 @@ def _split_sentences(text: str) -> List[str]:
     for match in _SENTENCE_END_RE.finditer(text):
         end = match.end()
         candidate = text[start:end].rstrip()
-        # Drop tiny pieces so "Mr." and "e.g." don't split.
-        if len(candidate) < 5:
+        if len(candidate) < _MIN_PIECE_CHARS:
             continue
         sentences.append(candidate)
         start = end
@@ -338,7 +335,6 @@ def _split_sentences(text: str) -> List[str]:
         if tail:
             sentences.append(tail)
 
-    # Long fragments get a second pass on commas/semicolons.
     result = []
     for s in sentences:
         if len(s) >= _CLAUSE_SPLIT_MIN_CHARS:
@@ -356,7 +352,7 @@ def _split_on_clauses(text: str) -> List[str]:
     for match in _CLAUSE_BREAK_RE.finditer(text):
         end = match.end()
         candidate = text[start:end].rstrip().rstrip(",;、，；")
-        if len(candidate) < 5:
+        if len(candidate) < _MIN_PIECE_CHARS:
             continue
         clauses.append(candidate)
         start = end
@@ -368,10 +364,7 @@ def _split_on_clauses(text: str) -> List[str]:
 
 
 class NLLBTranslateProvider(TranslationProvider):
-    """
-    Offline translation using CTranslate2 + NLLB-200 int8 model.
-    Runs a persistent subprocess worker to avoid reloading models per request.
-    """
+    """The model runs in a worker process, so it isn't reloaded for every request."""
 
     SUPPORTED_LANGUAGES = list(NLLB_LANG_MAP.keys())
 
@@ -411,7 +404,7 @@ class NLLBTranslateProvider(TranslationProvider):
         return self._worker.start(python_path, self._py_modules_path,
                                   env={"CT2_PERSISTENT": "1" if self._persistent_mode else None})
 
-    def _send_command(self, cmd: dict, timeout: float = WORKER_TIMEOUT) -> dict:
+    def _send_command(self, cmd: dict, timeout: float = WORKER_TIMEOUT_SECONDS) -> dict:
         reply = self._worker.request(cmd, timeout)
         if reply is None:  # the worker is stopped: its model is gone too
             self._loaded_model_dir = None
@@ -419,7 +412,6 @@ class NLLBTranslateProvider(TranslationProvider):
         return reply
 
     def _load_model(self) -> dict:
-        """Load the NLLB model in the worker. Skips if already loaded."""
         model_dir = self._model.target_dir
         if self._loaded_model_dir == model_dir:
             return {"ok": True}
@@ -642,7 +634,6 @@ class NLLBTranslateProvider(TranslationProvider):
                     translated_lines += 1
                     parts.append(lm["sep"] + " ".join(p for p in pieces if p))
             if translated_lines == 0:
-                # Nothing got translated
                 translations.append(slot["source"])
             else:
                 translations.append("".join(parts))

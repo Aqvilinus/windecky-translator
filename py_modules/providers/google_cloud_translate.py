@@ -1,5 +1,4 @@
-# providers/google_cloud_translate.py
-# Google Cloud Translation provider
+"""Google Cloud Translation API (needs the user's API key)."""
 
 import logging
 from typing import List
@@ -11,8 +10,6 @@ logger = logging.getLogger(__name__)
 
 
 class GoogleCloudTranslateProvider(TranslationProvider):
-    """Translation provider using Google Cloud Translation API."""
-
     SUPPORTED_LANGUAGES = [
         'auto', 'en', 'ja', 'zh-CN', 'zh-TW', 'ko', 'de', 'fr', 'es', 'it',
         'pt', 'ru', 'ar', 'nl', 'no', 'pl', 'tr', 'uk', 'hi', 'el', 'th', 'vi', 'fi', 'id', 'ro', 'bg', 'hr',
@@ -20,13 +17,11 @@ class GoogleCloudTranslateProvider(TranslationProvider):
     ]
 
     def __init__(self, api_key: str = ""):
-        """Initialize the Google Translate provider."""
         self._api_key = api_key
         self._endpoint = "https://translation.googleapis.com/language/translate/v2"
         logger.debug("GoogleCloudTranslateProvider initialized")
 
     def set_api_key(self, api_key: str) -> None:
-        """Update the API key."""
         self._api_key = api_key
 
     @property
@@ -34,7 +29,6 @@ class GoogleCloudTranslateProvider(TranslationProvider):
         return "Google Cloud Translation"
 
     def is_available(self, source_lang: str, target_lang: str) -> bool:
-        """Check if translation is available for the language pair."""
         if not self._api_key:
             return False
         return (
@@ -43,17 +37,6 @@ class GoogleCloudTranslateProvider(TranslationProvider):
         )
 
     async def translate_batch(self, texts: List[str], source_lang: str, target_lang: str) -> List[str]:
-        """
-        Translate multiple texts using Google Cloud Translation API.
-
-        Args:
-            texts: List of texts to translate
-            source_lang: Source language code
-            target_lang: Target language code
-
-        Returns:
-            List of translated texts
-        """
         if not self._api_key:
             raise ApiKeyError("API key required for Translation")
 

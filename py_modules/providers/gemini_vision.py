@@ -1,5 +1,4 @@
-# providers/gemini_vision.py
-# Gemini Vision provider -- combined OCR + translation in a single API call
+"""Gemini Vision: OCR and translation of a screenshot in a single API call."""
 
 import asyncio
 import base64
@@ -26,7 +25,7 @@ logger = logging.getLogger(__name__)
 # gemini-2.5-flash (upstream's default) answers 404 "no longer available to new users" since 2026. On a 1920x1200 game
 # frame (2026-10-30): gemini-3.5-flash 12 s, gemini-flash-lite-latest 6.5 s, gemini-flash-latest 55-77 s (too slow).
 DEFAULT_MODEL = "gemini-3.5-flash"  # a retired model falls back to gemini_client.FALLBACK_MODEL
-REQUEST_TIMEOUT = 30
+REQUEST_TIMEOUT_SECONDS = 30
 
 # Gemini's reply: each line of text on the screen, its translation and its box (y0, x0, y1, x1 in 0-1000)
 REGIONS_SCHEMA = {
@@ -42,7 +41,7 @@ REGIONS_SCHEMA = {
     },
 }
 
-# Language code to natural name for the prompt
+# for the prompts
 LANG_NAMES = {
     "auto": "auto-detect",
     "en": "English", "ja": "Japanese", "ko": "Korean",
@@ -119,8 +118,7 @@ def _parse_json_response(text: str) -> Optional[list]:
     return None
 
 
-def _validate_region(region: dict) -> bool:
-    """Check that a region dict has the required fields."""
+def _has_required_fields(region: dict) -> bool:
     if not isinstance(region, dict):
         return False
     if "text" not in region or "box_2d" not in region:
@@ -132,10 +130,7 @@ def _validate_region(region: dict) -> bool:
 
 
 class GeminiVisionProvider(OCRProvider):
-    """
-    Uses Gemini Vision to detect and translate text in screenshots
-    in a single API call. Returns TextRegion objects with translated_text set.
-    """
+    """Its TextRegions come with translated_text set."""
 
     def __init__(self, api_key: str = "", model: str = DEFAULT_MODEL):
         self._api_key = api_key
@@ -199,7 +194,7 @@ class GeminiVisionProvider(OCRProvider):
             },
         }
         # retired model -> current alias, thinking setting the model rejects -> less (gemini_client.generate)
-        response, _ = await gemini_client.generate(self._api_key, self._model, payload, REQUEST_TIMEOUT)
+        response, _ = await gemini_client.generate(self._api_key, self._model, payload, REQUEST_TIMEOUT_SECONDS)
         raise_for_api_error(response, "Gemini Vision")
         return gemini_client.reply_text(response)
 
@@ -221,13 +216,12 @@ class GeminiVisionProvider(OCRProvider):
         raw_region_count = len(regions_data)
         text_regions = []
         for region in regions_data:
-            if not _validate_region(region):
+            if not _has_required_fields(region):
                 continue
 
-            box = region["box_2d"]  # [y_min, x_min, y_max, x_max]
+            box = region["box_2d"]
             y_min, x_min, y_max, x_max = box
 
-            # Clamp to valid range before converting to pixel coords
             x_min = max(0, min(1000, x_min))
             y_min = max(0, min(1000, y_min))
             x_max = max(0, min(1000, x_max))
@@ -261,7 +255,6 @@ class GeminiVisionProvider(OCRProvider):
         return text_regions
 
     async def list_available_models(self) -> List[str]:
-        """Fetch available flash models from Gemini API."""
         if not self._api_key:
             return []
         # Flash models read images fast

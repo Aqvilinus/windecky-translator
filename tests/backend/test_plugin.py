@@ -30,7 +30,6 @@ def translate_screen(backend):
     return shot, regions, backend.call("translate_text", regions, "en", "auto")
 
 
-# ---------------------------------------------------------------- start and settings
 def test_start_on_windows(backend, windows):
     assert windows.processes.log[0] == "resume_after_restart"  # a game an earlier run paused is resumed first
     assert windows.hotkey.enabled is True
@@ -92,7 +91,6 @@ def test_a_worker_stays_up_only_for_the_chosen_engine_while_the_plugin_is_on(sta
     assert pm._chromescreenai_persistent_mode is False  # "Faster Recognition" is off
 
 
-# ---------------------------------------------------------------- the translation pipeline
 def test_capture_ocr_translate_overlay(backend, windows, net):
     shot, regions, translated = translate_screen(backend)
 
@@ -264,7 +262,6 @@ def test_screenshot_files_outside_the_plugin_are_refused(backend, tmp_path):
     assert other.exists()
 
 
-# ---------------------------------------------------------------- Windows: pause, hotkey, Steam apps
 def test_pause_game_while_translating(start, windows, net):
     b = start({"pause_game_on_overlay": True})
     _, _, translated = translate_screen(b)
@@ -339,7 +336,6 @@ def test_hotkey_reaches_the_frontend(backend, main):
     assert main.test_events == [("translator_hotkey", ())]
 
 
-# ---------------------------------------------------------------- the real Windows OCR, where the runner has it
 def test_windows_ocr_reads_the_screen(start, windows):
     from providers.windows_ocr import WindowsOCRProvider
     try:

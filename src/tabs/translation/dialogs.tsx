@@ -1,4 +1,3 @@
-// The key and server dialogs of the translation settings
 import { ModalRoot, DialogButton, TextField, Focusable } from "@decky/ui";
 import { VFC, useState, useEffect, useRef } from "react";
 import { backend } from "../../backend";
@@ -37,7 +36,6 @@ export const WithPaste: VFC<{ onPaste: (text: string) => void; children: any }> 
     );
 };
 
-// API Key Modal Component
 export const ApiKeyModal: VFC<{
     currentKey: string;
     onSave: (key: string) => void;

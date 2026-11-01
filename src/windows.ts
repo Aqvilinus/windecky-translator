@@ -13,8 +13,8 @@ import { logger } from './Logger';
 // The translate/close hotkey (py_modules/windows/hotkey.py HOTKEY)
 export const WINDOWS_HOTKEY = 'Ctrl+Alt+T';
 
-// How often the side menus are checked while a translation is on screen
 const SIDE_MENU_CHECK_MS = 250;
+const SIDE_MENU_CLOSE_ANIMATION_MS = 300;
 
 export function forwardOverlayToBackend(state: ImageState, dismiss: () => void): () => void {
     let menuTimer: ReturnType<typeof setInterval> | null = null;
@@ -106,5 +106,5 @@ export async function closeAllSideMenus(): Promise<void> {
     }
     if (!closed) return;
     for (let i = 0; i < 20 && anySideMenuOpen(stores); i++) await new Promise(r => setTimeout(r, 50));
-    await new Promise(r => setTimeout(r, 300));
+    await new Promise(r => setTimeout(r, SIDE_MENU_CLOSE_ANIMATION_MS));
 }

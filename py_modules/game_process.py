@@ -27,7 +27,6 @@ class SuspendError(Exception):
 
 
 def suspend(hwnd):
-    """Suspends the process of the window and its children if Steam started it."""
     if _suspended:
         return
     game = _steam_game(hwnd)
@@ -59,7 +58,6 @@ def resume_all():
 
 
 def resume_after_restart():
-    """Resumes what a previous run of the plugin left suspended."""
     try:
         with open(STATE_FILE, encoding="utf-8") as f:
             left = json.load(f)

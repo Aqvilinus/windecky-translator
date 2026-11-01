@@ -1,9 +1,3 @@
-/**
- * Styled logger for WinDecky Translator
- * Provides colored console logging with consistent formatting
- * Logging can be enabled/disabled via debug mode
- */
-
 export enum LogLevel {
     DEBUG = 'DEBUG',
     INFO = 'INFO',
@@ -13,22 +7,17 @@ export enum LogLevel {
 
 class Logger {
     private readonly appName = 'WinDeckyTranslator';
-    private _enabled = false; // Debug mode off by default
+    private _enabled = false;
 
-    // Color styles for console
     private readonly styles = {
-        appName: 'color: #ff69b4; font-weight: bold;', // Pink for app name
-        debug: 'color: #00bfff;',   // Deep sky blue
-        info: 'color: #00ff00;',    // Lime green
-        warn: 'color: #ffa500;',    // Orange
-        error: 'color: #ff0000; font-weight: bold;', // Red
+        appName: 'color: #ff69b4; font-weight: bold;',
+        debug: 'color: #00bfff;',
+        info: 'color: #00ff00;',
+        warn: 'color: #ffa500;',
+        error: 'color: #ff0000; font-weight: bold;',
         reset: 'color: inherit;'
     };
 
-    /**
-     * Enable or disable debug logging
-     * When disabled, only errors are logged
-     */
     setEnabled(enabled: boolean): void {
         this._enabled = enabled;
         if (enabled) {
@@ -43,7 +32,6 @@ class Logger {
     }
 
     private log(level: LogLevel, component: string, message: string, ...args: any[]): void {
-        // Always log errors, otherwise check if enabled
         if (!this._enabled && level !== LogLevel.ERROR) {
             return;
         }
@@ -76,7 +64,6 @@ class Logger {
         this.log(LogLevel.ERROR, component, message, ...args);
     }
 
-    // For objects/data inspection
     logObject(component: string, label: string, obj: any): void {
         if (!this._enabled) {
             return;

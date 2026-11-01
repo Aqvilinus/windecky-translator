@@ -1,10 +1,9 @@
-# providers/gemini_client.py
-# Google's Gemini REST API, shared by Gemini Vision (OCR + translation, gemini_vision.py) and AI translation
-# (llm_translate.py): the address, the key header, the model list, and the retries a request may need.
-#
-# Models get retired ("no longer available to new users": 404) and newer ones reject settings older ones need (a
-# thinking budget of 0 -> 400). generate() retries such a request once with Google's current-model alias, and with the
-# least thinking, then none. What it learns is kept for the session, so the next requests go straight to what works.
+"""Google's Gemini REST API, shared by Gemini Vision (OCR + translation, gemini_vision.py) and AI translation
+(llm_translate.py): the address, the key header, the model list, and the retries a request may need.
+
+Models get retired ("no longer available to new users": 404) and newer ones reject settings older ones need (a
+thinking budget of 0 -> 400). generate() retries such a request once with Google's current-model alias, and with the
+least thinking, then none. What it learns is kept for the session, so the next requests go straight to what works."""
 
 import json
 import logging
@@ -18,8 +17,7 @@ API_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 # Google's alias for its current Flash-Lite: fixed model names get retired, this one doesn't go away
 FALLBACK_MODEL = "gemini-flash-lite-latest"
 
-# Not text/vision chat models
-_SKIP = ("tts", "image", "live", "embedding", "audio", "robotics", "computer-use", "aqa")
+_NOT_CHAT_MODEL_MARKERS = ("tts", "image", "live", "embedding", "audio", "robotics", "computer-use", "aqa")
 
 _retired: Dict[str, str] = {}             # model -> the model used instead (it answered 404)
 _thinking: Dict[str, Optional[dict]] = {}  # model -> the thinking setting it accepted (None: none at all)
@@ -50,7 +48,7 @@ async def list_models(key: str) -> List[str]:
         return []
     names = [m.get("name", "").replace("models/", "") for m in resp.json().get("models", [])
              if "generateContent" in m.get("supportedGenerationMethods", [])]
-    return sorted(n for n in names if n.startswith("gemini") and not any(s in n for s in _SKIP))
+    return sorted(n for n in names if n.startswith("gemini") and not any(s in n for s in _NOT_CHAT_MODEL_MARKERS))
 
 
 async def generate(key: str, model: str, payload: dict, timeout: float, thinking: bool = True) -> Tuple[Response, str]:

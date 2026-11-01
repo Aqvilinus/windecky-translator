@@ -1,8 +1,7 @@
-# providers/llm_translate.py
-# AI translation: Gemini (Google AI Studio key) or an OpenAI-compatible API (Groq, or any custom endpoint such as
-# OpenRouter or a local llama-server). The whole screen goes in one request, so every line is translated with the
-# rest of the screen as context. Whatever the AI doesn't return (rate limit, network, a malformed reply) goes to the
-# free Google -> Bing chain.
+"""AI translation: Gemini (Google AI Studio key) or an OpenAI-compatible API (Groq, or any custom endpoint such as
+OpenRouter or a local llama-server). The whole screen goes in one request, so every line is translated with the
+rest of the screen as context. Whatever the AI doesn't return (rate limit, network, a malformed reply) goes to the
+free Google -> Bing chain."""
 
 import json
 import logging
@@ -27,11 +26,11 @@ DEFAULT_MODELS = {
     "custom": "",
 }
 
-REQUEST_TIMEOUT = 20
-BATCH_ITEMS = 80          # lines per request
-BATCH_CHARS = 8000        # characters per request
-RATE_LIMIT_PAUSE = 60     # seconds without the AI after a 429 that names no retry time
-MAX_RATE_LIMIT_PAUSE = 15 * 60
+REQUEST_TIMEOUT_SECONDS = 20
+MAX_TEXTS_PER_REQUEST = 80
+MAX_CHARS_PER_REQUEST = 8000
+RATE_LIMIT_PAUSE_SECONDS = 60  # without the AI, after a 429 that names no retry time
+MAX_RATE_LIMIT_PAUSE_SECONDS = 15 * 60
 
 # Gemini's reply: {"translations": [one string per text sent]}
 TRANSLATIONS_SCHEMA = {
@@ -100,12 +99,12 @@ def _parse_translations(text: str, expected: int) -> Optional[List[str]]:
 
 def _retry_after(resp: Response) -> float:
     try:
-        return min(MAX_RATE_LIMIT_PAUSE, float(resp.headers.get("retry-after", "")))
+        return min(MAX_RATE_LIMIT_PAUSE_SECONDS, float(resp.headers.get("retry-after", "")))
     except ValueError:
         pass
     # Gemini: {"error": {"details": [{"retryDelay": "31s"}]}}
     match = re.search(r'"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"', resp.text or "")
-    return min(MAX_RATE_LIMIT_PAUSE, float(match.group(1))) if match else RATE_LIMIT_PAUSE
+    return min(MAX_RATE_LIMIT_PAUSE_SECONDS, float(match.group(1))) if match else RATE_LIMIT_PAUSE_SECONDS
 
 
 class LLMTranslateProvider(TranslationProvider):
@@ -169,7 +168,7 @@ class LLMTranslateProvider(TranslationProvider):
         return headers
 
     async def _post(self, url: str, payload: dict, headers: dict) -> Response:
-        return await fetch("POST", url, json=payload, headers=headers, timeout=REQUEST_TIMEOUT)
+        return await fetch("POST", url, json=payload, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
 
     def _check(self, resp: Response) -> None:
         if resp.status_code == 429:  # Google/Bing translate while the AI service is paused
@@ -189,7 +188,7 @@ class LLMTranslateProvider(TranslationProvider):
             },
         }
         # retired model -> current alias, thinking setting the model rejects -> less (gemini_client.generate)
-        resp, _ = await gemini_client.generate(self._keys["gemini"], self.model, payload, REQUEST_TIMEOUT)
+        resp, _ = await gemini_client.generate(self._keys["gemini"], self.model, payload, REQUEST_TIMEOUT_SECONDS)
         self._check(resp)
         return gemini_client.reply_text(resp)
 
@@ -228,7 +227,7 @@ class LLMTranslateProvider(TranslationProvider):
         results: List[Optional[str]] = [None] * len(texts)
         sources: List[Optional[str]] = [None] * len(texts)
         order = [i for i, t in enumerate(texts) if t and t.strip()]
-        chunks = chunk_indices(texts, BATCH_CHARS, max_items=BATCH_ITEMS)
+        chunks = chunk_indices(texts, MAX_CHARS_PER_REQUEST, max_items=MAX_TEXTS_PER_REQUEST)
 
         self.last_error = ""
         for chunk in chunks:
@@ -288,9 +287,9 @@ class LLMTranslateProvider(TranslationProvider):
             resp = await fetch("GET", f"{base}/models", headers=headers)
             if resp.status_code != 200:
                 return []
-            skip = ("whisper", "tts", "guard", "embed", "orpheus", "playai", "compound")
+            not_text_model_markers = ("whisper", "tts", "guard", "embed", "orpheus", "playai", "compound")
             names = [m.get("id", "") for m in resp.json().get("data", []) if m.get("active", True)]
-            return sorted(n for n in names if n and not any(s in n.lower() for s in skip))
+            return sorted(n for n in names if n and not any(s in n.lower() for s in not_text_model_markers))
         except Exception as e:
             logger.warning(f"Listing {backend} models failed: {e}")
             return []

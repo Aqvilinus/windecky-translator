@@ -25,7 +25,6 @@ SETTING_DEFAULTS = {
     "font_scale": 1.0,
     "confidence_threshold": 0.6,
     "custom_recognition_settings": False,
-    # AI translation
     "llm_backend": "gemini",                # or "groq", "custom" (any OpenAI-compatible server)
     "llm_gemini_model": "gemini-flash-lite-latest",
     "llm_groq_model": "openai/gpt-oss-120b",

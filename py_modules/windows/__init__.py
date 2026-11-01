@@ -12,8 +12,10 @@ captured frames and the overlay all use real screen pixels.
 import ctypes
 import sys
 
+DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = -4
+
 if sys.platform == "win32":
     try:
-        ctypes.windll.user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))  # PER_MONITOR_AWARE_V2
+        ctypes.windll.user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2))
     except (AttributeError, OSError):
         pass

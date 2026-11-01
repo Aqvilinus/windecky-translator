@@ -1,7 +1,3 @@
-// The language lists of the settings, and a byte-size formatter
-
-
-// Language options with flag emojis
 export const languageOptions = [
     { label: "\ud83c\udf10 Auto-detect", data: "auto" },
     { label: "\ud83c\uddf8\ud83c\udde6 Arabic", data: "ar" },

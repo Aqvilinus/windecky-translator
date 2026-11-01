@@ -1,17 +1,14 @@
-// TextTranslator.tsx
-
 import { backend } from "./backend";
 import { TextRegion } from "./TextRecognizer";
 import { BackendError, throwIfBackendError } from "./errors";
 
-// Include translated text with the original region info
 export interface TranslatedRegion extends TextRegion {
     translatedText: string;
 }
 
 export class TextTranslator {
     private targetLanguage: string;
-    private inputLanguage: string = "auto"; // Default to auto-detect
+    private inputLanguage: string = "auto";
 
     constructor(initialLanguage: string = "en") {
         this.targetLanguage = initialLanguage;
@@ -25,7 +22,6 @@ export class TextTranslator {
         return this.targetLanguage;
     }
 
-    // New methods for input language
     setInputLanguage(language: string): void {
         this.inputLanguage = language;
     }

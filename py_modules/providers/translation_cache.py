@@ -1,3 +1,5 @@
+"""The SQLite cache of translations, by language pair and source text, each with the tier of the engine that made it."""
+
 import os
 import re
 import time

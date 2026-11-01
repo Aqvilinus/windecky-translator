@@ -1,5 +1,3 @@
-// src/tabs/TabControls.tsx - the shortcut, display and behavior settings, and debug
-
 import {
     PanelSection,
     PanelSectionRow,

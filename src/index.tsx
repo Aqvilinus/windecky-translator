@@ -1,5 +1,3 @@
-// index.tsx - Main plugin entry point
-
 import { definePlugin } from "@decky/api";
 import { backend } from "./backend";
 
@@ -27,10 +25,8 @@ import { SettingsProvider, useSettings, loadSettingsIntoLogic } from "./Settings
 import { logger } from "./Logger";
 import { WEB_OCR_ENGINES, WEB_TRANSLATION_ENGINES } from "./providers";
 
-// Import tab components
 import { TabMain, TabTranslation, TabControls } from "./tabs";
 
-// SVG Icons for tabs
 const IconTranslate = () => (
     <svg style={{ display: "block" }} width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
         <path d="M12.87 15.07l-2.54-2.51.03-.03A17.52 17.52 0 0014.07 6H17V4h-7V2H8v2H1v2h11.17A15.4 15.4 0 018.87 12a15.4 15.4 0 01-2.44-4H4.3a17.38 17.38 0 003.08 5.22l-5.3 5.25 1.42 1.42L9 14.4l3.11 3.11.76-2.44zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2l-4.5-12zm-2.62 7l1.62-4.33L19.12 17h-3.24z" fill="currentColor"/>
@@ -49,6 +45,8 @@ const IconGear = () => (
     </svg>
 );
 
+const TITLE_FONT_LOAD_DELAY_MS = 300;
+
 // The fixed box the tabs scroll in. Upstream sizes it to 95% of the side panel, which fits the Steam Deck. On Windows
 // the panel is shorter and the title can take two lines, so the box would end below the screen and its last settings
 // could not be scrolled to: it reaches exactly to the panel's bottom edge.
@@ -63,7 +61,7 @@ const TabsBox: VFC<{ children: any }> = ({ children }) => {
         if (!el || !win) return;
         const fit = () => setHeight(`${Math.max(200, Math.floor(win.innerHeight - el.getBoundingClientRect().top))}px`);
         fit();
-        const settle = win.setTimeout(fit, 300); // the title's font may load after the first layout
+        const settle = win.setTimeout(fit, TITLE_FONT_LOAD_DELAY_MS);
         win.addEventListener("resize", fit);
         return () => {
             win.clearTimeout(settle);
@@ -77,6 +75,8 @@ const TabsBox: VFC<{ children: any }> = ({ children }) => {
         </div>
     );
 };
+
+const STATUS_POLL_INTERVAL_MS = 10000;
 
 const GameTranslator: VFC<{ logic: GameTranslatorLogic }> = ({ logic }) => {
     const { settings, initialized } = useSettings();
@@ -132,7 +132,7 @@ const GameTranslator: VFC<{ logic: GameTranslatorLogic }> = ({ logic }) => {
 
     useEffect(() => {
         fetchProviderStatus();
-        const intervalId = setInterval(fetchProviderStatus, 10000);
+        const intervalId = setInterval(fetchProviderStatus, STATUS_POLL_INTERVAL_MS);
 
         return () => {
             clearInterval(intervalId);
@@ -147,7 +147,6 @@ const GameTranslator: VFC<{ logic: GameTranslatorLogic }> = ({ logic }) => {
         setWebReachability(null);
     }, [settings.ocrProvider, settings.translationProvider, settings.llmBackend]);
 
-    // Show loading state if not initialized
     if (!initialized) {
         return (
             <PanelSection>
@@ -207,7 +206,6 @@ const GameTranslator: VFC<{ logic: GameTranslatorLogic }> = ({ logic }) => {
     );
 };
 
-// Main App wrapped with Settings provider
 const TranslatorApp: VFC<{ logic: GameTranslatorLogic }> = ({ logic }) => {
     return (
         <SettingsProvider logic={logic}>
@@ -241,15 +239,10 @@ const FitTitle: VFC<{ text: string }> = ({ text }) => {
     );
 };
 
-// Export the plugin
 export default definePlugin(() => {
-    // Create image state to manage the overlay
     const imageState = new ImageState();
-
-    // Create logic instance
     const logic = new GameTranslatorLogic(imageState);
 
-    // The backend draws the overlay over the game window (py_modules/overlay.py)
     const stopForwarding = forwardOverlayToBackend(imageState, logic.dismiss);
     const stopHotkey = listenForHotkey(logic);
     const stopProblems = listenForProblems(PLUGIN_NAME);

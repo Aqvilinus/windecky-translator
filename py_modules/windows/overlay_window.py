@@ -60,7 +60,9 @@ gdi32.DeleteObject.argtypes = [wintypes.HGDIOBJ]
 gdi32.DeleteDC.argtypes = [wintypes.HDC]
 
 WS_POPUP = 0x80000000
-WS_EX_STYLE = 0x00080000 | 0x00000020 | 0x00000008 | 0x08000000 | 0x00000080  # LAYERED TRANSPARENT TOPMOST NOACTIVATE TOOLWINDOW
+WS_EX_LAYERED, WS_EX_TRANSPARENT, WS_EX_TOPMOST = 0x00080000, 0x00000020, 0x00000008
+WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW = 0x08000000, 0x00000080
+WS_EX_STYLE = WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW
 SW_HIDE, SW_SHOWNOACTIVATE = 0, 4
 HWND_TOPMOST = wintypes.HWND(-1)
 SWP_NOSIZE, SWP_NOMOVE, SWP_NOACTIVATE, SWP_NOOWNERZORDER = 0x0001, 0x0002, 0x0010, 0x0200
@@ -69,6 +71,7 @@ ULW_ALPHA = 0x00000002
 AC_SRC_OVER, AC_SRC_ALPHA = 0x00, 0x01
 GA_ROOT = 2
 MONITOR_DEFAULTTONEAREST = 2
+MDT_EFFECTIVE_DPI = 0
 CLASS_NAME = "DeckyTranslatorOverlay"
 TICK_SECONDS = 0.2
 
@@ -190,7 +193,7 @@ class OverlayWindow:
         r = mi.rcMonitor
         # the monitor's scale, not the window's: GetDpiForWindow says 96 for a DPI-unaware game on a 150 % screen
         dpi_x, dpi_y = wintypes.UINT(0), wintypes.UINT(0)
-        shcore.GetDpiForMonitor(mon, 0, ctypes.byref(dpi_x), ctypes.byref(dpi_y))  # 0: MDT_EFFECTIVE_DPI
+        shcore.GetDpiForMonitor(mon, MDT_EFFECTIVE_DPI, ctypes.byref(dpi_x), ctypes.byref(dpi_y))
         return (r.left, r.top, r.right - r.left, r.bottom - r.top), dpi_x.value / 96
 
     def _draw(self):

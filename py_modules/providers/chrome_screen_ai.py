@@ -1,5 +1,5 @@
-# Local OCR via Chrome Screen AI. The DLL and TFLite models are
-# fetched on demand from Google's CIPD server, not bundled in the plugin.
+"""Local OCR via Chrome Screen AI. The DLL and TFLite models are fetched on demand from Google's CIPD server, not
+bundled in the plugin."""
 
 import asyncio
 import json
@@ -22,12 +22,11 @@ from .worker import PLUGIN_DIR, Worker, find_python, missing_message, popen_kwar
 logger = logging.getLogger(__name__)
 
 DEFAULT_MIN_CONFIDENCE = 0.5
-# The engine library inside its downloaded resources folder
 SCREENAI_LIBRARY = "chrome_screen_ai.dll"
 OCR_TIMEOUT_SECONDS = 30  # a screen takes about a second; a hung engine must not hold a paused game long
 WORKER_READY_TIMEOUT_SECONDS = 60
 
-_WORKER_ENV_STRIP = (
+_THREAD_LIMIT_VARS = (
     "OMP_NUM_THREADS",
     "MKL_NUM_THREADS",
     "OPENBLAS_NUM_THREADS",
@@ -40,8 +39,7 @@ class ChromeScreenAIProvider(OCRProvider):
     """OCR provider backed by chrome_screen_ai.dll. Oneshot subprocess by
     default; persistent worker is opt-in for lower per-call latency."""
 
-    # Engine auto-detects across 77+ scripts; we just advertise what the
-    # rest of the plugin supports plus 'auto'.
+    # The engine detects the script itself (77+ of them); these are the plugin's languages plus 'auto'.
     SUPPORTED_LANGUAGES = [
         'auto', 'ar', 'bg', 'zh-CN', 'zh-TW', 'hr', 'cs', 'da', 'nl', 'no', 'en',
         'fi', 'fr', 'de', 'el', 'hi', 'hu', 'it', 'ja', 'ko', 'pl', 'pt',
@@ -79,7 +77,7 @@ class ChromeScreenAIProvider(OCRProvider):
         self._py_modules_dir = worker_pythonpath(self._plugin_dir)
         # the engine picks its own thread count: don't pass the plugin's limits on
         self._worker = Worker("Chrome Screen AI", self._subprocess_script, ["--worker"],
-                                      env={k: None for k in _WORKER_ENV_STRIP})
+                                      env={k: None for k in _THREAD_LIMIT_VARS})
 
         logger.debug(
             f"ChromeScreenAIProvider initialized "

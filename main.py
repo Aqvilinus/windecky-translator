@@ -1,4 +1,3 @@
-# main.py
 import asyncio
 import functools
 import os
@@ -15,13 +14,11 @@ import base64
 import sqlite3
 import tarfile
 
-# IMPORTANT: Set up plugin directory FIRST
 PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
 if PLUGIN_DIR not in sys.path:
     sys.path.insert(0, PLUGIN_DIR)
 
-# Auto-extract dependencies archive if needed (for Decky Store installs)
-# This must happen BEFORE importing third-party libraries
+# Decky Store installs ship the third-party packages as an archive: extracted before anything imports them
 BIN_DIR = os.path.join(PLUGIN_DIR, "bin")
 DEPENDENCIES_ARCHIVE = os.path.join(BIN_DIR, "plugin-dependencies.tar.gz")
 EXTRACTION_MARKER = os.path.join(BIN_DIR, ".dependencies-extracted")
@@ -30,44 +27,35 @@ BIN_PY_MODULES_DIR = os.path.join(BIN_DIR, "py_modules")
 BIN_PYTHON_DIR = os.path.join(BIN_DIR, "python314")
 
 def _should_extract_dependencies():
-    """Check if dependencies archive needs to be extracted."""
     if not os.path.exists(DEPENDENCIES_ARCHIVE):
-        return False  # No dependencies archive to extract
+        return False
 
-    # Check if extraction marker exists
     if not os.path.exists(EXTRACTION_MARKER):
-        return True  # Never extracted successfully
+        return True  # written only after an extraction succeeded
 
-    # Check if dependencies were updated (archive is newer than marker)
     archive_mtime = os.path.getmtime(DEPENDENCIES_ARCHIVE)
     marker_mtime = os.path.getmtime(EXTRACTION_MARKER)
     if archive_mtime > marker_mtime:
-        return True  # Dependencies were updated, need to re-extract
+        return True  # the plugin was updated
 
-    # Check if all expected directories exist (partial extraction detection)
     if not all(os.path.exists(d) for d in [BIN_PY_MODULES_DIR, BIN_PYTHON_DIR]):
-        return True  # Some directories missing, need to re-extract
+        return True  # deleted since
 
-    return False  # Already extracted and up-to-date
+    return False
 
 if _should_extract_dependencies():
     try:
         print(f"[WinDecky Translator] Extracting dependencies from {DEPENDENCIES_ARCHIVE}...")
         with tarfile.open(DEPENDENCIES_ARCHIVE, "r:gz") as tar:
             tar.extractall(path=BIN_DIR, filter="data")  # no links or paths out of BIN_DIR (3.14's default too)
-        # Create marker file to indicate successful extraction
         with open(EXTRACTION_MARKER, "w", encoding="utf-8") as f:
             f.write(f"Extracted at {datetime.now().isoformat()}\n")
         print("[WinDecky Translator] Dependencies extracted successfully")
     except Exception as e:
         print(f"[WinDecky Translator] Failed to extract dependencies: {e}")
-        # Remove marker if it exists, so we retry next time
         if os.path.exists(EXTRACTION_MARKER):
-            os.remove(EXTRACTION_MARKER)
+            os.remove(EXTRACTION_MARKER)  # the next start retries
 
-# Add py_modules to path
-# Root py_modules always needed (contains providers/ source code)
-# bin/py_modules needed for store installs (pip packages from remote_binary)
 ROOT_PY_MODULES_DIR = os.path.join(PLUGIN_DIR, "py_modules")
 
 if ROOT_PY_MODULES_DIR not in sys.path:
@@ -81,10 +69,8 @@ if os.path.exists(BIN_PY_MODULES_DIR) and BIN_PY_MODULES_DIR not in sys.path:
 if os.path.isdir(os.path.join(BIN_PYTHON_DIR, "python")):
     os.add_dll_directory(os.path.join(BIN_PYTHON_DIR, "python"))
 
-# Now import third-party libraries (after sys.path is configured)
 import decky  # Decky Loader's plugin API (typings/decky.pyi)
 
-# Import provider system
 from providers import ProviderRegistry, NetworkError, ApiKeyError, RateLimitError, OCRError, TranslationError
 from providers.base import close_session
 from providers.translation_cache import TranslationCache, PROVIDER_TIERS, normalize
@@ -98,10 +84,8 @@ settingsDir = decky.DECKY_PLUGIN_SETTINGS_DIR
 logger = decky.logger
 DECKY_PLUGIN_LOG_DIR = decky.DECKY_PLUGIN_LOG_DIR
 
-# Ensure log directory exists
 os.makedirs(DECKY_PLUGIN_LOG_DIR, exist_ok=True)
 
-# Set up file logging
 from logging.handlers import TimedRotatingFileHandler
 
 log_file = Path(DECKY_PLUGIN_LOG_DIR) / "decky-translator.log"
@@ -127,7 +111,6 @@ SCREENSHOT_DIR = os.path.join(tempfile.gettempdir(), "decky-translator")
 # compiled modules (winrt, Pillow) built for one Python version into Decky's own interpreter: after a Decky update
 # that changes its Python they fail to import, and the rest of the plugin should still load and say why.
 _BOOT_ERRORS = []
-# Decky Loader for Windows: capture, hotkey, overlay and pause are in py_modules/windows
 if sys.version_info[:2] != (3, 14):
     _BOOT_ERRORS.append(f"Decky Loader runs Python {sys.version_info[0]}.{sys.version_info[1]}, this build of the "
                         "plugin was made for 3.14: update the plugin")
@@ -158,9 +141,7 @@ _ERROR_CODES = ((NetworkError, "network_error"), (ApiKeyError, "api_key_error"),
 
 def answers_errors(fallback_code, fallback_message):
     """A backend call whose failures reach the frontend as {error, message}: the plugin's own errors with their
-    message, anything else (a bug) as fallback_code with fallback_message, logged with its traceback.
-
-    A decorator: @answers_errors(...) above a method replaces it with call(), which runs the method inside the try."""
+    message, anything else (a bug) as fallback_code with fallback_message, logged with its traceback."""
     def wrap(method):
         @functools.wraps(method)  # keeps the name Decky calls it by
         async def call(*args, **kwargs):
@@ -182,11 +163,10 @@ class Plugin:
     _pause_problems_shown: frozenset = frozenset()  # pause problems already shown to the user (_report_pause_problem)
     _providers: ProviderRegistry = None
 
-    # Windows: the translation overlay window, the window the last screenshot came from, the Ctrl+Alt+T hotkey
     _overlay = None
     _overlay_visible = False
-    _capturing = False  # take_screenshot is running
-    _capture_target = None
+    _capturing = False
+    _capture_target = None  # the window the last screenshot came from, and the screenshot
     _hotkey = None
     _loop = None
 
@@ -231,7 +211,6 @@ class Plugin:
             self._sync_workers()
 
     def _configure_providers(self):
-        """Engine choice, keys and models -> the provider manager."""
         pm = self._providers
         if not pm:
             return
@@ -267,7 +246,6 @@ class Plugin:
         return settings
 
     async def get_llm_models(self, backend: str):
-        """Models the configured key can use on that AI backend, for the model picker."""
         try:
             if not self._providers:
                 return []
@@ -427,7 +405,6 @@ class Plugin:
         return problems
 
     async def get_windows_status(self):
-        """Diagnostics of the Windows parts: hotkey, overlay, last capture."""
         return {
             "hotkey": self._hotkey.status() if self._hotkey else None,
             "overlay_error": self._overlay.error if self._overlay else None,
@@ -464,8 +441,7 @@ class Plugin:
                         "message": f"No Windows OCR language pack for {lang}.\n"
                                    "Add it in Windows Settings or use On-Device (Chrome)"}
 
-        # If using Gemini Vision, set the target language before OCR
-        # so it can translate in the same API call
+        # Gemini Vision translates in the same call
         if self._settings.get("ocr_provider") == "gemini_vision":
             self._providers.set_gemini_target_language(self._settings.get("target_language"))
 
@@ -511,8 +487,6 @@ class Plugin:
             logger.error("Provider manager not initialized")
             return None
 
-        # If regions already have translatedText (e.g. from Gemini Vision),
-        # skip the translation step entirely
         if all(r.get("translatedText") is not None for r in text_regions):
             logger.info(f"Translation skipped: {len(text_regions)} regions already translated by OCR provider")
             if (self._settings.get("translation_cache_enabled") and self._translation_cache
@@ -526,7 +500,6 @@ class Plugin:
                     )
             return text_regions
 
-        # Check if CT2 provider has the needed models
         if self._settings.get("translation_provider") == "ct2":
             provider = self._providers.get_translation_provider()
             if provider and not provider.is_available(input_lang, target_lang):
@@ -534,7 +507,6 @@ class Plugin:
                     return {"error": "model_not_available", "message": "Offline translation requires a specific source language. Select one in plugin settings"}
                 return {"error": "model_not_available", "message": "Offline model not found. Download it in plugin settings"}
 
-        # Only translate regions that don't already have translatedText
         texts_to_translate = [
             region["text"] for region in text_regions
             if region.get("translatedText") is None

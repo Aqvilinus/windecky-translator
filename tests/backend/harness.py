@@ -29,7 +29,6 @@ SCREEN = [("Willkommen, Reisender", (40, 40)), ("Neues Spiel", (40, 120))]
 DICTIONARY = {"Willkommen, Reisender": "Welcome, traveller", "Neues Spiel": "New game"}
 
 
-# ---------------------------------------------------------------- Decky
 def install_decky(base_dir):
     """Decky's module as main.py sees it (typings/decky.pyi); returns the list emit() appends (event, args) to."""
     dirs = {name: os.path.join(base_dir, name) for name in ("settings", "runtime", "logs", "plugin", "home")}
@@ -66,7 +65,6 @@ def import_main():
     return importlib.import_module("main")
 
 
-# ---------------------------------------------------------------- the game screen
 def font(size=28):
     from overlay import font_for
     return font_for("Willkommen", size)
@@ -99,7 +97,6 @@ def capture_of(img, left=100, top=50):
     return Capture(image=img, width=img.width, height=img.height, left=left, top=top, hwnd=GAME_HWND)
 
 
-# ---------------------------------------------------------------- Windows parts
 class FakeOverlay:
     """windows.overlay_window.OverlayWindow: records show/hide and draws each shown state with the real render()."""
     instances = []
@@ -217,7 +214,6 @@ class FakeWindows:
             setattr(main, name, value)
 
 
-# ---------------------------------------------------------------- the network
 GOOGLE_URL = "https://translate.googleapis.com/translate_a/single"
 BING_PAGE = "https://www.bing.com/translator"
 BING_URL = "https://www.bing.com/ttranslatev3"
@@ -314,7 +310,6 @@ def block_sockets():
     return lambda: setattr(socket.socket, "connect", real_connect)
 
 
-# ---------------------------------------------------------------- a running plugin
 class Backend:
     """A started Plugin on an event loop of its own; call() runs a frontend call to completion."""
 

@@ -25,9 +25,9 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import unicode_scripts
 
-IDLE_TIMEOUT = 600  # 10 minutes
+IDLE_TIMEOUT_SECONDS = 600
 
-# Skip the idle timeout when parent sets CT2_PERSISTENT=1
+# the plugin's persistent mode: no idle timeout
 PERSISTENT = os.environ.get("CT2_PERSISTENT") == "1"
 
 _DASH_PREFIXES = ("-", "–", "—", "‐", "−", "‑")
@@ -128,7 +128,6 @@ def main():
     last_activity = time.monotonic()
     loaded_model_dir = None
 
-    # Import heavy libraries
     try:
         import ctranslate2
         import sentencepiece as spm
@@ -166,7 +165,6 @@ def main():
             tokenizer = spm.SentencePieceProcessor(sp_model)
             loaded_model_dir = model_dir
 
-            # Warmup
             try:
                 translator.translate_batch(
                     [
@@ -202,7 +200,6 @@ def main():
                 sp_tokens = tokenizer.encode(t, out_type=str)
                 tokenized.append([src] + sp_tokens + ["</s>"])
 
-            # Adapt decoding strategy based on input length.
             # Short texts (labels, single words) are out-of-distribution for
             # NLLB and hallucinate with beam search, so use greedy decoding
             # with aggressive length penalty to stay close to the source.
@@ -212,7 +209,7 @@ def main():
                 beam = 1
                 length_pen = 0.2
                 no_repeat = 3
-                rep_pen = 1.2  # short path only
+                rep_pen = 1.2
                 # EN->JA/KO/ZH/DE can expand >1.5x on 2-4 token inputs
                 max_output = max(int(max_input_tokens * 2) + 2, 5)
             else:
@@ -241,7 +238,6 @@ def main():
                 return_scores=True,
             )
 
-            # Detokenize and validate each translation
             translations = []
             token_counts = []
             confidences = []
@@ -249,8 +245,7 @@ def main():
             for i, result in enumerate(results):
                 src_text = texts[i]
                 input_token_count = len(tokenized[i]) - 2  # minus lang token and </s>
-                # NLLB occasionally returns no hypothesis on weird input.
-                # Fall back to the source instead of crashing or emitting ""
+                # NLLB occasionally returns no hypothesis on weird input: keep the source rather than ""
                 if not result.hypotheses or not result.hypotheses[0]:
                     translations.append(src_text)
                     token_counts.append({"input": input_token_count, "output": 0})
@@ -261,8 +256,7 @@ def main():
                 score = result.scores[0] if result.scores else 0.0
                 if tokens and tokens[0] == tgt_lang:
                     tokens = tokens[1:]
-                # Only the target-lang prefix came out - nothing to translate.
-                # Return source instead of an empty string.
+                # only the target-lang prefix came out: keep the source rather than ""
                 if not tokens:
                     translations.append(src_text)
                     token_counts.append({"input": input_token_count, "output": 0})
@@ -322,7 +316,7 @@ def main():
     def _idle_watch():
         while True:
             time.sleep(30)
-            if not PERSISTENT and time.monotonic() - last_activity > IDLE_TIMEOUT:
+            if not PERSISTENT and time.monotonic() - last_activity > IDLE_TIMEOUT_SECONDS:
                 os._exit(0)
 
     threading.Thread(target=_idle_watch, daemon=True).start()

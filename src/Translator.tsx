@@ -1,5 +1,3 @@
-// Translator.tsx - Handles translator logic and API interactions
-
 import { toaster } from "@decky/api";
 import { backend } from "./backend";
 import { Router } from "@decky/ui";
@@ -10,7 +8,8 @@ import { ImageState } from "./Overlay";
 import { logger } from "./Logger";
 import { OCR_ENGINE_LABELS, TRANSLATION_ENGINE_LABELS } from "./providers";
 
-// Main app logic
+const NO_TEXT_MESSAGE_MS = 2000;
+
 export class GameTranslatorLogic {
     private isProcessing = false;
     public imageState: ImageState;
@@ -19,7 +18,6 @@ export class GameTranslatorLogic {
     private enabled: boolean = true;  // until SettingsContext loads the setting
     private currentRunId: number = 0;
 
-    // Provider settings for upfront validation
     private ocrProvider: string = "chromescreenai";
     private translationProvider: string = "freegoogle";
     private hasGoogleApiKey: boolean = false;
@@ -65,7 +63,6 @@ export class GameTranslatorLogic {
     }
 
     takeScreenshotAndTranslate = async (): Promise<void> => {
-        // If already processing or disabled, return
         if (this.isProcessing || !this.enabled) {
             logger.debug('Translator', 'Already processing a screenshot or plugin disabled, skipping');
             return;
@@ -79,7 +76,7 @@ export class GameTranslatorLogic {
         try {
             this.isProcessing = true;
 
-            // Take screenshot FIRST while screen is clean (no overlay visible)
+            // before the overlay opens, so it isn't captured
             const appName = Router.MainRunningApp?.display_name || "";
             logger.info('Translator', `Taking new screenshot for: ${appName}`);
             const result = await backend.takeScreenshot(appName);
@@ -116,7 +113,6 @@ export class GameTranslatorLogic {
                     this.imageState.updateProcessingStep("Translating text", false, this.translationMethodHint());
                 }
 
-                // Translate text (skips backend call if already translated by OCR provider)
                 let translatedRegions = await this.textTranslator.translateText(textRegions);
                 if (isCancelled()) {
                     logger.debug('Translator', 'Translation cancelled after translation step');
@@ -135,13 +131,10 @@ export class GameTranslatorLogic {
 
                 this.imageState.showTranslations(translatedRegions);
             } else {
-                // No text found, show message
                 this.imageState.updateProcessingStep("No text found");
-
-                // Hide overlay after a short delay
                 setTimeout(() => {
                     if (!isCancelled()) this.imageState.hide();
-                }, 2000); // 2 seconds delay
+                }, NO_TEXT_MESSAGE_MS);
             }
         } catch (error) {
             if (isCancelled()) {
@@ -189,7 +182,6 @@ export class GameTranslatorLogic {
         this.imageState.setFontScale(scale);
     }
 
-    // Methods for provider settings (used for upfront API key validation)
     setOcrProvider = (provider: string): void => {
         this.ocrProvider = provider;
         logger.debug('Translator', `OCR provider set to: ${provider}`);
@@ -218,8 +210,7 @@ export class GameTranslatorLogic {
         logger.debug('Translator', `Gemini API key available: ${hasKey}`);
     }
 
-    // Runs all pre-checks that would prevent a translation from starting.
-    // Returns false and shows a toast if any check fails.
+    // A check that fails shows a toast saying what to set.
     private canStartTranslation(): boolean {
         const inputLang = this.getInputLanguage();
         const targetLang = this.getTargetLanguage();
@@ -255,7 +246,6 @@ export class GameTranslatorLogic {
         return true;
     }
 
-    // Check if the current provider configuration requires an API key that's missing
     private requiresApiKeyButMissing(): { missing: boolean; message: string } {
         if (this.ocrProvider === 'gemini_vision' && !this.hasGeminiApiKey) {
             return { missing: true, message: "Gemini API key required for Gemini Vision" };

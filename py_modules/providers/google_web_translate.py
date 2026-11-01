@@ -1,5 +1,4 @@
-# providers/google_web_translate.py
-# Free translation using direct HTTP requests to Google Translate
+"""Free Google Translate through its unofficial web endpoint, with Microsoft Bing while Google rate-limits."""
 
 import logging
 import time
@@ -9,25 +8,21 @@ from .base import TranslationProvider, chunk_indices, fetch, probe
 from .bing_translate import BingTranslator
 
 GOOGLE_PAUSE_SECONDS = 15 * 60  # after a 429/403 from Google, use Bing for this long
-GOOGLE_BATCH_CHARS = 4500       # texts per POST, one per line
+GOOGLE_BATCH_CHARS = 4500       # per POST, the texts one per line
 
 logger = logging.getLogger(__name__)
 
 
 class GoogleWebTranslateProvider(TranslationProvider):
-    """Translation provider using free Google Translate (unofficial API)."""
-
     # The plugin's language codes are Google Translate's (and Bing's, mapped in bing_translate.py)
     SUPPORTED_LANGUAGES = [
         'en', 'ja', 'zh-CN', 'zh-TW', 'ko', 'de', 'fr', 'es', 'it', 'pt', 'ru', 'ar', 'el', 'fi', 'nl', 'no', 'pl',
         'tr', 'uk', 'hi', 'th', 'vi', 'id', 'ro', 'bg', 'hr', 'cs', 'hu', 'sv', 'da',
     ]
 
-    # Free Google Translate endpoint (unofficial)
     TRANSLATE_URL = "https://translate.googleapis.com/translate_a/single"
 
     def __init__(self):
-        """Initialize the free translation provider."""
         self._google_paused_until = 0.0
         self._bing = BingTranslator()
         logger.debug("GoogleWebTranslateProvider initialized")
@@ -72,7 +67,6 @@ class GoogleWebTranslateProvider(TranslationProvider):
         return "Free Google Translate"
 
     def is_available(self, source_lang: str, target_lang: str) -> bool:
-        """Check if translation is available for the language pair."""
         return (
             source_lang in self.SUPPORTED_LANGUAGES or source_lang == 'auto'
         ) and target_lang in self.SUPPORTED_LANGUAGES
@@ -89,10 +83,7 @@ class GoogleWebTranslateProvider(TranslationProvider):
         return results
 
     async def translate_batch(self, texts: List[str], source_lang: str, target_lang: str) -> List[str]:
-        """
-        Translate multiple texts: one Google request per batch (one text per line), with Microsoft Bing as the
-        fallback while Google rate-limits. Failed items stay None so they aren't cached as real results.
-        """
+        """Failed items stay None so they aren't cached as real results."""
         if not texts:
             return texts
 
