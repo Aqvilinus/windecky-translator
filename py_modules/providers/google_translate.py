@@ -4,7 +4,7 @@
 import logging
 from typing import List
 
-from .base import (TranslationProvider, ProviderType, NetworkError, ApiKeyError, RateLimitError,
+from .base import (TranslationProvider, NetworkError, ApiKeyError, RateLimitError, TranslationError,
                    classify_google_error, fetch, probe, raise_for_google_error)
 
 logger = logging.getLogger(__name__)
@@ -33,10 +33,6 @@ class GoogleTranslateProvider(TranslationProvider):
     def name(self) -> str:
         return "Google Cloud Translation"
 
-    @property
-    def provider_type(self) -> ProviderType:
-        return ProviderType.GOOGLE
-
     def is_available(self, source_lang: str, target_lang: str) -> bool:
         """Check if translation is available for the language pair."""
         if not self._api_key:
@@ -45,36 +41,6 @@ class GoogleTranslateProvider(TranslationProvider):
             (source_lang in self.SUPPORTED_LANGUAGES or source_lang == 'auto') and
             target_lang in self.SUPPORTED_LANGUAGES
         )
-
-    def get_supported_languages(self) -> List[str]:
-        """Return list of supported language codes."""
-        return self.SUPPORTED_LANGUAGES.copy()
-
-    async def translate(self, text: str, source_lang: str, target_lang: str) -> str:
-        """
-        Translate text using Google Cloud Translation API.
-
-        Args:
-            text: Text to translate
-            source_lang: Source language code
-            target_lang: Target language code
-
-        Returns:
-            Translated text
-        """
-        if not self._api_key:
-            logger.error("Google Translate API key not configured")
-            return text
-
-        if not text or not text.strip():
-            return text
-
-        try:
-            results = await self.translate_batch([text], source_lang, target_lang)
-            return results[0] if results else text
-        except Exception as e:
-            logger.error(f"Translation error: {e}")
-            return text
 
     async def translate_batch(self, texts: List[str], source_lang: str, target_lang: str) -> List[str]:
         """
@@ -89,8 +55,7 @@ class GoogleTranslateProvider(TranslationProvider):
             List of translated texts
         """
         if not self._api_key:
-            logger.error("Google Translate API key not configured")
-            return texts
+            raise ApiKeyError("API key required for Translation")
 
         if not texts:
             return texts
@@ -103,7 +68,7 @@ class GoogleTranslateProvider(TranslationProvider):
             response = await fetch("POST", self._endpoint, json=request_data, headers={"x-goog-api-key": self._api_key})
             if response.status_code != 200:
                 raise_for_google_error(response)
-                return texts
+                raise TranslationError(f"Google Cloud Translation: API error ({response.status_code})")
 
             result = response.json()
 
@@ -116,14 +81,14 @@ class GoogleTranslateProvider(TranslationProvider):
                 logger.debug(f"Successfully translated {len(translated_texts)} texts")
                 return translated_texts
             else:
-                logger.error("Unexpected response format from Translation API")
-                return texts
+                logger.error(f"Unexpected response from the Translation API: {response.text[:500]}")
+                raise TranslationError("Google Cloud Translation gave an unreadable answer (details in the plugin log)")
 
-        except (ApiKeyError, RateLimitError, NetworkError):
+        except (ApiKeyError, RateLimitError, NetworkError, TranslationError):
             raise
         except Exception as e:
-            logger.error(f"Batch translation error: {e}")
-            return texts
+            logger.exception("Batch translation error")
+            raise TranslationError("Google Cloud Translation failed (details in the plugin log)") from e
 
     async def test_network(self) -> tuple:
         if not self._api_key:

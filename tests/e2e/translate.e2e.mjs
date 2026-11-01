@@ -154,7 +154,7 @@ describe(`${NAME} end to end`, { timeout: 240000 }, () => {
         await steam.openPluginInSideMenu();
         log.mark();
         await steam.reloadPlugin();
-        await waitFor('the backend to restart', () => log.find(/ Decky Translator v\S+ starting/), 30000, 300);
+        await waitFor('the backend to restart', () => log.find(/ WinDecky Translator v\S+ starting/), 30000, 300);
         await waitFor('Decky to register the reloaded plugin', async () => (await steam.pluginState()).loaded, 15000);
         await sleep(1000);
         const st = await steam.pluginState();

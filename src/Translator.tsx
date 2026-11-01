@@ -2,15 +2,15 @@
 
 import { call, toaster } from "@decky/api";
 import { Router } from "@decky/ui";
-import { TextRecognizer, NetworkError, ApiKeyError, RateLimitError, ModelNotAvailableError } from "./TextRecognizer";
+import { TextRecognizer, BackendError, NetworkError, ApiKeyError } from "./TextRecognizer";
 import { TextTranslator } from "./TextTranslator";
 import { ImageState } from "./Overlay";
 import { logger } from "./Logger";
 
-// Screenshot response interface
-export interface ScreenshotResponse {
+// main.py take_screenshot: the capture's name for recognize_text_file ("" when nothing was captured); the pixels
+// stay in the backend, which draws the overlay
+interface ScreenshotResponse {
     path: string;
-    base64: string;
 }
 
 // Main app logic
@@ -19,8 +19,7 @@ export class GameTranslatorLogic {
     public imageState: ImageState;
     private textRecognizer: TextRecognizer;
     private textTranslator: TextTranslator;
-    private enabled: boolean = true; // Add enabled state
-    private confidenceThreshold: number = 0.6; // Default confidence threshold
+    private enabled: boolean = true;  // until SettingsContext loads the setting
     private currentRunId: number = 0;
 
     // Provider settings for upfront validation
@@ -37,20 +36,6 @@ export class GameTranslatorLogic {
         this.imageState = imageState;
         this.textRecognizer = new TextRecognizer();
         this.textTranslator = new TextTranslator();
-
-        // Load enabled state from server
-        this.loadInitialState();
-    }
-
-    // Load initial state from server
-    private async loadInitialState() {
-        try {
-            const result = await call<[], boolean>('get_enabled_state');
-            this.enabled = !!result;
-            logger.info('Translator', `Loaded initial enabled state: ${this.enabled}`);
-        } catch (error) {
-            logger.error('Translator', 'Failed to load initial state', error);
-        }
     }
 
     // Switch the plugin on or off (SettingsContext saves the setting; the backend frees or takes Ctrl+Alt+T)
@@ -61,24 +46,9 @@ export class GameTranslatorLogic {
         }
     }
 
-    // Add method to get enabled state
-    isEnabled(): boolean {
-        return this.enabled;
-    }
-
-    // New methods for confidence threshold
     setConfidenceThreshold(threshold: number): void {
-        logger.debug('Translator', `Setting confidence threshold to: ${threshold}`);
-        this.confidenceThreshold = threshold;
-
-        // Update the textRecognizer with the new threshold
         this.textRecognizer.setConfidenceThreshold(threshold);
     }
-
-    getConfidenceThreshold(): number {
-        return this.confidenceThreshold;
-    }
-
 
     notify = async (message: string, duration: number = 1000, body?: string): Promise<void> => {
         toaster.toast({
@@ -93,7 +63,7 @@ export class GameTranslatorLogic {
         this.currentRunId++;
         this.isProcessing = false;
         if (this.imageState.isVisible()) {
-            this.imageState.hideImage();
+            this.imageState.hide();
         }
     }
 
@@ -123,20 +93,18 @@ export class GameTranslatorLogic {
                 return;
             }
 
-            if (!result || !result.path || !result.base64) {
+            if (!result?.path) {
                 logger.warn('Translator', 'Screenshot capture failed, not opening overlay');
                 this.notify('Screen capture failed', 2500, 'Try pressing the shortcut again');
                 return;
             }
 
-            logger.debug('Translator', `Screenshot captured, path: ${result.path}, base64 length: ${result.base64.length}`);
+            logger.debug('Translator', `Screenshot captured: ${result.path}`);
 
-            this.imageState.startLoading("Processing");
-            this.imageState.showImage(result.base64);
             const recognizingStep = this.ocrProvider === 'gemini_vision'
                 ? "Recognizing and Translating"
                 : "Recognizing";
-            this.imageState.updateProcessingStep(recognizingStep, false, this.ocrMethodHint());
+            this.imageState.startLoading(recognizingStep, this.ocrMethodHint());
 
             const textRegions = await this.textRecognizer.recognizeTextFile(result.path);
             if (isCancelled()) {
@@ -168,14 +136,14 @@ export class GameTranslatorLogic {
                     logger.info('Translator', `Filtered ${before - translatedRegions.length} identical translations`);
                 }
 
-                this.imageState.showTranslatedImage(result.base64, translatedRegions);
+                this.imageState.showTranslations(translatedRegions);
             } else {
                 // No text found, show message
                 this.imageState.updateProcessingStep("No text found");
 
                 // Hide overlay after a short delay
                 setTimeout(() => {
-                    if (!isCancelled()) this.imageState.hideImage();
+                    if (!isCancelled()) this.imageState.hide();
                 }, 2000); // 2 seconds delay
             }
         } catch (error) {
@@ -186,34 +154,16 @@ export class GameTranslatorLogic {
 
             logger.error('Translator', 'Screenshot and translation error', error);
 
-            // Check if this is a network error
-            if (error instanceof NetworkError) {
-                const msg = error.message || "No internet connection";
-                this.imageState.updateProcessingStep(msg, true);
-                // Hide overlay after showing the error message
-                setTimeout(() => {
-                    if (!isCancelled()) this.imageState.hideImage();
-                }, 2500); // 2.5 seconds delay for network error
-            } else if (error instanceof ApiKeyError) {
-                this.imageState.updateProcessingStep(error.message || "Invalid API key", true);
-                // Hide overlay after showing the error message
-                setTimeout(() => {
-                    if (!isCancelled()) this.imageState.hideImage();
-                }, 2500); // 2.5 seconds delay for API key error
-            } else if (error instanceof ModelNotAvailableError) {
-                this.imageState.updateProcessingStep(error.message, true);
-                setTimeout(() => {
-                    if (!isCancelled()) this.imageState.hideImage();
-                }, 3000);
-            } else if (error instanceof RateLimitError) {
-                this.imageState.updateProcessingStep(error.message, true);
-                // Hide overlay after showing the error message
-                setTimeout(() => {
-                    if (!isCancelled()) this.imageState.hideImage();
-                }, 3000); // 3 seconds delay for rate limit error
-            } else {
-                this.imageState.hideImage();
-            }
+            // Every failure is shown on the overlay for a moment: the backend's reason, or a generic one
+            let message = "Translation failed";
+            if (error instanceof BackendError && error.message) message = error.message;
+            else if (error instanceof NetworkError) message = "No internet connection";
+            else if (error instanceof ApiKeyError) message = "Invalid API key";
+            const quick = error instanceof NetworkError || error instanceof ApiKeyError;
+            this.imageState.updateProcessingStep(message, true);
+            setTimeout(() => {
+                if (!isCancelled()) this.imageState.hide();
+            }, quick ? 2500 : 3000);
         }
         finally {
             if (!isCancelled()) {
@@ -301,13 +251,13 @@ export class GameTranslatorLogic {
         }
         if (!inputLang && !targetLang) {
             logger.warn('Translator', 'Cannot start translation: languages not configured');
-            this.notify("Output and Input languages are not set", 3000, "Please select them in the plugin settings");
+            this.notify("Input and output languages are not set", 3000, "Please select them in the plugin settings");
             return false;
         }
 
         if (inputLang !== 'auto' && inputLang === targetLang) {
             logger.warn('Translator', `Cannot start translation: input and output language are both ${inputLang}`);
-            this.notify("Input and output languages can not be the same", 3000, "Select change them in plugin settings");
+            this.notify("Input and output languages can't be the same", 3000, "Change one of them in the plugin settings");
             return false;
         }
 

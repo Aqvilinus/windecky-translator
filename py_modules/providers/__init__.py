@@ -14,6 +14,8 @@ from .base import (
     NetworkError,
     ApiKeyError,
     RateLimitError,
+    OCRError,
+    TranslationError,
 )
 from .google_ocr import GoogleVisionProvider
 from .google_translate import GoogleTranslateProvider
@@ -24,7 +26,7 @@ from .gemini_vision import GeminiVisionProvider
 from .ct2_translate import CT2TranslateProvider
 from .llm_translate import LLMTranslateProvider
 from .nllb_downloader import NLLBDownloader
-from .screenai_downloader import ScreenAIDownloader
+from .screenai_downloader import APPROX_SIZE_MB as SCREENAI_APPROX_MB, ScreenAIDownloader
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +44,8 @@ __all__ = [
     'NetworkError',
     'ApiKeyError',
     'RateLimitError',
+    'OCRError',
+    'TranslationError',
     'GoogleVisionProvider',
     'GoogleTranslateProvider',
     'OCRSpaceProvider',
@@ -129,9 +133,6 @@ class ProviderManager:
             self._ocr_provider_preference = ocr_provider
         if translation_provider:
             self._translation_provider_preference = translation_provider
-        elif ocr_provider:
-            # no translation provider saved yet: Google Cloud OCR goes with Google Cloud translation
-            self._translation_provider_preference = "googlecloud" if ocr_provider == "googlecloud" else "freegoogle"
 
         # Update Google Cloud providers with new API key
         if ProviderType.GOOGLE in self._ocr_providers:
@@ -346,13 +347,10 @@ class ProviderManager:
             List of TextRegion objects
         """
         provider = self.get_ocr_provider()
-        if provider and provider.is_available(language):
-            provider_name = provider.name
-            logger.debug(f"Using {provider_name} for OCR")
-            return await provider.recognize(image_data, language)
-
-        logger.warning("No OCR provider available")
-        return []
+        if not provider or not provider.is_available(language):
+            raise OCRError(f"{provider.name if provider else 'The OCR engine'} is unavailable")
+        logger.debug(f"Using {provider.name} for OCR")
+        return await provider.recognize(image_data, language)
 
     async def translate_text(
         self,
@@ -375,13 +373,11 @@ class ProviderManager:
             return []
 
         provider = self.get_translation_provider()
-        if provider and provider.is_available(source_lang, target_lang):
-            provider_name = provider.name
-            logger.debug(f"Using {provider_name} for translation")
-            return await provider.translate_batch(texts, source_lang, target_lang)
-
-        logger.warning("No translation provider available")
-        return texts  # Return original texts as fallback
+        if not provider or not provider.is_available(source_lang, target_lang):
+            raise TranslationError(f"{provider.name if provider else 'The translator'} is unavailable for "
+                                   f"{source_lang} -> {target_lang}")
+        logger.debug(f"Using {provider.name} for translation")
+        return await provider.translate_batch(texts, source_lang, target_lang)
 
     def get_provider_status(self) -> dict:
         """
@@ -406,8 +402,7 @@ class ProviderManager:
 
         # Add OCR.space usage stats if using ocrspace (OCR.space) provider
         if self._ocr_provider_preference == "ocrspace" and ocr_provider:
-            if hasattr(ocr_provider, 'get_usage_stats'):
-                status["ocr_usage"] = ocr_provider.get_usage_stats()
+            status["ocr_usage"] = ocr_provider.get_usage_stats()
 
         llm = self._translation_providers.get(ProviderType.LLM)
         if llm:
@@ -483,7 +478,7 @@ class ProviderManager:
             else:
                 return False, f"Unknown provider ({provider})"
 
-            if p is None or not hasattr(p, "test_network"):
+            if p is None:
                 return False, "Provider unavailable"
 
             return await p.test_network()
@@ -520,7 +515,7 @@ class ProviderManager:
         if not self._model_manager:
             return False
         ct2 = self._translation_providers.get(ProviderType.CT2)
-        if ct2 and hasattr(ct2, '_loaded_model_dir'):
+        if ct2:
             if ct2._loaded_model_dir == self._model_manager.get_model_dir():
                 ct2.unload_current_model()
         return self._model_manager.delete_model()
@@ -543,7 +538,7 @@ class ProviderManager:
     def get_chromescreenai_status(self) -> dict:
         if not self._screenai_downloader:
             return {
-                "downloaded": False, "size": 0, "approx_size_mb": 120,
+                "downloaded": False, "size": 0, "approx_size_mb": SCREENAI_APPROX_MB,
                 "downloading": False, "progress": 0, "error": None,
             }
         return self._screenai_downloader.get_status()
@@ -565,7 +560,7 @@ class ProviderManager:
         if not self._screenai_downloader:
             return False
         provider = self._ocr_providers.get(ProviderType.CHROME_SCREEN_AI)
-        if provider and hasattr(provider, 'stop_worker'):
+        if provider:
             provider.stop_worker()
         # Drop the cached provider so it re-checks availability after delete.
         self._ocr_providers.pop(ProviderType.CHROME_SCREEN_AI, None)
@@ -573,8 +568,8 @@ class ProviderManager:
 
     def shutdown(self):
         ct2 = self._translation_providers.get(ProviderType.CT2)
-        if ct2 and hasattr(ct2, 'shutdown'):
+        if ct2:
             ct2.shutdown()
         screenai = self._ocr_providers.get(ProviderType.CHROME_SCREEN_AI)
-        if screenai and hasattr(screenai, 'stop_worker'):
+        if screenai:
             screenai.stop_worker()

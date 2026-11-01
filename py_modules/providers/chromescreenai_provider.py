@@ -12,7 +12,7 @@ import threading
 import time
 from typing import List, Optional
 
-from .base import OCRProvider, ProviderType, TextRegion
+from .base import OCRError, OCRProvider, TextRegion
 from . import python_runtime
 
 logger = logging.getLogger(__name__)
@@ -82,31 +82,6 @@ class ChromeScreenAIProvider(OCRProvider):
     def name(self) -> str:
         return "Chrome Screen AI (Local)"
 
-    @property
-    def provider_type(self) -> ProviderType:
-        return ProviderType.CHROME_SCREEN_AI
-
-    def set_model_dir(self, model_dir: str) -> None:
-        if model_dir == self._model_dir:
-            return
-        self._model_dir = model_dir
-        # Worker holds an open DLL handle from the old path; restart it.
-        if self._is_worker_alive():
-            self.stop_worker()
-            if self._persistent_mode:
-                threading.Thread(target=self._warmup_worker, daemon=True).start()
-
-    def set_min_confidence(self, value: float) -> None:
-        v = max(0.0, min(1.0, value))
-        if v == self._min_confidence:
-            return
-        self._min_confidence = v
-        # Filtering is set in the worker init payload; restart to apply.
-        if self._is_worker_alive():
-            self.stop_worker()
-            if self._persistent_mode:
-                threading.Thread(target=self._warmup_worker, daemon=True).start()
-
     def _check_availability(self) -> bool:
         self._init_error = None
 
@@ -134,12 +109,6 @@ class ChromeScreenAIProvider(OCRProvider):
         if not self._check_availability():
             return False
         return language in self.SUPPORTED_LANGUAGES
-
-    def get_supported_languages(self) -> List[str]:
-        return self.SUPPORTED_LANGUAGES.copy()
-
-    def get_init_error(self) -> Optional[str]:
-        return self._init_error
 
     def set_persistent_mode(self, enabled: bool) -> None:
         enabled = bool(enabled)
@@ -291,8 +260,7 @@ class ChromeScreenAIProvider(OCRProvider):
 
     async def recognize(self, image_data: bytes, language: str = "auto") -> List[TextRegion]:
         if not self._check_availability():
-            logger.error(f"Chrome Screen AI not available: {self._init_error}")
-            return []
+            raise OCRError(f"On-device OCR is unavailable: {self._init_error}")
 
         if self._persistent_mode:
             result = await asyncio.to_thread(self._recognize_via_worker, image_data)
@@ -341,8 +309,7 @@ class ChromeScreenAIProvider(OCRProvider):
 
             elapsed = time.time() - start
             if response.get("error"):
-                logger.error(f"Chrome Screen AI worker error: {response['error']}")
-                return []
+                raise OCRError(f"On-device OCR failed: {response['error']}")
 
             regions = []
             for r in response.get("regions", []):
@@ -360,63 +327,55 @@ class ChromeScreenAIProvider(OCRProvider):
             image_file.write(image_data)
             image_file.close()  # the subprocess opens it by name; it is deleted when the block ends
             temp_path = image_file.name
+            start = time.time()
+
+            env = os.environ.copy()
+            env['PYTHONPATH'] = self._py_modules_dir
+            env['PYTHONNOUSERSITE'] = '1'
+            env['PYTHONDONTWRITEBYTECODE'] = '1'
+            env['OMP_NUM_THREADS'] = '1'
+            env['MKL_NUM_THREADS'] = '1'
+            env['OPENBLAS_NUM_THREADS'] = '1'
+
+            if not self._python_path:
+                raise OCRError("On-device OCR is unavailable: no Python interpreter for it")
+
+            cmd = [
+                self._python_path, '-S', self._subprocess_script,
+                temp_path, self._model_dir, str(self._min_confidence),
+            ]
             try:
-                start = time.time()
-
-                env = os.environ.copy()
-                env['PYTHONPATH'] = self._py_modules_dir
-                env['PYTHONNOUSERSITE'] = '1'
-                env['PYTHONDONTWRITEBYTECODE'] = '1'
-                env['OMP_NUM_THREADS'] = '1'
-                env['MKL_NUM_THREADS'] = '1'
-                env['OPENBLAS_NUM_THREADS'] = '1'
-
-                if not self._python_path:
-                    logger.error("Chrome Screen AI: no Python interpreter")
-                    return []
-
-                cmd = [
-                    self._python_path, '-S', self._subprocess_script,
-                    temp_path, self._model_dir, str(self._min_confidence),
-                ]
                 result = subprocess.run(
                     cmd, capture_output=True, text=True, encoding='utf-8', errors='replace',
                     timeout=OCR_TIMEOUT_SECONDS, env=env, **python_runtime.popen_kwargs(),
                 )
-                elapsed = time.time() - start
-                if result.returncode != 0:
-                    logger.error(f"Chrome Screen AI subprocess error: {result.stderr}")
-                    return []
-
-                try:
-                    output = json.loads(result.stdout)
-                except json.JSONDecodeError as e:
-                    logger.error(f"Chrome Screen AI: failed to parse output: {e}")
-                    logger.error(f"stdout: {result.stdout[:500]}")
-                    return []
-
-                if output.get("debug"):
-                    for d in output["debug"]:
-                        logger.debug(f"Chrome Screen AI subprocess: {d}")
-
-                if output.get("error"):
-                    logger.error(f"Chrome Screen AI error: {output['error']}")
-                    return []
-
-                regions = []
-                for r in output.get("regions", []):
-                    regions.append(TextRegion(
-                        text=r["text"],
-                        rect=r["rect"],
-                        confidence=r["confidence"],
-                        is_dialog=r.get("is_dialog", False),
-                    ))
-                logger.debug(f"Chrome Screen AI: {len(regions)} regions in {elapsed:.2f}s")
-                return regions
-
             except subprocess.TimeoutExpired:
-                logger.error(f"Chrome Screen AI: timed out after {OCR_TIMEOUT_SECONDS}s")
-                return []
-            except Exception as e:
-                logger.error(f"Chrome Screen AI error: {e}", exc_info=True)
-                return []
+                raise OCRError(f"On-device OCR timed out after {OCR_TIMEOUT_SECONDS} s") from None
+            elapsed = time.time() - start
+            if result.returncode != 0:
+                logger.error(f"Chrome Screen AI subprocess error: {result.stderr}")
+                raise OCRError(f"On-device OCR stopped with exit code {result.returncode} (details in the log)")
+
+            try:
+                output = json.loads(result.stdout)
+            except json.JSONDecodeError as e:
+                logger.error(f"Chrome Screen AI: unreadable output: {result.stdout[:500]}")
+                raise OCRError("On-device OCR gave an unreadable answer (details in the log)") from e
+
+            if output.get("debug"):
+                for d in output["debug"]:
+                    logger.debug(f"Chrome Screen AI subprocess: {d}")
+
+            if output.get("error"):
+                raise OCRError(f"On-device OCR failed: {output['error']}")
+
+            regions = []
+            for r in output.get("regions", []):
+                regions.append(TextRegion(
+                    text=r["text"],
+                    rect=r["rect"],
+                    confidence=r["confidence"],
+                    is_dialog=r.get("is_dialog", False),
+                ))
+            logger.debug(f"Chrome Screen AI: {len(regions)} regions in {elapsed:.2f}s")
+            return regions

@@ -1,18 +1,33 @@
-This file lists the third-party dependencies used by Decky Translator and their respective licenses.
-All pip packages also include full license files in their .dist-info directories within the plugin-dependencies.tar.gz archive.
+Third-party software in WinDecky Translator and its licenses.
 
-Pillow
-https://github.com/python-pillow/Pillow
-License: MIT-CMU
+In the plugin's frontend (dist/index.js)
 
-Python 3.14
+@decky/api
+https://github.com/SteamDeckHomebrew/loader-api
+License: LGPL-2.1
+
+react-icons (Bootstrap Icons)
+https://github.com/react-icons/react-icons
+License: MIT
+
+In plugin-dependencies.tar.gz
+
+Python 3.14 (python314/, the engines' runtime, built by python-build-standalone)
 https://github.com/astral-sh/python-build-standalone
-License: Mozilla Public License 2.0
+License: PSF-2.0; the libraries built into it (OpenSSL, SQLite, zlib and others) keep their own licenses, all in
+python314/python/LICENSE.txt
 
-CTranslate2
-https://github.com/OpenNMT/CTranslate2
-License: MIT License
+Python packages (py_modules/), listed below by the release build from their metadata; each package's full license
+text is in its .dist-info folder.
 
-NLLB-200 (translation model, not shipped: downloaded from Hugging Face when you choose On-Device (NLLB-200))
+Downloaded on request, not shipped
+
+Chrome Screen AI (on-device OCR, downloaded from Google when you choose On-Device (Chrome))
+https://chrome-infra-packages.appspot.com/p/chromium/third_party/screen-ai
+Provided by Google under its terms for Chrome components
+
+NLLB-200 (offline translation model, downloaded from Hugging Face when you choose On-Device (NLLB-200))
 https://huggingface.co/facebook/nllb-200-distilled-1.3B
 License: CC-BY-NC 4.0 (non-commercial use only)
+
+Python packages

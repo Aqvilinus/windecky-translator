@@ -64,9 +64,6 @@ FILE_SHA256 = {
 MODEL_DIR_NAME = "nllb-200-distilled-1.3B"
 MODEL_APPROX_MB = 1410
 
-# Old model dirs cleaned up on startup - safeguard for future
-LEGACY_MODEL_DIRS = ["nllb-200-distilled-600M"]
-
 
 class NLLBDownloader:
     """Manages the single NLLB model download and storage."""
@@ -82,7 +79,6 @@ class NLLBDownloader:
 
         os.makedirs(models_dir, exist_ok=True)
         self._cleanup_partial_downloads()
-        self._cleanup_legacy_models()
 
     def _cleanup_partial_downloads(self):
         """Remove any leftover .downloading directories from interrupted downloads."""
@@ -95,17 +91,6 @@ class NLLBDownloader:
                         logger.info(f"Cleaned up partial download: {item}")
         except Exception as e:
             logger.error(f"Error cleaning up partial downloads: {e}")
-
-    def _cleanup_legacy_models(self):
-        """Delete obsolete model directories left over from older plugin builds."""
-        for name in LEGACY_MODEL_DIRS:
-            path = os.path.join(self._models_dir, name)
-            if os.path.isdir(path):
-                try:
-                    shutil.rmtree(path)
-                    logger.info(f"Removed legacy model directory: {name}")
-                except Exception as e:
-                    logger.error(f"Could not remove legacy model {name}: {e}")
 
     def get_model_dir(self) -> str:
         return os.path.join(self._models_dir, MODEL_DIR_NAME)

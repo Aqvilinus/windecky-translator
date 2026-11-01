@@ -25,17 +25,11 @@ import { LLM_DEFAULT_MODELS, LLM_KEY_SETTING, LLM_MODEL_SETTING, llmConfigured, 
 import { HiKey, HiLockClosed, HiInboxArrowDown, HiTrash, HiXMark, HiXCircle, HiExclamationTriangle, HiInformationCircle } from "react-icons/hi2";
 import { BsArrowRepeat, BsStars, BsWindows } from "react-icons/bs";
 
-// @ts-ignore
 import ocrspaceLogo from "../../assets/ocrspace-logo.png";
-// @ts-ignore
 import googlecloudLogo from "../../assets/googlecloud-logo.png";
-// @ts-ignore
 import googletranslateLogo from "../../assets/googletranslate-logo.png";
-// @ts-ignore
 import geminiLogo from "../../assets/gemini-logo.png";
-// @ts-ignore
 import steamdeckLogo from "../../assets/steamdeck-logo.png";
-// @ts-ignore
 import chromeLogo from "../../assets/chrome-logo.png";
 
 // Language options with flag emojis
@@ -602,7 +596,7 @@ function useChromeScreenAIStatus() {
         cancelCall: 'cancel_chromescreenai_download',
         deleteCall: 'delete_chromescreenai',
         clearErrorCall: 'clear_chromescreenai_error',
-        defaultApproxMb: 120,
+        defaultApproxMb: 80,  // py_modules/providers/screenai_downloader.py APPROX_SIZE_MB
     });
 }
 
@@ -1326,13 +1320,6 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                     </PanelSectionRow>
                 )}
 
-                {/* Invisible spacer to help with scroll when focusing last element */}
-                {/* <PanelSectionRow>
-                    <Focusable
-                        style={{ height: "1px", opacity: 0 }}
-                        onActivate={() => {}}
-                    />
-                </PanelSectionRow> */}
             </PanelSection>
         </div>
     );

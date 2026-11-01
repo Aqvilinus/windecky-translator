@@ -1,4 +1,4 @@
-"""Windows parts of Decky Translator (Decky Loader for Windows).
+"""Windows parts of WinDecky Translator (Decky Translator for Decky Loader on Windows).
 
 Upstream targets SteamOS: it captures the screen through PipeWire/gamescope, reads the Steam Deck controller through
 hidraw/evdev and lets gamescope put Steam's UI layer (and with it the translation overlay) over the game. On Windows

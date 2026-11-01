@@ -6,7 +6,6 @@ Communicates via stdin/stdout JSON-lines protocol.
 Commands:
     {"cmd": "load", "model_dir": "/path/to/model"}
     {"cmd": "translate", "texts": ["Hello", "World"], "src_langs": ["eng_Latn", "eng_Latn"], "tgt_lang": "fra_Latn"}
-        (src_lang is also accepted as a single default for all items)
     {"cmd": "lid", "texts": ["..."], "candidates": [["de", "en"]]}
     {"cmd": "unload"}
     {"cmd": "shutdown"}
@@ -354,10 +353,7 @@ def main():
         elif command == "translate":
             texts = cmd.get("texts", [])
             src_langs = cmd.get("src_langs")
-            src_lang = cmd.get("src_lang", "")
             tgt_lang = cmd.get("tgt_lang", "")
-            if src_langs is None and src_lang:
-                src_langs = [src_lang] * len(texts)
             if not texts:
                 send({"ok": True, "translations": []})
             elif not src_langs or not tgt_lang:

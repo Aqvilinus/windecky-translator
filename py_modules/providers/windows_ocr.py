@@ -10,7 +10,7 @@ import logging
 import sys
 from typing import List, Optional
 
-from .base import OCRProvider, ProviderType, TextRegion
+from .base import OCRProvider, TextRegion
 
 logger = logging.getLogger(__name__)
 
@@ -44,10 +44,6 @@ class WindowsOCRProvider(OCRProvider):
     @property
     def name(self) -> str:
         return "Windows OCR"
-
-    @property
-    def provider_type(self) -> ProviderType:
-        return ProviderType.WINDOWS_OCR
 
     @staticmethod
     def installed_languages() -> List[str]:

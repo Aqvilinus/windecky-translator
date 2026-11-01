@@ -77,6 +77,40 @@ const initialSettings: Settings = {
     llmCustomApiKey: "",
 };
 
+// main.py get_all_settings
+type BackendSettings = Record<string, any>;
+
+// The backend's settings as the frontend's (a missing one gets its default; a stored 0 or "" stays)
+export function settingsFromBackend(server: BackendSettings): Omit<Settings, 'initialized'> {
+    const pick = <K extends keyof Settings>(key: K, backendKey: string): Settings[K] =>
+        server[backendKey] ?? initialSettings[key];
+    return {
+        inputLanguage: pick('inputLanguage', 'input_language'),
+        targetLanguage: pick('targetLanguage', 'target_language'),
+        enabled: pick('enabled', 'enabled'),
+        confidenceThreshold: pick('confidenceThreshold', 'confidence_threshold'),
+        chromeScreenAiPersistentMode: pick('chromeScreenAiPersistentMode', 'chromescreenai_persistent_mode'),
+        ct2PersistentMode: pick('ct2PersistentMode', 'ct2_persistent_mode'),
+        pauseGameOnOverlay: pick('pauseGameOnOverlay', 'pause_game_on_overlay'),
+        ocrProvider: pick('ocrProvider', 'ocr_provider'),
+        translationProvider: pick('translationProvider', 'translation_provider'),
+        googleApiKey: pick('googleApiKey', 'google_api_key'),
+        geminiApiKey: pick('geminiApiKey', 'gemini_api_key'),
+        geminiModel: pick('geminiModel', 'gemini_model'),
+        debugMode: pick('debugMode', 'debug_mode'),
+        fontScale: pick('fontScale', 'font_scale'),
+        customRecognitionSettings: pick('customRecognitionSettings', 'custom_recognition_settings'),
+        translationCacheEnabled: pick('translationCacheEnabled', 'translation_cache_enabled'),
+        llmBackend: pick('llmBackend', 'llm_backend'),
+        llmGeminiModel: pick('llmGeminiModel', 'llm_gemini_model'),
+        llmGroqModel: pick('llmGroqModel', 'llm_groq_model'),
+        llmCustomModel: pick('llmCustomModel', 'llm_custom_model'),
+        llmCustomUrl: pick('llmCustomUrl', 'llm_custom_url'),
+        groqApiKey: pick('groqApiKey', 'groq_api_key'),
+        llmCustomApiKey: pick('llmCustomApiKey', 'llm_custom_api_key'),
+    };
+}
+
 // Create the reducer
 function settingsReducer(state: Settings, action: SettingsAction): Settings {
     switch (action.type) {
@@ -115,60 +149,26 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
     // Load all settings at once
     const loadAllSettings = async () => {
         try {
-            const serverSettings = await call<[], any>('get_all_settings');
+            const mapped = settingsFromBackend(await call<[], BackendSettings>('get_all_settings'));
+            dispatch({ type: 'INITIALIZE_SETTINGS', settings: mapped });
 
-            if (serverSettings) {
+            // Update logic instance with settings
+            logic.setInputLanguage(mapped.inputLanguage);
+            logic.setTargetLanguage(mapped.targetLanguage);
+            logic.setEnabled(mapped.enabled);
+            logic.setConfidenceThreshold(mapped.confidenceThreshold);
+            logger.setEnabled(mapped.debugMode);
 
-                // Map backend settings to frontend settings
-                const mappedSettings: Partial<Settings> = {
-                    inputLanguage: serverSettings.input_language,
-                    targetLanguage: serverSettings.target_language,
-                    enabled: serverSettings.enabled,
-                    confidenceThreshold: serverSettings.confidence_threshold || 0.6, // Add default if not present
-                    chromeScreenAiPersistentMode: serverSettings.chromescreenai_persistent_mode ?? false,
-                    ct2PersistentMode: serverSettings.ct2_persistent_mode ?? false,
-                    pauseGameOnOverlay: serverSettings.pause_game_on_overlay || false, // Add default if not present
-                    ocrProvider: serverSettings.ocr_provider || "chromescreenai", // OCR provider setting
-                    translationProvider: serverSettings.translation_provider || "freegoogle", // Translation provider setting
-                    googleApiKey: serverSettings.google_api_key || "", // Google API key
-                    geminiApiKey: serverSettings.gemini_api_key || "", // Gemini API key
-                    geminiModel: serverSettings.gemini_model || "gemini-3.5-flash",
-                    debugMode: serverSettings.debug_mode || false,
-                    fontScale: serverSettings.font_scale ?? 1.0,
-                    customRecognitionSettings: serverSettings.custom_recognition_settings ?? false,
-                    translationCacheEnabled: serverSettings.translation_cache_enabled ?? true,
-                    llmBackend: serverSettings.llm_backend ?? "gemini",
-                    llmGeminiModel: serverSettings.llm_gemini_model ?? LLM_DEFAULT_MODELS.gemini[0],
-                    llmGroqModel: serverSettings.llm_groq_model ?? LLM_DEFAULT_MODELS.groq[0],
-                    llmCustomModel: serverSettings.llm_custom_model ?? "",
-                    llmCustomUrl: serverSettings.llm_custom_url ?? "",
-                    groqApiKey: serverSettings.groq_api_key ?? "",
-                    llmCustomApiKey: serverSettings.llm_custom_api_key ?? "",
-                };
+            // Set provider settings for upfront API key validation
+            logic.setOcrProvider(mapped.ocrProvider);
+            logic.setTranslationProvider(mapped.translationProvider);
+            logic.setHasGoogleApiKey(!!mapped.googleApiKey);
+            logic.setHasGeminiApiKey(!!mapped.geminiApiKey);
 
-                // Update settings in context
-                dispatch({ type: 'INITIALIZE_SETTINGS', settings: mappedSettings });
+            logic.setFontScale(mapped.fontScale);
 
-                // Update logic instance with settings
-                logic.setInputLanguage(serverSettings.input_language);
-                logic.setTargetLanguage(serverSettings.target_language);
-                logic.setEnabled(serverSettings.enabled);
-                logic.setConfidenceThreshold(serverSettings.confidence_threshold || 0.6); // Set in logic
-                logger.setEnabled(serverSettings.debug_mode || false); // Set debug mode for logger
-
-                // Set provider settings for upfront API key validation
-                logic.setOcrProvider(serverSettings.ocr_provider || "chromescreenai");
-                logic.setTranslationProvider(serverSettings.translation_provider || "freegoogle");
-                logic.setHasGoogleApiKey(!!serverSettings.google_api_key);
-                logic.setHasGeminiApiKey(!!serverSettings.gemini_api_key);
-
-                logic.setFontScale(serverSettings.font_scale ?? 1.0);
-
-                logger.info('SettingsContext', 'All settings loaded successfully');
-                logger.logObject('SettingsContext', 'Settings', mappedSettings);
-            } else {
-                logger.error('SettingsContext', 'Failed to load settings');
-            }
+            logger.info('SettingsContext', 'All settings loaded successfully');
+            logger.logObject('SettingsContext', 'Settings', mapped);
         } catch (error) {
             logger.error('SettingsContext', 'Error loading settings', error);
         } finally {
@@ -256,7 +256,6 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
             const result = await call<[string, any], boolean>('set_setting', backendKey, value);
 
             if (result) {
-                // if (label) logic.notify(`${label} updated successfully`);
                 return true;
             } else {
                 logic.notify(`Failed to update ${label || key}`, 2000);

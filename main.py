@@ -11,6 +11,7 @@ import logging
 import re
 import json
 import base64
+import sqlite3
 import tarfile
 
 # IMPORTANT: Set up plugin directory FIRST
@@ -50,15 +51,15 @@ def _should_extract_dependencies():
 
 if _should_extract_dependencies():
     try:
-        print(f"[Decky Translator] Extracting dependencies from {DEPENDENCIES_ARCHIVE}...")
+        print(f"[WinDecky Translator] Extracting dependencies from {DEPENDENCIES_ARCHIVE}...")
         with tarfile.open(DEPENDENCIES_ARCHIVE, "r:gz") as tar:
             tar.extractall(path=BIN_DIR, filter="data")  # no links or paths out of BIN_DIR (3.14's default too)
         # Create marker file to indicate successful extraction
         with open(EXTRACTION_MARKER, "w", encoding="utf-8") as f:
             f.write(f"Extracted at {datetime.now().isoformat()}\n")
-        print("[Decky Translator] Dependencies extracted successfully")
+        print("[WinDecky Translator] Dependencies extracted successfully")
     except Exception as e:
-        print(f"[Decky Translator] Failed to extract dependencies: {e}")
+        print(f"[WinDecky Translator] Failed to extract dependencies: {e}")
         # Remove marker if it exists, so we retry next time
         if os.path.exists(EXTRACTION_MARKER):
             os.remove(EXTRACTION_MARKER)
@@ -80,15 +81,13 @@ if os.path.isdir(os.path.join(BIN_PYTHON_DIR, "python")):
     os.add_dll_directory(os.path.join(BIN_PYTHON_DIR, "python"))
 
 # Now import third-party libraries (after sys.path is configured)
-try:
-    import decky_plugin  # Decky's legacy name for the plugin API module
-except ImportError:
-    import decky as decky_plugin  # the current name, in case a Decky release drops the old one
+import decky  # Decky Loader's plugin API (typings/decky.pyi)
 
 # Import provider system
-from providers import ProviderManager, NetworkError, ApiKeyError, RateLimitError
+from providers import ProviderManager, NetworkError, ApiKeyError, RateLimitError, OCRError, TranslationError
 from providers.base import close_session
 from providers.translation_cache import TranslationCache, PROVIDER_TIERS, normalize
+from providers.screenai_downloader import APPROX_SIZE_MB as SCREENAI_APPROX_MB
 
 _processing_lock = False
 
@@ -172,18 +171,9 @@ _url_redact_filter = UrlKeyRedactFilter()
 
 
 # Decky sets these for each plugin backend
-settingsDir = os.environ.get("DECKY_PLUGIN_SETTINGS_DIR", getattr(decky_plugin, "DECKY_PLUGIN_SETTINGS_DIR", ""))
-
-# Set up logging
-logger = decky_plugin.logger
-
-# Make sure we use the right paths
-DECKY_PLUGIN_DIR = os.environ.get("DECKY_PLUGIN_DIR", decky_plugin.DECKY_PLUGIN_DIR)
-DECKY_PLUGIN_LOG_DIR = os.environ.get("DECKY_PLUGIN_LOG_DIR", decky_plugin.DECKY_PLUGIN_LOG_DIR)
-
-# Log configured paths for debugging
-logger.debug(f"DECKY_PLUGIN_DIR: {DECKY_PLUGIN_DIR}")
-logger.debug(f"DECKY_PLUGIN_LOG_DIR: {DECKY_PLUGIN_LOG_DIR}")
+settingsDir = decky.DECKY_PLUGIN_SETTINGS_DIR
+logger = decky.logger
+DECKY_PLUGIN_LOG_DIR = decky.DECKY_PLUGIN_LOG_DIR
 
 # Ensure log directory exists
 os.makedirs(DECKY_PLUGIN_LOG_DIR, exist_ok=True)
@@ -204,15 +194,13 @@ logger.info(f"Configured rotating log file: {log_file}")
 try:
     with open(os.path.join(PLUGIN_DIR, "package.json"), encoding="utf-8") as _pkg:
         _plugin_version = json.load(_pkg).get("version", "unknown")
-except Exception as _e:
+except (OSError, ValueError):
     _plugin_version = "unknown"
-logger.info(f"Decky Translator v{_plugin_version} starting")
+logger.info(f"WinDecky Translator v{_plugin_version} starting")
 
 
 # The capture's name for the frontend (no file is written; suspended.json of winport/pause.py lives here too)
 SCREENSHOT_DIR = os.path.join(tempfile.gettempdir(), "decky-translator")
-# Windows: the screenshot's stand-in for the frontend (a 1x1 transparent PNG; the backend keeps the real one)
-PLACEHOLDER_PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
 # What keeps parts of the plugin from working, for the frontend to show (get_boot_status). Capture and overlay load
 # compiled modules (winrt, Pillow) built for one Python version into Decky's own interpreter: after a Decky update
 # that changes its Python they fail to import, and the rest of the plugin should still load and say why.
@@ -259,7 +247,7 @@ class SettingsManager:
             else:
                 logger.warning(f"Settings file does not exist: {self.settings_path}")
         except (ValueError, UnicodeDecodeError) as e:
-            # damaged file (e.g. written by an older version that was cut off): keep what is in memory, and keep the
+            # damaged file (e.g. a write cut off by a crash): keep what is in memory, and keep the
             # damaged file aside instead of letting the next save replace it
             logger.error(f"Settings file is damaged ({e}); kept as {self.settings_path}.damaged")
             try:
@@ -306,6 +294,7 @@ class Plugin:
     _chromescreenai_persistent_mode: bool = False  # Keep Chrome Screen AI worker alive between requests
     _ct2_persistent_mode: bool = False  # Keep CT2/NLLB worker alive between requests
     _pause_game_on_overlay: bool = False  # Default to not pausing game on overlay
+    _pause_problems_shown: frozenset = frozenset()  # pause problems already shown to the user (_report_pause_problem)
 
     # Provider system
     _provider_manager: ProviderManager = None
@@ -445,33 +434,29 @@ class Plugin:
             return False
 
     async def get_all_settings(self):
-        try:
-            settings = {
-                "target_language": self._target_language,
-                "input_language": self._input_language,
-                "enabled": self._settings.get_setting("enabled", True),
-                "ocr_provider": self._ocr_provider,
-                "translation_provider": self._translation_provider,
-                "google_api_key": self._google_api_key,
-                "gemini_api_key": self._gemini_api_key,
-                "gemini_model": self._gemini_model,
-                "confidence_threshold": self._settings.get_setting("confidence_threshold", 0.6),
-                "chromescreenai_persistent_mode": self._settings.get_setting("chromescreenai_persistent_mode", False),
-                "ct2_persistent_mode": self._settings.get_setting("ct2_persistent_mode", False),
-                "pause_game_on_overlay": self._settings.get_setting("pause_game_on_overlay", False),
-                "debug_mode": self._settings.get_setting("debug_mode", False),
-                "font_scale": self._settings.get_setting("font_scale", 1.0),
-                "custom_recognition_settings": self._settings.get_setting("custom_recognition_settings", False),
-                "translation_cache_enabled": self._translation_cache_enabled,
-                **{k: self._settings.get_setting(k, d) for k, d in LLM_SETTING_DEFAULTS.items()},
-            }
-            for k in SENSITIVE_SETTING_KEYS & settings.keys():
-                settings[k] = display_key(settings[k])
-            return settings
-        except Exception as e:
-            logger.error(f"Error getting all settings: {str(e)}")
-            logger.error(traceback.format_exc())
-            return {}
+        # no catch-all: a failure here rejects the frontend's call instead of answering {} (every setting unset)
+        settings = {
+            "target_language": self._target_language,
+            "input_language": self._input_language,
+            "enabled": self._settings.get_setting("enabled", True),
+            "ocr_provider": self._ocr_provider,
+            "translation_provider": self._translation_provider,
+            "google_api_key": self._google_api_key,
+            "gemini_api_key": self._gemini_api_key,
+            "gemini_model": self._gemini_model,
+            "confidence_threshold": self._settings.get_setting("confidence_threshold", 0.6),
+            "chromescreenai_persistent_mode": self._settings.get_setting("chromescreenai_persistent_mode", False),
+            "ct2_persistent_mode": self._settings.get_setting("ct2_persistent_mode", False),
+            "pause_game_on_overlay": self._settings.get_setting("pause_game_on_overlay", False),
+            "debug_mode": self._settings.get_setting("debug_mode", False),
+            "font_scale": self._settings.get_setting("font_scale", 1.0),
+            "custom_recognition_settings": self._settings.get_setting("custom_recognition_settings", False),
+            "translation_cache_enabled": self._translation_cache_enabled,
+            **{k: self._settings.get_setting(k, d) for k, d in LLM_SETTING_DEFAULTS.items()},
+        }
+        for k in SENSITIVE_SETTING_KEYS & settings.keys():
+            settings[k] = display_key(settings[k])
+        return settings
 
     def _apply_llm_settings(self):
         """AI translation settings -> the provider manager (on start and whenever one of them changes)."""
@@ -540,28 +525,27 @@ class Plugin:
         try:
             if capture_foreground is None:
                 logger.error("Screen capture is unavailable (see the start of the log)")
-                return {"path": "", "base64": ""}
+                return {"path": ""}
             own = (self._overlay.hwnd,) if self._overlay and self._overlay.hwnd else ()
             cap = await capture_foreground(exclude=own)
             if cap is None:
                 logger.error("No foreground window to capture")
-                return {"path": "", "base64": ""}
+                return {"path": ""}
             name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', " ", app_name or "").strip()
             if not name or name.lower() == "null":
                 name = "Decky-Screenshot"
             timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S_%f")
-            # The screenshot stays in memory: the frontend doesn't draw it (the overlay window does), so it gets a
-            # name for recognize_text_file and a placeholder image instead of megabytes of base64, and no file is
-            # written and read back
+            # The screenshot stays in memory: the frontend doesn't draw it (the overlay window does), so it only
+            # gets a name for recognize_text_file, and no file is written and read back
             path = os.path.join(SCREENSHOT_DIR, f"{name}_{timestamp}.png")
             self._capture_target = {"hwnd": cap.hwnd, "left": cap.left, "top": cap.top,
                                     "width": cap.width, "height": cap.height, "png": cap.png, "image": cap.image,
                                     "path": path}
-            return {"path": path, "base64": PLACEHOLDER_PNG_BASE64}
+            return {"path": path}
         except Exception as e:
             logger.error(f"Screenshot error: {e}")
             logger.error(traceback.format_exc())
-            return {"path": "", "base64": ""}
+            return {"path": ""}
         finally:
             _processing_lock = False
 
@@ -572,7 +556,8 @@ class Plugin:
             if Overlay is None:
                 return False
             if self._overlay is None:
-                self._overlay = Overlay()
+                self._overlay = Overlay(on_error=lambda error: self._emit(
+                    "translator_problem", f"The translation overlay doesn't work: {error}"))
             visible = bool(state and state.get("visible"))
             appeared = visible and not self._overlay_visible
             self._overlay_visible = visible
@@ -600,9 +585,23 @@ class Plugin:
     # so the screenshot shows it running) and everything paused is resumed when the translation is hidden, however
     # it was started (Ctrl+Alt+T, the side menu, a controller shortcut) and even if the game exited meanwhile.
     def _pause_captured_game(self):
-        pid = game_pause.game_pid((self._capture_target or {}).get("hwnd")) if game_pause else 0
-        if pid:
-            game_pause.suspend(pid)
+        if not game_pause:
+            return  # reported at start (_BOOT_ERRORS)
+        pid = game_pause.game_pid((self._capture_target or {}).get("hwnd"))
+        if not pid:
+            self._report_pause_problem("Pause Game While Translating: this window isn't a game Steam started, "
+                                       "so it keeps running")
+        elif not game_pause.suspend(pid):
+            self._report_pause_problem("Pause Game While Translating: Windows didn't let the plugin pause this game "
+                                       "(details in the plugin log)")
+
+    def _report_pause_problem(self, message):
+        """A toast once per kind of problem, not on every translation."""
+        logger.warning(message)
+        if message not in self._pause_problems_shown:
+            # a new set, assigned: a class attribute must not be changed in place (it would be shared)
+            self._pause_problems_shown = self._pause_problems_shown | {message}
+            self._emit("translator_problem", message)
 
     def _resume_paused_games(self):
         if game_pause and game_pause.any_suspended():
@@ -611,15 +610,14 @@ class Plugin:
     # Windows: Ctrl+Alt+T in a game (hotkey thread) -> the frontend translates or dismisses (src/windows.ts)
     def _emit(self, event, *args):
         """Send an event to the frontend from any thread (the hotkey's)."""
-        try:
-            import decky
-            emit = decky.emit
-        except (ImportError, AttributeError):
-            emit = getattr(decky_plugin, "emit", None)
-        if emit and self._loop:
-            asyncio.run_coroutine_threadsafe(emit(event, *args), self._loop)
+        if self._loop:
+            asyncio.run_coroutine_threadsafe(decky.emit(event, *args), self._loop)
 
     def _on_hotkey(self):
+        # A paused game is resumed here too, not only when the frontend hides the translation: if Steam's UI hangs or
+        # is gone, Ctrl+Alt+T still unfreezes the game
+        if self._loop:
+            self._loop.call_soon_threadsafe(self._resume_paused_games)
         self._emit("translator_hotkey")
 
     async def get_windows_ocr_languages(self):
@@ -633,8 +631,14 @@ class Plugin:
         return clipboard.get_text()
 
     async def get_boot_status(self):
-        """Problems found while the plugin loaded (see _BOOT_ERRORS); the frontend shows them once."""
-        return list(_BOOT_ERRORS)
+        """Problems found while the plugin loaded (see _BOOT_ERRORS) and a shortcut another program took; the
+        frontend shows them once."""
+        problems = list(_BOOT_ERRORS)
+        hotkey = self._hotkey.status() if self._hotkey else None
+        if hotkey and hotkey["error"]:
+            problems.append(f"{hotkey['hotkey']} is taken by another program (error {hotkey['error']}): "
+                            "close that program or change its shortcut, then switch the plugin off and on")
+        return problems
 
     async def get_windows_status(self):
         """Diagnostics of the Windows parts: hotkey, overlay, last capture."""
@@ -697,10 +701,12 @@ class Plugin:
         except RateLimitError as e:
             logger.error(f"Rate limit during OCR: {e}")
             return {"error": "rate_limit_error", "message": str(e)}
-        except Exception as e:
-            logger.error(f"Text recognition error: {e}")
-            logger.error(traceback.format_exc())
-            return []
+        except OCRError as e:
+            logger.error(f"OCR failed: {e}")
+            return {"error": "ocr_failed", "message": str(e)}
+        except Exception:
+            logger.exception("Text recognition error")
+            return {"error": "ocr_failed", "message": "Text recognition failed (details in the plugin log)"}
 
     def _is_capture(self, image_path) -> bool:
         return bool(self._capture_target and image_path and image_path == self._capture_target.get("path"))
@@ -743,7 +749,7 @@ class Plugin:
                         and self._ocr_provider == "gemini_vision"):
                     pairs = [(r["text"], r["translatedText"]) for r in text_regions]
                     if any(normalize(s) != normalize(t) for s, t in pairs):
-                        await asyncio.to_thread(
+                        await self._use_cache(
                             self._translation_cache.put_many,
                             pairs, input_lang, target_lang,
                             PROVIDER_TIERS.get("gemini_vision", 0), "gemini_vision",
@@ -769,10 +775,10 @@ class Plugin:
 
             cached = {}
             if cache_on and texts_to_translate:
-                cached = await asyncio.to_thread(
+                cached = await self._use_cache(
                     self._translation_cache.get_many,
                     texts_to_translate, input_lang, target_lang, provider_tier,
-                )
+                ) or {}
 
             if cache_on:
                 to_request, seen = [], set()
@@ -791,6 +797,9 @@ class Plugin:
             logger.info(f"Translation completed in {elapsed:.2f}s, {len(to_request)} new / {len(cached)} cached")
             for i, (src, dst) in enumerate(zip(to_request, requested)):
                 logger.debug(f"  [{i}] '{src}' -> '{dst}'")
+            if to_request and all(t is None for t in requested):
+                # nothing came back (the free services changed or refuse): say so instead of showing the originals
+                raise TranslationError("The translation service did not answer (details in the plugin log)")
 
             # Failed items come back as None. The AI provider reports per item whether the AI or its Google/Bing
             # fallback translated it; each is cached under its own engine's tier.
@@ -803,7 +812,7 @@ class Plugin:
                     by_source.setdefault(src or self._translation_provider, []).append((s, t))
             for src, translated in by_source.items():
                 if cache_on and any(normalize(s) != normalize(t) for s, t in translated):
-                    await asyncio.to_thread(
+                    await self._use_cache(
                         self._translation_cache.put_many,
                         translated, input_lang, target_lang, PROVIDER_TIERS.get(src, provider_tier), src,
                     )
@@ -835,13 +844,22 @@ class Plugin:
         except RateLimitError as e:
             logger.error(f"Rate limit during translation: {e}")
             return {"error": "rate_limit_error", "message": str(e)}
-        except Exception as e:
-            logger.error(f"Translation error: {e}")
-            logger.error(traceback.format_exc())
-            return None
+        except TranslationError as e:
+            logger.error(f"Translation failed: {e}")
+            return {"error": "translation_failed", "message": str(e)}
+        except Exception:
+            logger.exception("Translation error")
+            return {"error": "translation_failed", "message": "Translation failed (details in the plugin log)"}
 
-    async def get_enabled_state(self):
-        return self._settings.get_setting("enabled", True) if self._settings else True
+    @staticmethod
+    async def _use_cache(method, *args):
+        """A translation cache call, off the event loop. A cache failure (a full disk, a locked or damaged database)
+        costs only the cache, never the translation: None then."""
+        try:
+            return await asyncio.to_thread(method, *args)
+        except sqlite3.Error as e:
+            logger.error(f"Translation cache unavailable: {e}")
+            return None
 
     async def clear_translation_cache(self):
         try:
@@ -935,12 +953,12 @@ class Plugin:
     async def get_chromescreenai_status(self):
         try:
             if not self._provider_manager:
-                return {"downloaded": False, "size": 0, "approx_size_mb": 120,
+                return {"downloaded": False, "size": 0, "approx_size_mb": SCREENAI_APPROX_MB,
                         "downloading": False, "progress": 0, "error": None}
             return self._provider_manager.get_chromescreenai_status()
         except Exception as e:
             logger.error(f"Error getting Chrome Screen AI status: {e}")
-            return {"downloaded": False, "size": 0, "approx_size_mb": 120,
+            return {"downloaded": False, "size": 0, "approx_size_mb": SCREENAI_APPROX_MB,
                     "downloading": False, "progress": 0, "error": str(e)}
 
     async def download_chromescreenai(self):
@@ -1034,33 +1052,10 @@ class Plugin:
 
             self._google_api_key = load_api_key("google_api_key")
             self._gemini_api_key = load_api_key("gemini_api_key")
-            # One-shot: the old fixed default models answer 404 for new API keys ("no longer available to new
-            # users"); move settings still on them to Google's current-model aliases
-            if not self._settings.get_setting("gemini_alias_migrated_v1", False):
-                for key, old, new in (("gemini_model", "gemini-2.5-flash", "gemini-3.5-flash"),
-                                      ("llm_gemini_model", "gemini-2.5-flash-lite", "gemini-flash-lite-latest")):
-                    if self._settings.get_setting(key) == old:
-                        self._settings.set_setting(key, new)
-                        logger.info(f"Migrated {key} {old} -> {new}")
-                self._settings.set_setting("gemini_alias_migrated_v1", True)
             self._gemini_model = self._settings.get_setting("gemini_model", "gemini-3.5-flash")
 
-            saved_ocr_provider = self._settings.get_setting("ocr_provider")
-            if saved_ocr_provider is not None:
-                self._ocr_provider = saved_ocr_provider
-            else:
-                self._settings.set_setting("ocr_provider", self._ocr_provider)
-
-            # Load translation provider
-            saved_translation_provider = self._settings.get_setting("translation_provider")
-            if saved_translation_provider is not None:
-                self._translation_provider = saved_translation_provider
-            else:
-                if self._ocr_provider == "googlecloud":
-                    self._translation_provider = "googlecloud"
-                else:
-                    self._translation_provider = "freegoogle"
-                self._settings.set_setting("translation_provider", self._translation_provider)
+            self._ocr_provider = load_setting("ocr_provider", self._ocr_provider)
+            self._translation_provider = load_setting("translation_provider", self._translation_provider)
 
             # Downloaded models (NLLB, Chrome Screen AI) live in the settings folder, so they survive plugin
             # updates
