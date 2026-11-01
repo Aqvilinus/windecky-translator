@@ -9,8 +9,7 @@ import { TranslatedRegion, filterUntranslatable, mergeRegions } from "./regions"
 // The translate/close hotkey (py_modules/windows/hotkey.py HOTKEY)
 export const HOTKEY = 'Ctrl+Alt+T';
 
-const NO_TEXT_MESSAGE_MS = 2000;
-const ERROR_MESSAGE_MS = 3000;
+const MESSAGE_MS = 3000;  // "No text found" and errors on the overlay
 
 // The settings a translation needs (settings.tsx gives them all)
 export interface TranslatorSettings {
@@ -90,7 +89,7 @@ export class Translator {
                 this.overlay.setStatus("No text found");
                 setTimeout(() => {
                     if (!isCancelled()) this.overlay.hide();
-                }, NO_TEXT_MESSAGE_MS);
+                }, MESSAGE_MS);
                 return;
             }
 
@@ -114,7 +113,7 @@ export class Translator {
             this.overlay.setStatus(error instanceof BackendError ? error.message : "Translation failed", true);
             setTimeout(() => {
                 if (!isCancelled()) this.overlay.hide();
-            }, ERROR_MESSAGE_MS);
+            }, MESSAGE_MS);
         } finally {
             if (!isCancelled()) this.isProcessing = false;
         }
