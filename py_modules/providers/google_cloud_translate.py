@@ -3,8 +3,7 @@
 import logging
 from typing import List
 
-from .base import (TranslationProvider, NetworkError, ApiKeyError, RateLimitError, TranslationError,
-                   classify_google_error, fetch, probe, raise_for_google_error)
+from .base import ApiKeyError, TranslationError, TranslationProvider, api_error, error_message, fetch, probe
 
 logger = logging.getLogger(__name__)
 
@@ -35,32 +34,14 @@ class GoogleCloudTranslateProvider(TranslationProvider):
         request_data = {"q": texts, "target": target_lang, "format": "text"}
         if source_lang and source_lang != "auto":
             request_data["source"] = source_lang
+        response = await fetch("POST", self._endpoint, json=request_data, headers={"x-goog-api-key": self._api_key})
+        if response.status_code != 200:
+            raise api_error(response, self.name)
         try:
-            logger.debug(f"Translating {len(texts)} texts: {source_lang} -> {target_lang}")
-            response = await fetch("POST", self._endpoint, json=request_data, headers={"x-goog-api-key": self._api_key})
-            if response.status_code != 200:
-                raise_for_google_error(response)
-                raise TranslationError(f"Google Cloud Translation: API error ({response.status_code})")
-
-            result = response.json()
-
-            if 'data' in result and 'translations' in result['data']:
-                translations = result['data']['translations']
-                translated_texts = []
-                for i, translation in enumerate(translations):
-                    translated_text = translation.get('translatedText', texts[i] if i < len(texts) else '')
-                    translated_texts.append(translated_text)
-                logger.debug(f"Successfully translated {len(translated_texts)} texts")
-                return translated_texts
-            else:
-                logger.error(f"Unexpected response from the Translation API: {response.text[:500]}")
-                raise TranslationError("Google Cloud Translation gave an unreadable answer (details in the plugin log)")
-
-        except (ApiKeyError, RateLimitError, NetworkError, TranslationError):
-            raise
-        except Exception as e:
-            logger.exception("Batch translation error")
-            raise TranslationError("Google Cloud Translation failed (details in the plugin log)") from e
+            return [t["translatedText"] for t in response.json()["data"]["translations"]]
+        except (ValueError, KeyError, TypeError) as e:
+            logger.error(f"Unexpected response from the Translation API: {response.text[:500]}")
+            raise TranslationError("Google Cloud Translation gave an unreadable answer (details in the plugin log)") from e
 
     async def test_network(self) -> tuple:
         if not self._api_key:
@@ -70,4 +51,4 @@ class GoogleCloudTranslateProvider(TranslationProvider):
             return False, error
         if resp.status_code == 200:
             return True, ""
-        return False, classify_google_error(resp.status_code, resp.text)
+        return False, error_message(resp)

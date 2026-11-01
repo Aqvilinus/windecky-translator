@@ -49,35 +49,6 @@ class TranslationError(Exception):
     """The translation engine failed; the message is shown to the user."""
 
 
-def classify_google_error(status_code: int, body: str) -> str:
-    """Logging for a non-200 Google API response."""
-    body = body or ""
-    if 'API_KEY_INVALID' in body or 'API key not valid' in body:
-        return "Invalid API key"
-    if 'SERVICE_DISABLED' in body or 'has not been used' in body or 'it is disabled' in body:
-        return "API not enabled in Cloud project"
-    if 'BILLING_DISABLED' in body or 'billing' in body:
-        return "Billing not enabled"
-    if status_code == 401:
-        return "Invalid API key"
-    if status_code == 403:
-        return "Access blocked (key restriction)"
-    if status_code == 429:
-        return "Rate limited"
-    return f"API error ({status_code})"
-
-
-def raise_for_google_error(resp: "Response") -> None:
-    """A Google Cloud error the user has to act on (key, project, billing, quota) as ApiKeyError or RateLimitError;
-    any other is only logged."""
-    reason = classify_google_error(resp.status_code, resp.text)
-    logger.error(f"Google API error {resp.status_code} ({reason}): {resp.text[:500]}")
-    if reason == "Rate limited":
-        raise RateLimitError(reason)
-    if not reason.startswith("API error"):
-        raise ApiKeyError(reason)
-
-
 # -- HTTP for the web engines
 
 @dataclass
@@ -123,17 +94,16 @@ def error_message(resp: Response) -> str:
     return (resp.text or "")[:200]
 
 
-def raise_for_api_error(resp: Response, service: str) -> None:
-    """A non-200 answer of an AI API (Gemini, OpenAI-compatible) as the plugin's errors: a bad key -> ApiKeyError,
-    a rate limit -> RateLimitError, anything else -> NetworkError."""
-    if resp.status_code == 200:
-        return
+def api_error(resp: Response, service: str) -> Exception:
+    """A non-200 answer of a keyed API (Google Cloud, Gemini, OpenAI-compatible) as the plugin's error, with the
+    service's own message: the key, project or billing refused (401/403; Google says a bad key with 400) ->
+    ApiKeyError, a rate limit -> RateLimitError, anything else -> NetworkError."""
     message = error_message(resp)
     if resp.status_code in (401, 403) or "API_KEY_INVALID" in message or "API key not valid" in message:
-        raise ApiKeyError(f"{service}: invalid API key ({message})")
+        return ApiKeyError(f"{service}: {message}")
     if resp.status_code == 429:
-        raise RateLimitError(f"{service}: rate limit ({message})")
-    raise NetworkError(f"{service} error {resp.status_code}: {message}")
+        return RateLimitError(f"{service}: rate limit ({message})")
+    return NetworkError(f"{service} error {resp.status_code}: {message}")
 
 
 async def probe(method: str, url: str, **kwargs) -> tuple:

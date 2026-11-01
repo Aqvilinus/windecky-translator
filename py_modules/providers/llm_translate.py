@@ -10,7 +10,7 @@ import time
 from typing import Dict, List, Optional
 
 from .base import (TranslationProvider, NetworkError, ApiKeyError, RateLimitError, Response,
-                   chunk_indices, error_message, fetch, probe, raise_for_api_error)
+                   api_error, chunk_indices, error_message, fetch, probe)
 from . import gemini_client
 from .google_web_translate import GoogleWebTranslateProvider
 from .gemini_vision import LANG_NAMES
@@ -170,7 +170,8 @@ class LLMTranslateProvider(TranslationProvider):
             pause = _retry_after(resp)
             self._paused_until = time.time() + pause
             raise RateLimitError(f"AI rate limit, using Google/Bing for {int(pause)} s: {error_message(resp)}")
-        raise_for_api_error(resp, self.name)
+        if resp.status_code != 200:
+            raise api_error(resp, self.name)
 
     async def _gemini_request(self, system: str, user: str) -> str:
         payload = {

@@ -5,7 +5,7 @@ import base64
 import logging
 from typing import List, Optional
 
-from .base import OCRError, OCRProvider, TextRegion, classify_google_error, fetch, probe, raise_for_google_error, to_jpeg
+from .base import ApiKeyError, OCRError, OCRProvider, TextRegion, api_error, error_message, fetch, probe, to_jpeg
 
 logger = logging.getLogger(__name__)
 
@@ -36,8 +36,7 @@ class GoogleCloudVisionProvider(OCRProvider):
         }
         response = await fetch("POST", self._endpoint, json=request_data, headers={"x-goog-api-key": self._api_key})
         if response.status_code != 200:
-            raise_for_google_error(response)  # the key, billing or quota: the user can act on those
-            raise OCRError(f"Google Cloud Vision error {response.status_code} (details in the plugin log)")
+            raise api_error(response, "Google Cloud Vision")
         try:
             result = response.json()["responses"][0]
         except (ValueError, KeyError, IndexError) as e:
@@ -57,10 +56,9 @@ class GoogleCloudVisionProvider(OCRProvider):
             return False, error
         if resp.status_code == 200:
             return True, ""
-        reason = classify_google_error(resp.status_code, resp.text)
-        if resp.status_code == 400 and reason == "API error (400)":
-            return True, ""
-        return False, reason
+        if resp.status_code == 400 and not isinstance(api_error(resp, ""), ApiKeyError):
+            return True, ""  # the empty request refused, the key accepted
+        return False, error_message(resp)
 
 
 def _paragraph_region(paragraph: dict) -> Optional[TextRegion]:

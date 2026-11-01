@@ -14,9 +14,9 @@ from .base import (
     OCRProvider,
     TextRegion,
     ApiKeyError,
-    classify_google_error,
+    api_error,
+    error_message,
     probe,
-    raise_for_api_error,
     to_jpeg,
 )
 
@@ -195,7 +195,8 @@ class GeminiVisionProvider(OCRProvider):
         }
         # retired model -> current alias, thinking setting the model rejects -> less (gemini_client.generate)
         response = await gemini_client.generate(self._api_key, self._model, payload, REQUEST_TIMEOUT_SECONDS)
-        raise_for_api_error(response, "Gemini Vision")
+        if response.status_code != 200:
+            raise api_error(response, "Gemini Vision")
         return gemini_client.reply_text(response)
 
     async def recognize(self, image_data: bytes, language: str = "auto") -> List[TextRegion]:
@@ -270,4 +271,4 @@ class GeminiVisionProvider(OCRProvider):
             return False, error
         if resp.status_code == 200:
             return True, ""
-        return False, classify_google_error(resp.status_code, resp.text)
+        return False, error_message(resp)

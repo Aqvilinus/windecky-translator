@@ -203,7 +203,16 @@ def test_a_google_vision_failure_is_shown_not_taken_for_no_text(backend, net):
     net.routes[("POST", harness.VISION_URL)] = lambda params, body: (500, "backend error")
     shot = backend.call("capture_screen")
     assert backend.call("recognize_capture", shot["id"]) == {
-        "error": "ocr_failed", "message": "Google Cloud Vision error 500 (details in the plugin log)"}
+        "error": "network_error", "message": "Google Cloud Vision error 500: backend error"}
+
+
+def test_a_refused_google_cloud_project_is_shown_in_googles_words(backend, net):
+    disabled = "Cloud Vision API has not been used in project 1 before or it is disabled."
+    net.routes[("POST", harness.VISION_URL)] = lambda params, body: (
+        403, json.dumps({"error": {"code": 403, "message": disabled, "status": "PERMISSION_DENIED"}}))
+    shot = backend.call("capture_screen")
+    assert backend.call("recognize_capture", shot["id"]) == {
+        "error": "api_key_error", "message": f"Google Cloud Vision: {disabled}"}
 
 
 def test_no_network(backend, net):
