@@ -6,7 +6,7 @@ import { logger } from './Logger';
 import { LLM_DEFAULT_MODELS } from './llm';
 import type { OcrEngine, TranslationEngine } from './providers';
 
-// API keys: the backend hands out only their first 3 and last 4 characters (main.py display_key), and saving that
+// API keys: the backend hands out only their first 3 and last 4 characters (main.py mask_key), and saving that
 // same text back changes nothing. A key typed in a dialog is kept here in the same shortened form.
 const SECRET_SETTINGS = new Set<string>(['googleApiKey', 'geminiApiKey', 'groqApiKey', 'llmCustomApiKey']);
 

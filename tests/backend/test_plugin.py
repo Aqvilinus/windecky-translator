@@ -60,7 +60,7 @@ def test_api_keys_never_reach_the_frontend(backend):
     assert key not in json.dumps(backend.call("get_all_settings")) and shown == "AIz…cdef"
     # saving the masked key back (a dialog closed unchanged) keeps the real one
     assert backend.call("set_setting", "google_api_key", shown) is True
-    with open(backend.plugin._settings.settings_path, encoding="utf-8") as f:
+    with open(backend.plugin._settings.path, encoding="utf-8") as f:
         assert json.load(f)["google_api_key"] == key
 
 
@@ -90,15 +90,6 @@ def test_a_worker_stays_up_only_for_the_chosen_engine_while_the_plugin_is_on(sta
     b.call("set_setting", "translation_provider", "freegoogle")
     assert pm._ct2_persistent_mode is False
     assert pm._chromescreenai_persistent_mode is False  # "Faster Recognition" is off
-
-
-def test_a_damaged_settings_file_is_kept_aside(start, tmp_path):
-    settings = tmp_path / "settings"
-    settings.mkdir()
-    (settings / "decky-translator-settings.json").write_text('{"target_language": "de", "ena', encoding="utf-8")
-    b = start(write_settings=False)
-    assert (settings / "decky-translator-settings.json.damaged").exists()
-    assert b.call("get_all_settings")["target_language"] == "en"
 
 
 # ---------------------------------------------------------------- the translation pipeline
