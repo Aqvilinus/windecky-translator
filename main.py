@@ -71,8 +71,9 @@ import decky  # Decky Loader's plugin API (typings/decky.pyi)
 from providers import ProviderRegistry
 from providers.base import ApiKeyError, NetworkError, OCRError, RateLimitError, TranslationError, close_session
 from providers.translation_cache import TranslationCache, PROVIDER_TIERS, normalize
-from settings import (API_KEY_SETTINGS, PROVIDER_SETTINGS, SETTING_DEFAULTS, WORKER_SETTINGS, RedactKeysFilter,
-                      SettingsStore, clean_pasted_key, mask_key)
+from settings import SettingsManager  # Decky's own: decky_loader.settings, registered as settings for plugins
+from plugin_settings import (API_KEY_SETTINGS, PROVIDER_SETTINGS, SETTING_DEFAULTS, WORKER_SETTINGS, RedactKeysFilter,
+                             clean_pasted_key, mask_key)
 
 
 
@@ -168,12 +169,15 @@ class Plugin:
 
     _translation_cache: TranslationCache = None
 
+    def _setting(self, key):
+        return self._settings.getSetting(key, SETTING_DEFAULTS[key])
+
     async def set_setting(self, key, value):
         if key not in SETTING_DEFAULTS:
             logger.warning(f"Unknown setting {key}: not stored")
             return False
         if key in API_KEY_SETTINGS and isinstance(value, str):
-            if value and value == mask_key(self._settings.get(key) or ""):
+            if value and value == mask_key(self._setting(key) or ""):
                 return True  # a key dialog closed without a new key saves back the masked one
             cleaned = clean_pasted_key(value)
             if cleaned != value:
@@ -182,7 +186,10 @@ class Plugin:
             value = cleaned
             logger.info(f"{key} set (len={len(value)})")
         logger.debug(f"Setting {key} to: {mask_key(value) if key in API_KEY_SETTINGS else value}")
-        if not self._settings.set(key, value):
+        try:
+            self._settings.setSetting(key, value)
+        except OSError:
+            logger.exception(f"Could not save setting {key}")
             return False
         try:
             self._on_setting_changed(key)
@@ -194,13 +201,13 @@ class Plugin:
     def _on_setting_changed(self, key):
         """What a changed setting changes in the backend now (the others are read where they are used)."""
         if key == "enabled":
-            enabled = bool(self._settings.get("enabled"))
+            enabled = bool(self._setting("enabled"))
             if not enabled:
                 self._resume_paused_games()  # never leave a game frozen behind a switched-off plugin
             if self._hotkey:
                 self._hotkey.set_enabled(enabled)
         if key == "debug_mode":
-            logger.setLevel(logging.DEBUG if self._settings.get("debug_mode") else logging.INFO)
+            logger.setLevel(logging.DEBUG if self._setting("debug_mode") else logging.INFO)
         if key in PROVIDER_SETTINGS:
             self._configure_providers()
         if key in WORKER_SETTINGS:
@@ -210,16 +217,16 @@ class Plugin:
         pm = self._providers
         if not pm:
             return
-        pm.configure(google_api_key=self._settings.get("google_api_key"), gemini_api_key=self._settings.get("gemini_api_key"),
-                     ocr_provider=self._settings.get("ocr_provider"), translation_provider=self._settings.get("translation_provider"))
-        pm.set_gemini_model(self._settings.get("gemini_model"))
+        pm.configure(google_api_key=self._setting("google_api_key"), gemini_api_key=self._setting("gemini_api_key"),
+                     ocr_provider=self._setting("ocr_provider"), translation_provider=self._setting("translation_provider"))
+        pm.set_gemini_model(self._setting("gemini_model"))
         pm.configure_llm(
-            backend=self._settings.get("llm_backend"),
-            keys={"gemini": self._settings.get("gemini_api_key"), "groq": self._settings.get("groq_api_key"),
-                  "custom": self._settings.get("llm_custom_api_key")},
-            models={"gemini": self._settings.get("llm_gemini_model"), "groq": self._settings.get("llm_groq_model"),
-                    "custom": self._settings.get("llm_custom_model")},
-            custom_url=self._settings.get("llm_custom_url"),
+            backend=self._setting("llm_backend"),
+            keys={"gemini": self._setting("gemini_api_key"), "groq": self._setting("groq_api_key"),
+                  "custom": self._setting("llm_custom_api_key")},
+            models={"gemini": self._setting("llm_gemini_model"), "groq": self._setting("llm_groq_model"),
+                    "custom": self._setting("llm_custom_model")},
+            custom_url=self._setting("llm_custom_url"),
         )
 
     def _update_workers(self):
@@ -228,15 +235,15 @@ class Plugin:
         pm = self._providers
         if not pm:
             return
-        on = bool(self._settings.get("enabled"))
+        on = bool(self._setting("enabled"))
         pm.set_chromescreenai_persistent_mode(
-            on and self._settings.get("ocr_provider") == "chromescreenai" and bool(self._settings.get("chromescreenai_persistent_mode")))
+            on and self._setting("ocr_provider") == "chromescreenai" and bool(self._setting("chromescreenai_persistent_mode")))
         pm.set_ct2_persistent_mode(
-            on and self._settings.get("translation_provider") == "ct2" and bool(self._settings.get("ct2_persistent_mode")))
+            on and self._setting("translation_provider") == "ct2" and bool(self._setting("ct2_persistent_mode")))
 
     async def get_all_settings(self):
         # no catch-all: a failure here rejects the frontend's call instead of answering {} (every setting unset)
-        settings = {key: self._settings.get(key) for key in SETTING_DEFAULTS}
+        settings = {key: self._setting(key) for key in SETTING_DEFAULTS}
         for k in API_KEY_SETTINGS:
             settings[k] = mask_key(settings[k])
         return settings
@@ -253,14 +260,14 @@ class Plugin:
 
     async def get_gemini_models(self):
         try:
-            if not self._settings.get("gemini_api_key"):
+            if not self._setting("gemini_api_key"):
                 return []
             gemini = self._providers.get_ocr_provider() if (
-                self._providers and self._settings.get("ocr_provider") == "gemini_vision"
+                self._providers and self._setting("ocr_provider") == "gemini_vision"
             ) else None
             if not gemini:
                 from providers.gemini_vision import GeminiVisionProvider
-                gemini = GeminiVisionProvider(api_key=self._settings.get("gemini_api_key"))
+                gemini = GeminiVisionProvider(api_key=self._setting("gemini_api_key"))
             return await gemini.list_available_models()
         except Exception as e:
             logger.error(f"Error fetching Gemini models: {e}")
@@ -310,7 +317,7 @@ class Plugin:
             self._overlay_visible = visible
             if visible:
                 self._overlay.show(state, self._capture)
-                if appeared and self._settings.get("pause_game_on_overlay"):
+                if appeared and self._setting("pause_game_on_overlay"):
                     self._pause_captured_game()
             else:
                 self._overlay.hide()
@@ -396,25 +403,25 @@ class Plugin:
             logger.error("Provider manager not initialized")
             return []
 
-        if self._settings.get("ocr_provider") == "chromescreenai" and not self._providers.model_installed("chromescreenai"):
+        if self._setting("ocr_provider") == "chromescreenai" and not self._providers.model_installed("chromescreenai"):
             return {"error": "model_not_available", "message": "Chrome Screen AI engine not downloaded.\nDownload it in plugin settings"}
 
-        if self._settings.get("ocr_provider") == "windows_ocr" and self._settings.get("input_language") not in ("", "auto"):
+        if self._setting("ocr_provider") == "windows_ocr" and self._setting("input_language") not in ("", "auto"):
             from providers.windows_ocr import WindowsOCRProvider, plugin_code
-            if plugin_code(self._settings.get("input_language")) not in WindowsOCRProvider().get_supported_languages():
+            if plugin_code(self._setting("input_language")) not in WindowsOCRProvider().get_supported_languages():
                 from providers.gemini_vision import LANG_NAMES
-                lang = LANG_NAMES.get(self._settings.get("input_language"), self._settings.get("input_language"))
+                lang = LANG_NAMES.get(self._setting("input_language"), self._setting("input_language"))
                 return {"error": "model_not_available",
                         "message": f"No Windows OCR language pack for {lang}.\n"
                                    "Add it in Windows Settings or use On-Device (Chrome)"}
 
         # Gemini Vision translates in the same call
-        if self._settings.get("ocr_provider") == "gemini_vision":
-            self._providers.set_gemini_target_language(self._settings.get("target_language"))
+        if self._setting("ocr_provider") == "gemini_vision":
+            self._providers.set_gemini_target_language(self._setting("target_language"))
 
         start_time = time.time()
         text_regions = await self._providers.recognize_text(
-            png, self._settings.get("input_language"), self._settings.get("confidence_threshold"))
+            png, self._setting("input_language"), self._setting("confidence_threshold"))
         logger.info(f"OCR completed in {time.time() - start_time:.2f}s, found {len(text_regions)} regions")
 
         return [region.to_dict() for region in text_regions]
@@ -451,8 +458,8 @@ class Plugin:
 
         if all(r.get("translatedText") is not None for r in text_regions):
             logger.info(f"Translation skipped: {len(text_regions)} regions already translated by OCR provider")
-            if (self._settings.get("translation_cache_enabled") and self._translation_cache
-                    and self._settings.get("ocr_provider") == "gemini_vision"):
+            if (self._setting("translation_cache_enabled") and self._translation_cache
+                    and self._setting("ocr_provider") == "gemini_vision"):
                 pairs = [(r["text"], r["translatedText"]) for r in text_regions]
                 if any(normalize(s) != normalize(t) for s, t in pairs):
                     await self._use_cache(
@@ -462,7 +469,7 @@ class Plugin:
                     )
             return text_regions
 
-        if self._settings.get("translation_provider") == "ct2":
+        if self._setting("translation_provider") == "ct2":
             provider = self._providers.get_translation_provider()
             if provider and not provider.is_available(input_lang, target_lang):
                 if input_lang == "auto":
@@ -474,8 +481,8 @@ class Plugin:
             if region.get("translatedText") is None
         ]
 
-        cache_on = self._settings.get("translation_cache_enabled") and self._translation_cache is not None
-        provider_tier = PROVIDER_TIERS.get(self._settings.get("translation_provider"), 0)
+        cache_on = self._setting("translation_cache_enabled") and self._translation_cache is not None
+        provider_tier = PROVIDER_TIERS.get(self._setting("translation_provider"), 0)
 
         cached = {}
         if cache_on and texts_to_translate:
@@ -509,11 +516,11 @@ class Plugin:
         # fallback translated it; each is cached under its own engine's tier.
         sources = getattr(requested, "sources", None)
         if not sources or len(sources) != len(to_request):
-            sources = [self._settings.get("translation_provider")] * len(to_request)
+            sources = [self._setting("translation_provider")] * len(to_request)
         by_source = {}
         for s, t, src in zip(to_request, requested, sources):
             if t is not None:
-                by_source.setdefault(src or self._settings.get("translation_provider"), []).append((s, t))
+                by_source.setdefault(src or self._setting("translation_provider"), []).append((s, t))
         for src, translated in by_source.items():
             if cache_on and any(normalize(s) != normalize(t) for s, t in translated):
                 await self._use_cache(
@@ -599,8 +606,7 @@ class Plugin:
         logger.info("Plugin initialization started")
         self._start_windows_integration()
         try:
-            self._settings = SettingsStore(os.path.join(SETTINGS_DIR, "decky-translator-settings.json"))
-            self._settings.load()
+            self._settings = SettingsManager(name="decky-translator-settings", settings_directory=SETTINGS_DIR)
 
             # Downloaded models (NLLB, Chrome Screen AI) live in the settings folder, so they survive plugin
             # updates
@@ -623,9 +629,9 @@ class Plugin:
             self._configure_providers()
             self._update_workers()
 
-            logger.info(f"Initialized - OCR: {self._settings.get('ocr_provider')}, "
-                        f"Translation: {self._settings.get('translation_provider')}, "
-                        f"Target lang: {self._settings.get('target_language')}")
+            logger.info(f"Initialized - OCR: {self._setting('ocr_provider')}, "
+                        f"Translation: {self._setting('translation_provider')}, "
+                        f"Target lang: {self._setting('target_language')}")
 
         except Exception as e:
             logger.error(f"Error during initialization: {e}")

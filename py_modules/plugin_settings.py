@@ -1,10 +1,8 @@
-"""The plugin's settings, the JSON file they are kept in, and how API keys are shown."""
-import json
+"""The plugin's settings: every key with its default, and how API keys are shown. Decky's SettingsManager
+stores them (main.py). Not named settings.py: Decky registers its own settings module under that name
+before the plugin loads, so a plugin's settings.py would never be imported."""
 import logging
-import os
 import re
-
-logger = logging.getLogger(__name__)
 
 # set_setting stores only these keys
 SETTING_DEFAULTS = {
@@ -37,43 +35,6 @@ PROVIDER_SETTINGS = {"ocr_provider", "translation_provider", "google_api_key", "
 WORKER_SETTINGS = {"enabled", "ocr_provider", "translation_provider", "chromescreenai_persistent_mode",
                    "ct2_persistent_mode"}
 API_KEY_SETTINGS = {"google_api_key", "gemini_api_key", "groq_api_key", "llm_custom_api_key"}
-
-
-class SettingsStore:
-    def __init__(self, path):
-        self.path = path
-        self._values = {}
-
-    def load(self):
-        try:
-            with open(self.path, encoding="utf-8") as f:
-                self._values = json.load(f)
-        except FileNotFoundError:
-            pass  # first start
-        except ValueError as e:
-            logger.error(f"Settings file unreadable ({e}): starting from the defaults")
-
-    def get(self, key):
-        return self._values.get(key, SETTING_DEFAULTS[key])
-
-    def set(self, key, value) -> bool:
-        self._values[key] = value
-        try:
-            self._save_atomically()
-            return True
-        except OSError:
-            logger.exception(f"Could not save setting {key}")
-            return False
-
-    def _save_atomically(self):
-        """A crash mid-write leaves the old file whole."""
-        os.makedirs(os.path.dirname(self.path), exist_ok=True)
-        tmp = self.path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(self._values, f, indent=4)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp, self.path)
 
 
 # API keys are never shown whole: anything that reaches Decky's local websocket can call the backend.
