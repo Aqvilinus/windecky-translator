@@ -73,8 +73,7 @@ export async function showBootProblems(title: string): Promise<void> {
     for (const body of problems || []) toaster.toast({ title, body, duration: 10000 });
 }
 
-// Problems the backend finds later (main.py emits translator_problem, e.g. the overlay window stopped working): a
-// toast each, instead of translations that silently never appear
+// Problems the backend finds later (main.py emits translator_problem: the game couldn't be paused): a toast each
 export function listenForProblems(title: string): () => void {
     const onProblem = (body: string) => toaster.toast({ title, body, duration: 10000 });
     addEventListener('translator_problem', onProblem);

@@ -137,9 +137,9 @@ except Exception as _e:  # noqa: BLE001 - ImportError, or OSError from a DLL tha
     capture_foreground = encode_png = None
     _BOOT_ERRORS.append(f"Screen capture is unavailable: {_e}")
 try:
-    from windows.overlay_window import Overlay
+    from windows.overlay_window import OverlayWindow
 except Exception as _e:  # noqa: BLE001
-    Overlay = None
+    OverlayWindow = None
     _BOOT_ERRORS.append(f"The translation overlay is unavailable: {_e}")
 from windows.hotkey import Hotkey  # ctypes only
 try:
@@ -319,8 +319,7 @@ class Plugin:
         try:
             if capture_foreground is None:
                 return {"path": "", "error": "Screen capture is unavailable: see the plugin's start-up message"}
-            own = (self._overlay.hwnd,) if self._overlay and self._overlay.hwnd else ()
-            cap = await capture_foreground(exclude=own)
+            cap = await capture_foreground()
             if cap is None:
                 return {"path": "", "error": "No game window in front to capture"}
             name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', " ", app_name or "").strip()
@@ -344,11 +343,10 @@ class Plugin:
     # captured window (Steam's UI can't sit over other windows on Windows)
     async def native_overlay_update(self, state):
         try:
-            if Overlay is None:
+            if OverlayWindow is None:
                 return False
             if self._overlay is None:
-                self._overlay = Overlay(on_error=lambda error: self._emit(
-                    "translator_problem", f"The translation overlay doesn't work: {error}"))
+                self._overlay = OverlayWindow()
             visible = bool(state and state.get("visible"))
             appeared = visible and not self._overlay_visible
             self._overlay_visible = visible

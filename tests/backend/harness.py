@@ -101,15 +101,13 @@ def capture_of(img, left=100, top=50):
 
 # ---------------------------------------------------------------- Windows parts
 class FakeOverlay:
-    """windows.overlay_window.Overlay: records show/hide and draws each shown state with the real render()."""
+    """windows.overlay_window.OverlayWindow: records show/hide and draws each shown state with the real render()."""
     instances = []
 
-    def __init__(self, on_error=None):
-        self.on_error = on_error
+    def __init__(self):
         self.shown = []        # (state, target) per show()
         self.hides = 0
         self.visible = False
-        self.hwnd = None
         type(self).instances.append(self)
 
     def show(self, state, target):
@@ -181,7 +179,7 @@ class FakeWindows:
     def __init__(self):
         self.capture_image = screen_image()
         self.captures = 0
-        self.overlay_cls = type("Overlay", (FakeOverlay,), {"instances": []})
+        self.overlay_cls = type("OverlayWindow", (FakeOverlay,), {"instances": []})
         self.processes = FakeProcesses()
         self.hotkeys = []
         self._saved = {}
@@ -194,7 +192,7 @@ class FakeWindows:
     def hotkey(self):
         return self.hotkeys[-1] if self.hotkeys else None
 
-    async def capture_foreground(self, exclude=()):
+    async def capture_foreground(self):
         self.captures += 1
         return capture_of(self.capture_image) if self.capture_image is not None else None
 
@@ -204,7 +202,7 @@ class FakeWindows:
         return hk
 
     def install(self, main):
-        seams = {"capture_foreground": self.capture_foreground, "Overlay": self.overlay_cls,
+        seams = {"capture_foreground": self.capture_foreground, "OverlayWindow": self.overlay_cls,
                  "Hotkey": self._make_hotkey, "game_pause": self.processes}
         for name, value in seams.items():
             self._saved[name] = getattr(main, name)

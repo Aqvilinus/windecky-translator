@@ -1,6 +1,7 @@
 """The translation overlay's image (PIL): the captured frame as a still, each translation on a label over its OCR
 box (Google Lens style), the status pill while a translation runs. No OS calls: windows/overlay_window.py shows
 the image over the game."""
+import functools
 import os
 
 from PIL import Image, ImageDraw, ImageFont, ImageStat
@@ -10,9 +11,10 @@ FONT_LATIN = ("segoeui.ttf", "arial.ttf")       # Latin, Cyrillic, Greek
 FONT_CJK = ("msyh.ttc", "YuGothM.ttc", "msgothic.ttc")
 FONT_HANGUL = ("malgun.ttf", "msyh.ttc")
 
-
-# ---------------------------------------------------------------- fonts and text layout
-_fonts = {}
+LINE_SPACING = 1.15
+FONT_SIZE_PER_LINE_HEIGHT = 0.95  # an OCR line box is a little taller than the font size that drew it
+LABEL_ALPHA = 245                 # nearly opaque, so the original text doesn't show through
+WRAP_SLACK = 1.15                 # room lost at line ends when wrapping at word boundaries
 
 
 def _first_font(names):
@@ -31,15 +33,16 @@ def _font_file(text):
 
 
 def font_for(text, size):
-    path = _font_file(text)
-    key = (path, int(size))
-    if key not in _fonts:
-        _fonts[key] = ImageFont.truetype(path, int(size)) if path else ImageFont.load_default(int(size))
-    return _fonts[key]
+    return _load_font(_font_file(text), int(size))
 
 
-def wrap(text, font, max_width):
-    """Lines of text that fit max_width (words; characters for text without spaces, e.g. CJK)."""
+@functools.lru_cache(maxsize=None)
+def _load_font(path, size):
+    return ImageFont.truetype(path, size) if path else ImageFont.load_default(size)
+
+
+def wrap_text(text, font, max_width):
+    """Breaks at spaces, or between any characters in text without spaces (CJK)."""
     out = []
     for para in text.split("\n"):
         tokens = para.split(" ") if " " in para else list(para)
@@ -56,67 +59,50 @@ def wrap(text, font, max_width):
     return out
 
 
-# ---------------------------------------------------------------- drawing
-def render(state, target, mon, scale, image=None):
-    """The overlay image for the monitor rectangle mon = (left, top, width, height). image: the captured frame
-    (PIL, capture pixels).
-
-    The overlay is a still: the captured frame covers the window, the translations sit on it, and a thin red border
-    marks it. The game keeps running underneath unseen, so the labels never go stale; the shortcut closes the still
-    and shows the live game again."""
-    mx, my, mw, mh = mon
+def render(state, target, monitor, scale, frame=None):
+    """The image for the whole monitor (left, top, width, height). The captured frame covers the game window as a
+    still with a thin red border, so the labels never go stale while the game runs on unseen underneath."""
+    mx, my, mw, mh = monitor
     img = Image.new("RGBA", (mw, mh), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    ox, oy = target["left"] - mx, target["top"] - my  # capture origin inside the image
+    ox, oy = target["left"] - mx, target["top"] - my
     tw, th = target["width"], target["height"]
     regions = state.get("regions") or []
     loading = bool(state.get("loading"))
 
-    if image is not None:
-        img.paste(image, (ox, oy))
+    if frame is not None:
+        img.paste(frame, (ox, oy))
         d.rectangle((ox, oy, ox + tw - 1, oy + th - 1), outline=(244, 67, 54, 255), width=max(1, int(scale)))
 
     if regions and not loading:
-        _draw_labels(d, regions, ox, oy, tw, state, scale, image)
+        _draw_labels(d, regions, ox, oy, tw, state, scale, frame)
 
     if loading and state.get("processingStep"):
-        _draw_pill(d, state, ox + int(20 * scale), oy + th - int(20 * scale), scale)
+        _draw_status(d, state, ox + int(20 * scale), oy + th - int(20 * scale), scale)
     return img
 
 
-LINE_SPACING = 1.15
-FONT_PER_LINE = 0.95  # font size (em) per pixel of an OCR line box's height
-LABEL_ALPHA = 245     # nearly opaque, so the original text doesn't show through
-WRAP_SLACK = 1.15     # room lost at line ends when wrapping at word boundaries
-
-
-def font_size_for(text, width, height, max_size, min_size):
-    """The largest font size at which the text fits width x height on 1 to 4 lines, from its width on one line (one
-    measurement: the width grows with the size) instead of trying sizes. At most max_size, the original line's size;
-    no smaller than min_size (a label that doesn't fit then grows)."""
-    em = max(font_for(text, 100).getlength(text) / 100, 1e-3)  # the text's width on one line per pixel of font size
+def fit_font_size(text, width, height, max_size, min_size):
+    """The largest size at which the text fits width x height on 1 to 4 lines, computed from one measurement (the
+    text's width grows linearly with the size) instead of trying sizes. A label that doesn't fit at min_size grows."""
+    em = max(font_for(text, 100).getlength(text) / 100, 1e-3)
     size = max(min(height / (n * LINE_SPACING), width * n / (em * (1 if n == 1 else WRAP_SLACK))) for n in range(1, 5))
     return int(max(min_size, min(size, max_size)))
 
 
-def _background(image, box):
-    """Median colour of a thin ring around the box in the captured frame (the text's background)."""
-    if image is None:
-        return None
+def _background_color(frame, box):
+    """The median colour of a thin ring around the box: the text's background."""
     x0, y0, x1, y1 = (int(v) for v in box)
-    outer = (max(0, x0 - 3), max(0, y0 - 3), min(image.width, x1 + 3), min(image.height, y1 + 3))
-    crop = image.crop(outer).convert("RGB")
+    outer = (max(0, x0 - 3), max(0, y0 - 3), min(frame.width, x1 + 3), min(frame.height, y1 + 3))
+    crop = frame.crop(outer).convert("RGB")
     ring = Image.new("L", crop.size, 255)
-    ring.paste(0, (x0 - outer[0], y0 - outer[1], x1 - outer[0], y1 - outer[1]))  # the box itself is left out
-    if not ring.getbbox():  # the box covers the whole frame: no ring
-        return None
+    ring.paste(0, (x0 - outer[0], y0 - outer[1], x1 - outer[0], y1 - outer[1]))
     return tuple(ImageStat.Stat(crop, ring).median)
 
 
-def auto_alignments(boxes, scale):
-    """Alignment of each box's translation, as the original is laid out: a box that shares its left edge with a box
-    stacked next to it (a list of choices) is left-aligned, its right edge right-aligned, anything else centred (its
-    box hugs the original text, so the translation stays where the original was)."""
+def text_alignments(boxes, scale):
+    """Each translation aligned as its original is laid out: boxes stacked with a shared left edge (a list of
+    choices) left, a shared right edge right, anything else centred over where the original was."""
     tol = 8 * scale
 
     def stacked(a, b):
@@ -130,10 +116,9 @@ def auto_alignments(boxes, scale):
     return out
 
 
-def paragraphs(regions, boxes):
-    """Paragraph id and line height of each box. Lines stacked within a line's height of each other, overlapping
-    horizontally, are one paragraph, and its line height is its tallest line's: a box is only as high as its glyphs,
-    so a line without tall letters ("mouse.") has a box about half a line high."""
+def group_paragraphs(regions, boxes):
+    """(paragraph id, line height) of each box. Lines stacked within a line's height and overlapping horizontally are
+    one paragraph, sized by its tallest line: a box is only as high as its glyphs, so "mouse." gets half a line."""
     own = [(y1 - y0) / max(1, len([t for t in (r.get("text") or "").split("\n") if t.strip()]))
            for r, (x0, y0, x1, y1) in zip(regions, boxes)]
     group = list(range(len(boxes)))
@@ -149,23 +134,21 @@ def paragraphs(regions, boxes):
     return group, [tallest[g] for g in group]
 
 
-def _draw_labels(d, regions, ox, oy, img_width, state, scale, image=None):
-    """Google Lens style, the same rules for every label: the translation covers its OCR box on the box's own
-    background colour, aligned as the original (auto_alignments), in its paragraph's line size. It may reach a line's
-    height past its box into free space (never over another box or past the screen edge). A paragraph's lines share
-    one size: the one its longest translation fits in."""
+def _draw_labels(d, regions, ox, oy, target_width, state, scale, frame=None):
+    """Each translation covers its OCR box on the box's own background colour and may reach a line's height past it
+    into free space (never over another box or off screen). A paragraph's lines share the size its longest
+    translation fits in."""
     pad = 2 * scale
     font_scale = float(state.get("fontScale") or 1.0)
     boxes = [tuple((r.get("rect") or {}).get(k, 0) for k in ("left", "top", "right", "bottom")) for r in regions]
-    aligns = auto_alignments(boxes, scale)
-    group, line_px = paragraphs(regions, boxes)
+    aligns = text_alignments(boxes, scale)
+    group, line_px = group_paragraphs(regions, boxes)
 
-    def room(i):
-        """(text, width, height) label i may take."""
+    def label_space(i):
         x0, y0, x1, y1 = boxes[i]
         text = (regions[i].get("translatedText") or regions[i].get("text") or "").strip()
         n_lines = max(1, len([t for t in (regions[i].get("text") or "").split("\n") if t.strip()]))
-        left, right = max(pad, x0 - line_px[i]), min(img_width - pad, x1 + line_px[i])
+        left, right = max(pad, x0 - line_px[i]), min(target_width - pad, x1 + line_px[i])
         for u0, v0, u1, v1 in boxes:
             if y0 < v1 and y1 > v0:
                 if u0 >= x1:
@@ -180,28 +163,27 @@ def _draw_labels(d, regions, ox, oy, img_width, state, scale, image=None):
 
     shown = [i for i, (r, b) in enumerate(zip(regions, boxes))
              if (r.get("translatedText") or r.get("text") or "").strip() and b[2] > b[0] and b[3] > b[1]]
-    rooms = {i: room(i) for i in shown}
+    spaces = {i: label_space(i) for i in shown}
     size = {}
     for i in shown:
-        max_size = max(8 * scale, line_px[i] * FONT_PER_LINE * font_scale)
-        own = font_size_for(*rooms[i], max_size, max(8 * scale, max_size * 0.55))
+        max_size = max(8 * scale, line_px[i] * FONT_SIZE_PER_LINE_HEIGHT * font_scale)
+        own = fit_font_size(*spaces[i], max_size, max(8 * scale, max_size * 0.55))
         size[group[i]] = min(size.get(group[i], own), own)
 
     for i in shown:
         (x0, y0, x1, y1), align = boxes[i], aligns[i]
-        text, width, height = rooms[i]
+        text, width, height = spaces[i]
         font_size = size[group[i]]
         font = font_for(text, font_size)
-        lines = wrap(text, font, width)  # more lines than fit: the label grows downwards
+        lines = wrap_text(text, font, width)
         line_h = font_size * LINE_SPACING
         label_w = max(x1 - x0 + 2 * pad, max(font.getlength(t) for t in lines) + 4 * scale)
         label_h = max(height, len(lines) * line_h)
         cx = (x0 + x1) / 2
         lx = {"left": x0 - pad, "right": x1 + pad - label_w}.get(align, cx - label_w / 2) + ox
-        ly = (y0 + y1) / 2 - label_h / 2 + oy  # centred on the box (a short line's box is lower than its text)
+        ly = (y0 + y1) / 2 - label_h / 2 + oy  # centred on the box: a short line's box sits lower than its text
 
-        bg = _background(image, (x0, y0, x1, y1)) if image is not None else None
-        bg = bg or (0, 0, 0)
+        bg = _background_color(frame, (x0, y0, x1, y1)) if frame is not None else (0, 0, 0)
         fg = (20, 20, 20, 255) if 0.299 * bg[0] + 0.587 * bg[1] + 0.114 * bg[2] > 150 else (255, 255, 255, 255)
         d.rounded_rectangle((lx, ly, lx + label_w, ly + label_h), radius=max(1, int(3 * scale)), fill=bg + (LABEL_ALPHA,))
 
@@ -213,7 +195,7 @@ def _draw_labels(d, regions, ox, oy, img_width, state, scale, image=None):
             ty += line_h
 
 
-def _draw_pill(d, state, x, bottom, scale):
+def _draw_status(d, state, x, bottom, scale):
     step = state.get("processingStep") or ""
     is_error = bool(state.get("processingIsError"))
     detail = "" if is_error else (state.get("processingDetail") or "")

@@ -33,7 +33,6 @@ user32.MonitorFromWindow.restype = wintypes.HMONITOR
 user32.MonitorFromWindow.argtypes = [wintypes.HWND, wintypes.DWORD]
 shcore.GetDpiForMonitor.argtypes = [wintypes.HMONITOR, ctypes.c_int, ctypes.POINTER(wintypes.UINT),
                                     ctypes.POINTER(wintypes.UINT)]
-user32.IsWindow.argtypes = [wintypes.HWND]
 user32.IsHungAppWindow.argtypes = [wintypes.HWND]
 user32.GetClassNameW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
 user32.GetMonitorInfoW.argtypes = [wintypes.HMONITOR, ctypes.c_void_p]
@@ -71,7 +70,7 @@ AC_SRC_OVER, AC_SRC_ALPHA = 0x00, 0x01
 GA_ROOT = 2
 MONITOR_DEFAULTTONEAREST = 2
 CLASS_NAME = "DeckyTranslatorOverlay"
-TICK_SECONDS = 0.2  # foreground check / topmost reassert
+TICK_SECONDS = 0.2
 
 
 
@@ -99,14 +98,12 @@ class MONITORINFO(ctypes.Structure):
                 ("dwFlags", wintypes.DWORD)]
 
 
-# ---------------------------------------------------------------- the window
-# module level: the registered window class keeps pointing at it for the life of the process
+# The window procedure lives at module level: the registered window class points at it for the process's life
 _WNDPROC = WNDPROC(lambda h, m, w, l: user32.DefWindowProcW(h, m, w, l))
 
 
-def _is_ghost_of(hwnd, target):
-    """A paused game stops answering messages, and after a few seconds Windows may put a "Not responding" ghost window
-    (class "Ghost", owned by dwm) in its place: that still is the game."""
+def _is_hung_ghost(hwnd, target):
+    """Windows may replace a paused (so not responding) game's window by a "Ghost" window: that still is the game."""
     if not hwnd or not user32.IsHungAppWindow(wintypes.HWND(target)):
         return False
     buf = ctypes.create_unicode_buffer(16)
@@ -114,54 +111,41 @@ def _is_ghost_of(hwnd, target):
     return buf.value == "Ghost"
 
 
-class Overlay:
-    """Owns the overlay window on its own thread; show()/hide() can be called from any thread."""
+class OverlayWindow:
+    """The window lives on a thread of its own, which also pumps its messages; show() and hide() queue commands to it
+    from any thread."""
 
-    def __init__(self, on_error=None):
-        """on_error(message): called (on the overlay thread) when the overlay stops working, once per new error."""
-        self._on_error = on_error
+    def __init__(self):
         self._queue = queue.Queue()
-        self._thread = None
         self._hwnd = None
         self._state = None
         self._target = None
         self._shown = False
-        self._dib = None  # (width, height, memory DC, bitmap, old bitmap, bits): reused while the size stays
-        self.error = None  # why the overlay can't be drawn (get_windows_status), None while it works
-
-    def start(self):
-        if self._thread is None or not self._thread.is_alive():  # first use, or the thread died: (re)start it
-            self._thread = threading.Thread(target=self._run, name="translator-overlay", daemon=True)
-            self._thread.start()
+        self._dib = None  # (width, height, memory DC, bitmap, old bitmap, bits), kept while the size stays
+        self.error = None  # for get_windows_status
+        self._thread = threading.Thread(target=self._run, name="translator-overlay", daemon=True)
+        self._thread.start()
 
     def show(self, state, target):
-        """state: upstream's overlay state (Overlay.tsx props); target: the captured window (Capture fields)."""
-        self.start()
+        """state: the frontend's OverlayState; target: the captured window (main.py _capture_target)."""
         self._queue.put(("show", state, target))
 
     def hide(self):
         self._queue.put(("hide", None, None))
 
     def stop(self):
-        if self._thread:
-            self._queue.put(("stop", None, None))
-            self._thread.join(timeout=2)
-            self._thread = None
+        self._queue.put(("stop", None, None))
+        self._thread.join(timeout=2)
 
-    @property
-    def hwnd(self):
-        return self._hwnd
-
-    # -- overlay thread
     def _run(self):
         hinst = kernel32.GetModuleHandleW(None)
         wc = WNDCLASSW(lpfnWndProc=_WNDPROC, hInstance=hinst, lpszClassName=CLASS_NAME)
-        user32.RegisterClassW(ctypes.byref(wc))  # fails harmlessly if a previous overlay thread registered it
+        user32.RegisterClassW(ctypes.byref(wc))
         self._hwnd = user32.CreateWindowExW(WS_EX_STYLE, CLASS_NAME, "WinDecky Translator", WS_POPUP, 0, 0, 1, 1,
                                             None, None, hinst, None)
-        self._shown = False  # a new window (this thread may replace one that died)
         if not self._hwnd:
             self._fail(f"could not create the overlay window (error {ctypes.get_last_error()})")
+            return
         msg = wintypes.MSG()
         try:
             while True:
@@ -169,7 +153,7 @@ class Overlay:
                     cmds = [self._queue.get(timeout=TICK_SECONDS)]
                 except queue.Empty:
                     cmds = []
-                while True:  # take what queued up meanwhile: only the newest state gets drawn
+                while True:  # only the newest state gets drawn
                     try:
                         cmds.append(self._queue.get_nowait())
                     except queue.Empty:
@@ -181,57 +165,45 @@ class Overlay:
                     if cmd == "show":
                         self._state, self._target, draw = state, target, True
                     elif cmd == "hide":
-                        # let go of the captured frame and the screen-sized bitmap (~20-80 MB) until the next show
+                        # the captured frame and the screen-sized bitmap are 20-80 MB
                         self._state, self._target, draw = None, None, False
                         self._free_dib()
                 if draw:
                     try:
                         self._draw()
-                    except Exception as e:  # noqa: BLE001 - keep the thread alive
+                    except Exception as e:  # noqa: BLE001 - the next translation may draw fine
                         self._fail(f"draw failed: {e!r}")
                 self._sync_visibility()
                 while user32.PeekMessageW(ctypes.byref(msg), None, 0, 0, PM_REMOVE):
                     user32.TranslateMessage(ctypes.byref(msg))
                     user32.DispatchMessageW(ctypes.byref(msg))
-        except Exception as e:  # noqa: BLE001 - reported; the next show() starts a new thread
-            self._fail(f"the overlay thread stopped: {e!r}")
         finally:
             self._free_dib()
             user32.DestroyWindow(self._hwnd)
-            self._hwnd = None
 
     def _monitor(self):
+        """(left, top, width, height) of the target's monitor and its scale."""
         tgt = self._target or {}
         hwnd = wintypes.HWND(tgt.get("hwnd") or 0)
         mon = user32.MonitorFromWindow(hwnd if tgt.get("hwnd") else user32.GetForegroundWindow(), MONITOR_DEFAULTTONEAREST)
         mi = MONITORINFO(cbSize=ctypes.sizeof(MONITORINFO))
         user32.GetMonitorInfoW(mon, ctypes.byref(mi))
         r = mi.rcMonitor
-        # the monitor's scale (GetDpiForWindow would give 96 for a DPI-unaware game on a 150 % screen)
+        # the monitor's scale, not the window's: GetDpiForWindow says 96 for a DPI-unaware game on a 150 % screen
         dpi_x, dpi_y = wintypes.UINT(0), wintypes.UINT(0)
-        if shcore.GetDpiForMonitor(mon, 0, ctypes.byref(dpi_x), ctypes.byref(dpi_y)) != 0:  # MDT_EFFECTIVE_DPI
-            dpi_x.value = 96
-        return (r.left, r.top, r.right - r.left, r.bottom - r.top), (dpi_x.value or 96) / 96
-
-    def _frame(self):
-        """The captured frame of the current target (PIL RGB, decoded by the capture), for the still and the label
-        background colours."""
-        return (self._target or {}).get("image")
+        shcore.GetDpiForMonitor(mon, 0, ctypes.byref(dpi_x), ctypes.byref(dpi_y))  # 0: MDT_EFFECTIVE_DPI
+        return (r.left, r.top, r.right - r.left, r.bottom - r.top), dpi_x.value / 96
 
     def _draw(self):
         mon, scale = self._monitor()
         tgt = dict(self._target or {})
         if not tgt.get("width"):
             tgt.update(left=mon[0], top=mon[1], width=mon[2], height=mon[3])
-        img = render(self._state or {}, tgt, mon, scale, self._frame())
-        self._upload(img, mon)
+        img = render(self._state or {}, tgt, mon, scale, tgt.get("image"))
+        self._update_layered_window(img, mon)
 
     def _fail(self, error):
-        """Log a drawing failure once (until the overlay works again) and keep it for get_windows_status."""
-        if error != self.error:
-            logger.error("overlay: %s", error)
-            if self._on_error:
-                self._on_error(error)
+        logger.error("overlay: %s", error)
         self.error = error
 
     def _dib_for(self, mw, mh, screen):
@@ -258,7 +230,7 @@ class Overlay:
             gdi32.DeleteDC(hdc)
             self._dib = None
 
-    def _upload(self, img, mon):
+    def _update_layered_window(self, img, mon):
         mx, my, mw, mh = mon
         data = img.convert("RGBa").tobytes("raw", "BGRa")  # premultiplied BGRA, what UpdateLayeredWindow takes
         screen = user32.GetDC(None)
@@ -276,16 +248,15 @@ class Overlay:
             user32.ReleaseDC(None, screen)
 
     def _sync_visibility(self):
+        """Shown only while the captured game is in front (or its ghost window, while it is paused)."""
         want = self._state is not None and bool(self._state.get("visible", True))
         tgt = (self._target or {}).get("hwnd")
         if want and tgt:
-            if not user32.IsWindow(wintypes.HWND(tgt)):
-                want = False
-            else:
-                fg = user32.GetForegroundWindow()
-                fg = user32.GetAncestor(fg, GA_ROOT) or fg
-                want = int(fg or 0) == int(tgt) or _is_ghost_of(fg, tgt)
+            fg = user32.GetForegroundWindow()
+            fg = user32.GetAncestor(fg, GA_ROOT) or fg
+            want = int(fg or 0) == int(tgt) or _is_hung_ghost(fg, tgt)
         if want:
+            # topmost again on every tick: a fullscreen game that takes the focus back may cover it otherwise
             user32.SetWindowPos(self._hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE | SWP_NOOWNERZORDER)
             if not self._shown:
                 user32.ShowWindow(self._hwnd, SW_SHOWNOACTIVATE)

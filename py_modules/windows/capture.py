@@ -55,12 +55,12 @@ def _frame_bounds(hwnd):
     return r.left, r.top
 
 
-def foreground_window(exclude=()):
+def foreground_window():
     hwnd = user32.GetForegroundWindow()
     if not hwnd:
         return 0
     hwnd = user32.GetAncestor(hwnd, GA_ROOT) or hwnd
-    return 0 if hwnd in exclude else int(hwnd)
+    return int(hwnd)
 
 
 async def capture_window(hwnd, timeout=1.0):
@@ -129,9 +129,9 @@ def encode_png(image) -> bytes:
     return out.getvalue()
 
 
-async def capture_foreground(exclude=()):
-    """Capture the foreground window; None if there is none (or it is excluded, e.g. our own overlay)."""
-    hwnd = foreground_window(exclude)
+async def capture_foreground():
+    """None if no window is in front."""
+    hwnd = foreground_window()
     if not hwnd:
         return None
     t0 = time.perf_counter()
