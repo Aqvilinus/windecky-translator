@@ -77,7 +77,7 @@ def render(state, target, monitor, scale, frame=None):
     if regions and not loading:
         _draw_labels(d, regions, ox, oy, tw, state, scale, frame)
 
-    if loading and state.get("processingStep"):
+    if loading and state.get("status"):
         _draw_status(d, state, ox + int(20 * scale), oy + th - int(20 * scale), scale)
     return img
 
@@ -196,9 +196,9 @@ def _draw_labels(d, regions, ox, oy, target_width, state, scale, frame=None):
 
 
 def _draw_status(d, state, x, bottom, scale):
-    step = state.get("processingStep") or ""
-    is_error = bool(state.get("processingIsError"))
-    detail = "" if is_error else (state.get("processingDetail") or "")
+    step = state.get("status") or ""
+    is_error = bool(state.get("isError"))
+    detail = "" if is_error else (state.get("statusDetail") or "")
     title = step if is_error else step + "..."
     f1 = font_for(title, 14 * scale)
     f2 = font_for(detail, 10 * scale) if detail else None

@@ -1,12 +1,12 @@
 // Windows port (Decky Loader for Windows).
 // On SteamOS gamescope keeps Steam's UI, and with it the translation overlay, above the game. On Windows Big Picture
 // is a normal window behind the game, so the backend draws the overlay in a click-through window of its own
-// (py_modules/overlay.py). This forwards every ImageState change to it; the screenshot itself stays in the
+// (py_modules/overlay.py). This forwards every OverlayStore change to it; the screenshot itself stays in the
 // backend, which took it.
 import { addEventListener, removeEventListener, toaster } from '@decky/api';
 import { backend } from './backend';
 import { Router } from '@decky/ui';
-import { ImageState, OverlayState } from './Overlay';
+import { OverlayStore, OverlayState } from './overlay';
 import type { Translator } from './translator';
 import { logger } from './log';
 
@@ -16,7 +16,7 @@ export const WINDOWS_HOTKEY = 'Ctrl+Alt+T';
 const SIDE_MENU_CHECK_MS = 250;
 const SIDE_MENU_CLOSE_ANIMATION_MS = 300;
 
-export function forwardOverlayToBackend(state: ImageState, dismiss: () => void): () => void {
+export function forwardOverlayToBackend(state: OverlayStore, dismiss: () => void): () => void {
     let menuTimer: ReturnType<typeof setInterval> | null = null;
     let menuOpen = false;
     const stopWatchingMenus = () => {

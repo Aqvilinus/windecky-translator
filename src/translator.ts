@@ -1,7 +1,7 @@
 // Ctrl+Alt+T's work: capture the game, recognize its text, translate it and show it on the overlay
 import { toaster } from "@decky/api";
 import { BackendError, backend, throwIfBackendError } from "./backend";
-import { ImageState } from "./Overlay";
+import { OverlayStore } from "./overlay";
 import { logger } from "./log";
 import { OCR_ENGINE_LABELS, TRANSLATION_ENGINE_LABELS } from "./providers";
 import { TranslatedRegion, filterUntranslatable, mergeRegions } from "./regions";
@@ -27,12 +27,12 @@ function toast(title: string, body: string, duration: number): void {
 }
 
 export class Translator {
-    readonly overlay: ImageState;
+    readonly overlay: OverlayStore;
     private settings: TranslatorSettings | null = null;  // until loaded from the backend
     private isProcessing = false;
     private currentRunId = 0;
 
-    constructor(overlay: ImageState) {
+    constructor(overlay: OverlayStore) {
         this.overlay = overlay;
     }
 
@@ -76,7 +76,7 @@ export class Translator {
                 return;
             }
 
-            this.overlay.startLoading(s.ocrProvider === 'gemini_vision' ? "Recognizing and Translating" : "Recognizing",
+            this.overlay.showLoading(s.ocrProvider === 'gemini_vision' ? "Recognizing and Translating" : "Recognizing",
                                       OCR_ENGINE_LABELS[s.ocrProvider as keyof typeof OCR_ENGINE_LABELS] || s.ocrProvider);
             const recognized = throwIfBackendError(await backend.recognizeCapture(capture.id)) || [];
             const regions = filterUntranslatable(mergeRegions(recognized));
@@ -84,7 +84,7 @@ export class Translator {
             if (isCancelled()) return;
 
             if (regions.length === 0) {
-                this.overlay.updateProcessingStep("No text found");
+                this.overlay.setStatus("No text found");
                 setTimeout(() => {
                     if (!isCancelled()) this.overlay.hide();
                 }, NO_TEXT_MESSAGE_MS);
@@ -92,7 +92,7 @@ export class Translator {
             }
 
             if (!regions.every(r => r.translatedText)) {
-                this.overlay.updateProcessingStep("Translating text", false,
+                this.overlay.setStatus("Translating text", false,
                     TRANSLATION_ENGINE_LABELS[s.translationProvider as keyof typeof TRANSLATION_ENGINE_LABELS]
                     || s.translationProvider);
             }
@@ -108,7 +108,7 @@ export class Translator {
             if (isCancelled()) return;
             logger.error('Translator', 'Screenshot and translation error', error);
             // Every failure is shown on the overlay for a moment: the backend's reason, or a generic one
-            this.overlay.updateProcessingStep(error instanceof BackendError ? error.message : "Translation failed", true);
+            this.overlay.setStatus(error instanceof BackendError ? error.message : "Translation failed", true);
             setTimeout(() => {
                 if (!isCancelled()) this.overlay.hide();
             }, ERROR_MESSAGE_MS);

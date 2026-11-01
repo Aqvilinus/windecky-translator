@@ -8,19 +8,19 @@ export interface OverlayState {
     visible: boolean;
     regions: TranslatedRegion[];
     loading: boolean;
-    processingStep: string;      // the status pill while loading, or the error shown
-    processingDetail: string;    // the engine in use, under the step
-    processingIsError: boolean;
+    status: string;      // the status pill while loading, or the error shown
+    statusDetail: string;    // the engine in use, under the step
+    isError: boolean;
     fontScale: number;
 }
 
 type Listener = (state: OverlayState) => void;
 
 const HIDDEN: Omit<OverlayState, 'fontScale'> = {
-    visible: false, regions: [], loading: false, processingStep: "", processingDetail: "", processingIsError: false,
+    visible: false, regions: [], loading: false, status: "", statusDetail: "", isError: false,
 };
 
-export class ImageState {
+export class OverlayStore {
     private state: OverlayState = { ...HIDDEN, fontScale: 1.0 };
     private listeners = new Set<Listener>();
     private notifyQueued = false;
@@ -36,13 +36,13 @@ export class ImageState {
         return this.state.visible;
     }
 
-    startLoading(step: string, detail: string = ""): void {
-        this.update({ visible: true, regions: [], loading: true, processingStep: step, processingDetail: detail,
-                      processingIsError: false });
+    showLoading(step: string, detail: string = ""): void {
+        this.update({ visible: true, regions: [], loading: true, status: step, statusDetail: detail,
+                      isError: false });
     }
 
-    updateProcessingStep(step: string, isError: boolean = false, detail: string = ""): void {
-        this.update({ loading: true, processingStep: step, processingDetail: detail, processingIsError: isError });
+    setStatus(step: string, isError: boolean = false, detail: string = ""): void {
+        this.update({ loading: true, status: step, statusDetail: detail, isError: isError });
     }
 
     showTranslations(regions: TranslatedRegion[]): void {

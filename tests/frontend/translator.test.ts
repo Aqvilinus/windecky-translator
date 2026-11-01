@@ -10,13 +10,13 @@ vi.mock('@decky/api', () => ({
 }));
 
 const { Translator } = await import('../../src/translator');
-const { ImageState } = await import('../../src/Overlay');
+const { OverlayStore } = await import('../../src/overlay');
 
 function startTranslator() {
-    const state = new ImageState();
+    const state = new OverlayStore();
     const steps: Array<{ step: string; isError: boolean }> = [];
     state.subscribe(s => {
-        if (s.visible && s.processingStep) steps.push({ step: s.processingStep, isError: s.processingIsError });
+        if (s.visible && s.status) steps.push({ step: s.status, isError: s.isError });
     });
     const translator = new Translator(state);
     translator.applySettings({
@@ -56,13 +56,13 @@ describe('Translator errors', () => {
     });
 });
 
-describe('ImageState', () => {
+describe('OverlayStore', () => {
     it('sends the changes made in one go once', async () => {
-        const state = new ImageState();
+        const state = new OverlayStore();
         const sent: boolean[] = [];
         state.subscribe(s => sent.push(s.visible));
-        state.startLoading('Recognizing');
-        state.updateProcessingStep('Recognizing', false, 'On-Device');
+        state.showLoading('Recognizing');
+        state.setStatus('Recognizing', false, 'On-Device');
         await Promise.resolve();
         expect(sent).toEqual([true]);
         state.hide();

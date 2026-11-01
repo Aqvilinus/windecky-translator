@@ -17,7 +17,7 @@ import {
 } from "react";
 
 import { BsTranslate } from "react-icons/bs";
-import { ImageState } from "./Overlay";
+import { OverlayStore } from "./overlay";
 import { Translator } from "./translator";
 import { forwardOverlayToBackend, listenForHotkey, listenForProblems, showStartupErrors } from "./windows";
 import { adoptActivePlugin } from "./deckyState";
@@ -240,10 +240,10 @@ const FitTitle: VFC<{ text: string }> = ({ text }) => {
 };
 
 export default definePlugin(() => {
-    const imageState = new ImageState();
-    const translator = new Translator(imageState);
+    const overlay = new OverlayStore();
+    const translator = new Translator(overlay);
 
-    const stopForwarding = forwardOverlayToBackend(imageState, translator.dismiss);
+    const stopForwarding = forwardOverlayToBackend(overlay, translator.dismiss);
     const stopHotkey = listenForHotkey(translator);
     const stopProblems = listenForProblems(PLUGIN_NAME);
     // after a reload the side menu would keep showing the unloaded instance (deckyState.ts)

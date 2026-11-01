@@ -1,7 +1,7 @@
 // Every call into the backend (main.py, the Plugin class's async methods), typed in one place. A method the frontend
 // calls must exist in main.py: tests/frontend/backendContract.test.ts checks this list against it.
 import { callable } from "@decky/api";
-import type { OverlayState } from "./Overlay";
+import type { OverlayState } from "./overlay";
 import type { TextRegion, TranslatedRegion } from "./regions";
 
 // main.py SETTING_DEFAULTS, keys as the backend names them

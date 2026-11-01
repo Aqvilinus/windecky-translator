@@ -15,8 +15,8 @@ import harness
 
 def overlay_state(regions, **kw):
     """What src/windows.ts sends for a shown translation."""
-    return {"visible": True, "regions": regions, "loading": False, "processingStep": "", "processingDetail": "",
-            "processingIsError": False, "fontScale": 1.0, **kw}
+    return {"visible": True, "regions": regions, "loading": False, "status": "", "statusDetail": "",
+            "isError": False, "fontScale": 1.0, **kw}
 
 
 def pixels(img):
