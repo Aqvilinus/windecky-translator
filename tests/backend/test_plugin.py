@@ -233,30 +233,37 @@ def test_ocr_engine_failures_reach_the_frontend(backend, monkeypatch):
     assert backend.call("recognize_capture", shot["id"])["error"] == "ocr_failed"
 
 
-def test_chrome_screen_ai_failures_raise(monkeypatch, tmp_path):
-    """The engine's own failures (crash, timeout, unreadable output) become OCRError with a reason."""
-    import subprocess
+def test_chrome_screen_ai_failures_raise(tmp_path):
+    """The engine's own failures (no answer, an error, a failed start) become OCRError with a reason; without
+    Faster Recognition the worker is stopped after each request."""
     from providers import OCRError
     from providers.chrome_screen_ai import ChromeScreenAIProvider
+
+    class FakeWorker:
+        def __init__(self, replies):
+            self.replies, self.alive, self.stops = list(replies), False, 0
+
+        def start(self, python_path, pythonpath):
+            self.alive = True
+            return True
+
+        def request(self, message, timeout):
+            return self.replies.pop(0)
+
+        def stop(self, shutdown_message=None):
+            self.alive, self.stops = False, self.stops + 1
+
     provider = ChromeScreenAIProvider(model_dir=str(tmp_path))
     provider._python_path = "python.exe"
-
-    def run(result=None, error=None):
-        def fake(*args, **kwargs):
-            if error:
-                raise error
-            return result
-        monkeypatch.setattr(subprocess, "run", fake)
-
-    for result, error, reason in (
-        (subprocess.CompletedProcess([], 3, "", "access violation"), None, "exit code 3"),
-        (subprocess.CompletedProcess([], 0, "not json", ""), None, "unreadable"),
-        (subprocess.CompletedProcess([], 0, '{"error": "model failed to load"}', ""), None, "model failed to load"),
-        (None, subprocess.TimeoutExpired("python.exe", 120), "timed out"),
+    for replies, reason in (
+        ([{"type": "ready"}, None], "didn't answer"),
+        ([{"type": "ready"}, {"error": "PerformOCR null"}], "PerformOCR null"),
+        ([{"type": "ready", "error": "the DLL didn't load"}], "could not load"),
     ):
-        run(result, error)
+        provider._worker = FakeWorker(replies)
         with pytest.raises(OCRError, match=reason):
-            provider._recognize_oneshot(b"png")
+            provider._recognize(b"png")
+        assert not provider._worker.alive
 
 
 def test_nothing_captured(backend, windows):

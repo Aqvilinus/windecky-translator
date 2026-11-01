@@ -1,11 +1,6 @@
 #!/usr/bin/env python3
-"""
-Subprocess OCR runner for Chrome Screen AI. Loads chrome_screen_ai.dll via
-ctypes, answering JSON lines on stdin/stdout.
-
-  Oneshot: python chrome_screen_ai_worker.py <image> <model_dir> <min_conf>
-  Worker:  python chrome_screen_ai_worker.py --worker
-"""
+"""The Chrome Screen AI worker (providers/chrome_screen_ai.py starts it): loads chrome_screen_ai.dll with ctypes and
+answers JSON lines on stdin with JSON lines on stdout."""
 
 import ctypes
 import json
@@ -13,7 +8,6 @@ import os
 import sys
 
 
-_WORKER_MODE = '--worker' in sys.argv
 
 _SK_COLOR_TYPE_RGBA_8888 = 4
 _SK_ALPHA_TYPE_OPAQUE = 1
@@ -202,35 +196,12 @@ def _proto_to_regions(proto_bytes, scale_x, scale_y):
     return regions
 
 
-def run_oneshot(image_path, model_dir):
-    debug = []
-    try:
-        debug.append(f"Python: {sys.version}")
-        engine = ScreenAIEngine(model_dir)
-        debug.append(f"max_dim: {engine.max_dim}")
-
-        rgba, w, h, sx, sy = _load_image_rgba(image_path, engine.max_dim)
-        debug.append(f"image: {w}x{h} (scale {sx:.3f},{sy:.3f})")
-
-        proto = engine.perform(rgba, w, h)
-        if proto is None:
-            return {"error": "PerformOCR returned null", "regions": [], "debug": debug}
-
-        regions = _proto_to_regions(proto, sx, sy)
-        return {"error": None, "regions": regions, "debug": debug}
-
-    except Exception as e:
-        import traceback
-        debug.append(traceback.format_exc())
-        return {"error": str(e), "regions": [], "debug": debug}
-
-
 def _write_line(obj):
     sys.stdout.write(json.dumps(obj) + "\n")
     sys.stdout.flush()
 
 
-def worker_main():
+def main():
     """Long-lived worker: one JSON request per line on stdin, one JSON reply per line on stdout.
 
       >>> {"type":"init","model_dir":"..."}
@@ -308,23 +279,6 @@ def worker_main():
 
     except KeyboardInterrupt:
         pass
-
-
-def main():
-    if _WORKER_MODE:
-        worker_main()
-        return
-
-    if len(sys.argv) < 3:
-        print(json.dumps({
-            "error": "Usage: chrome_screen_ai_worker.py <image> <model_dir>",
-            "regions": [],
-        }))
-        sys.exit(1)
-
-    image_path = sys.argv[1]
-    model_dir = sys.argv[2]
-    print(json.dumps(run_oneshot(image_path, model_dir)))
 
 
 if __name__ == '__main__':

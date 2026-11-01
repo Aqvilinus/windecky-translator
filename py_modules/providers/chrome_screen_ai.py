@@ -7,7 +7,6 @@ import logging
 import os
 import re
 import shutil
-import subprocess
 import tempfile
 import threading
 import time
@@ -17,7 +16,7 @@ import zipfile
 from typing import List, Optional
 
 from .base import DownloadError, Downloader, OCRError, OCRProvider, TextRegion
-from .worker import Worker, find_python, missing_message, popen_kwargs, worker_pythonpath
+from .worker import Worker, find_python, missing_message, worker_pythonpath
 
 logger = logging.getLogger(__name__)
 
@@ -36,8 +35,8 @@ _THREAD_LIMIT_VARS = (
 
 
 class ChromeScreenAIProvider(OCRProvider):
-    """OCR provider backed by chrome_screen_ai.dll. Oneshot subprocess by
-    default; persistent worker is opt-in for lower per-call latency."""
+    """chrome_screen_ai.dll in a worker process: up between requests with Faster Recognition, else started and
+    stopped for each one."""
 
     def __init__(self, model_dir: str = ""):
         # model_dir holds the DLL and TFLite files (ChromeScreenAIDownloader below).
@@ -46,11 +45,11 @@ class ChromeScreenAIProvider(OCRProvider):
         self._python_path: Optional[str] = None
 
         self._persistent_mode = False
-        self._start_lock = threading.Lock()
+        self._lock = threading.Lock()
 
         self._py_modules_dir = worker_pythonpath()
         # the engine picks its own thread count: don't pass the plugin's limits on
-        self._worker = Worker("Chrome Screen AI", WORKER_SCRIPT, ["--worker"],
+        self._worker = Worker("Chrome Screen AI", WORKER_SCRIPT,
                               env={k: None for k in _THREAD_LIMIT_VARS})
 
     @property
@@ -77,37 +76,37 @@ class ChromeScreenAIProvider(OCRProvider):
         return self._check_availability()
 
     def set_persistent_mode(self, enabled: bool) -> None:
+        """Faster Recognition: the worker stays up between requests (started now, so the first one is fast too)."""
         enabled = bool(enabled)
         if enabled == self._persistent_mode:
             return
         self._persistent_mode = enabled
         logger.info(f"Chrome Screen AI persistent mode: {enabled}")
         if enabled:
-            threading.Thread(target=self._warmup_worker, daemon=True).start()
+            threading.Thread(target=self._warm_up, daemon=True).start()
         else:
             self.stop_worker()
 
-    def _warmup_worker(self) -> None:
-        if self._persistent_mode:
-            self.start_worker()
+    def _warm_up(self) -> None:
+        with self._lock:
+            if self._persistent_mode and self._check_availability():
+                try:
+                    self._start_worker()
+                except OCRError as e:
+                    logger.error(e)
 
-    def start_worker(self) -> bool:
-        """Start the persistent worker and load the engine into it."""
-        with self._start_lock:
-            if self._worker.alive:
-                return True
-            if not self._persistent_mode or not self._check_availability():
-                return False
-            if not self._worker.start(self._python_path, self._py_modules_dir):
-                return False
-            start = time.time()
-            ready = self._worker.request({"type": "init", "model_dir": self._model_dir}, WORKER_READY_TIMEOUT_SECONDS)
-            if not ready or ready.get("error"):
-                logger.error(f"Chrome Screen AI worker init failed: {(ready or {}).get('error') or 'no answer'}")
-                self._worker.stop()
-                return False
-            logger.info(f"Chrome Screen AI worker ready ({time.time() - start:.2f}s)")
-            return True
+    def _start_worker(self) -> None:
+        if self._worker.alive:
+            return
+        if not self._worker.start(self._python_path, self._py_modules_dir):
+            raise OCRError("On-device OCR could not start (details in the plugin log)")
+        start = time.time()
+        ready = self._worker.request({"type": "init", "model_dir": self._model_dir}, WORKER_READY_TIMEOUT_SECONDS)
+        if not ready or ready.get("error"):
+            self._worker.stop()
+            logger.error(f"Chrome Screen AI init failed: {(ready or {}).get('error') or 'no answer'}")
+            raise OCRError("On-device OCR could not load its engine (details in the plugin log)")
+        logger.info(f"Chrome Screen AI worker ready ({time.time() - start:.2f}s)")
 
     def stop_worker(self) -> None:
         self._worker.stop({"type": "shutdown"})
@@ -115,88 +114,30 @@ class ChromeScreenAIProvider(OCRProvider):
     async def recognize(self, image_data: bytes, language: str = "auto") -> List[TextRegion]:
         if not self._check_availability():
             raise OCRError(f"On-device OCR is unavailable: {self._init_error}")
+        return await asyncio.to_thread(self._recognize, image_data)
 
-        if self._persistent_mode:
-            result = await asyncio.to_thread(self._recognize_via_worker, image_data)
-            if result is not None:
-                return result
-            logger.warning("Chrome Screen AI worker unavailable, falling back to oneshot")
-
-        return await asyncio.to_thread(self._recognize_oneshot, image_data)
-
-    def _recognize_via_worker(self, image_data: bytes) -> Optional[List[TextRegion]]:
-        """The persistent worker's answer; None if it isn't available (the caller falls back to a one-shot run)."""
-        if not self._worker.alive and not self.start_worker():
-            return None
-        with tempfile.NamedTemporaryFile(prefix="chromescreenai_input_", suffix=".png", delete_on_close=False) as image_file:
-            image_file.write(image_data)
-            image_file.close()  # the worker opens it by name; it is deleted when the block ends
-            start = time.time()
-            response = self._worker.request({"type": "recognize", "image_path": image_file.name}, OCR_TIMEOUT_SECONDS)
+    def _recognize(self, image_data: bytes) -> List[TextRegion]:
+        with self._lock:
+            try:
+                self._start_worker()
+                with tempfile.NamedTemporaryFile(prefix="chromescreenai_input_", suffix=".png",
+                                                 delete_on_close=False) as image_file:
+                    image_file.write(image_data)
+                    image_file.close()  # the worker opens it by name; it is deleted when the block ends
+                    start = time.time()
+                    response = self._worker.request({"type": "recognize", "image_path": image_file.name},
+                                                    OCR_TIMEOUT_SECONDS)
+            finally:
+                if not self._persistent_mode:
+                    self.stop_worker()
         if response is None:
-            return None
+            raise OCRError(f"On-device OCR didn't answer in {OCR_TIMEOUT_SECONDS} s (details in the plugin log)")
         if response.get("error"):
             raise OCRError(f"On-device OCR failed: {response['error']}")
         regions = [TextRegion(text=r["text"], rect=r["rect"], confidence=r.get("confidence"))
                    for r in response.get("regions", [])]
-        logger.debug(f"Chrome Screen AI (worker): {len(regions)} regions in {time.time() - start:.2f}s")
+        logger.debug(f"Chrome Screen AI: {len(regions)} regions in {time.time() - start:.2f}s")
         return regions
-
-    def _recognize_oneshot(self, image_data: bytes) -> List[TextRegion]:
-        with tempfile.NamedTemporaryFile(prefix="chromescreenai_input_", suffix=".png", delete_on_close=False) as image_file:
-            image_file.write(image_data)
-            image_file.close()  # the subprocess opens it by name; it is deleted when the block ends
-            temp_path = image_file.name
-            start = time.time()
-
-            env = os.environ.copy()
-            env['PYTHONPATH'] = self._py_modules_dir
-            env['PYTHONNOUSERSITE'] = '1'
-            env['PYTHONDONTWRITEBYTECODE'] = '1'
-            env['OMP_NUM_THREADS'] = '1'
-            env['MKL_NUM_THREADS'] = '1'
-            env['OPENBLAS_NUM_THREADS'] = '1'
-
-            if not self._python_path:
-                raise OCRError("On-device OCR is unavailable: no Python interpreter for it")
-
-            cmd = [
-                self._python_path, '-S', WORKER_SCRIPT, temp_path, self._model_dir,
-            ]
-            try:
-                result = subprocess.run(
-                    cmd, capture_output=True, text=True, encoding='utf-8', errors='replace',
-                    timeout=OCR_TIMEOUT_SECONDS, env=env, **popen_kwargs(),
-                )
-            except subprocess.TimeoutExpired:
-                raise OCRError(f"On-device OCR timed out after {OCR_TIMEOUT_SECONDS} s") from None
-            elapsed = time.time() - start
-            if result.returncode != 0:
-                logger.error(f"Chrome Screen AI subprocess error: {result.stderr}")
-                raise OCRError(f"On-device OCR stopped with exit code {result.returncode} (details in the log)")
-
-            try:
-                output = json.loads(result.stdout)
-            except json.JSONDecodeError as e:
-                logger.error(f"Chrome Screen AI: unreadable output: {result.stdout[:500]}")
-                raise OCRError("On-device OCR gave an unreadable answer (details in the log)") from e
-
-            if output.get("debug"):
-                for d in output["debug"]:
-                    logger.debug(f"Chrome Screen AI subprocess: {d}")
-
-            if output.get("error"):
-                raise OCRError(f"On-device OCR failed: {output['error']}")
-
-            regions = []
-            for r in output.get("regions", []):
-                regions.append(TextRegion(
-                    text=r["text"],
-                    rect=r["rect"],
-                    confidence=r.get("confidence"),
-                ))
-            logger.debug(f"Chrome Screen AI: {len(regions)} regions in {elapsed:.2f}s")
-            return regions
 
 
 # ---- the engine's download: chrome_screen_ai.dll + TFLite models from Google's CIPD package server
