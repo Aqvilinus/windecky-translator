@@ -1,5 +1,5 @@
 import { ModalRoot, DialogButton, Focusable } from "@decky/ui";
-import { VFC, useState, useEffect, useRef } from "react";
+import { VFC, useState, useEffect } from "react";
 import { OCR_PROVIDER_LABELS, TRANSLATION_PROVIDER_LABELS } from "../../providers";
 import { backend } from "../../backend";
 import { HiTrash, HiXCircle, HiExclamationTriangle } from "react-icons/hi2";
@@ -27,9 +27,6 @@ export const CacheEntriesModal: VFC<{ closeModal?: () => void; onCleared?: () =>
     const [filter, setFilter] = useState<"all" | "unique" | "identical">("all");
     const [page, setPage] = useState(0);
     const [confirmClear, setConfirmClear] = useState(false);
-    const wrapRef = useRef<HTMLDivElement>(null);
-    const trackRef = useRef<HTMLDivElement>(null);
-    const thumbRef = useRef<HTMLDivElement>(null);
 
     const cycleFilter = () => {
         const order = ["unique", "identical", "all"] as const;
@@ -55,29 +52,6 @@ export const CacheEntriesModal: VFC<{ closeModal?: () => void; onCleared?: () =>
         if (page >= totalPages) setPage(totalPages - 1);
     }, [totalPages, page]);
 
-    useEffect(() => {
-        const sc = wrapRef.current?.querySelector(".dt-cache-scroll") as HTMLElement | null;
-        const track = trackRef.current;
-        const thumbEl = thumbRef.current;
-        if (!sc || !track || !thumbEl) return;
-        const update = () => {
-            const h = sc.clientHeight;
-            if (!sc.scrollHeight || sc.scrollHeight <= h) {
-                track.style.display = "none";
-                return;
-            }
-            track.style.display = "block";
-            const height = Math.max(24, h * h / sc.scrollHeight);
-            const range = sc.scrollHeight - h;
-            const top = range > 0 ? (sc.scrollTop / range) * (h - height) : 0;
-            thumbEl.style.height = `${height}px`;
-            thumbEl.style.transform = `translateY(${top}px)`;
-        };
-        update();
-        sc.addEventListener("scroll", update);
-        return () => sc.removeEventListener("scroll", update);
-    }, [entries, filter, page]);
-
     const removeEntry = async (e: any) => {
         await backend.deleteTranslationCacheEntry(e.sourceLang, e.targetLang, e.source);
         setEntries(prev => prev ? prev.filter(x => !(x.sourceLang === e.sourceLang && x.targetLang === e.targetLang && x.source === e.source)) : prev);
@@ -93,27 +67,6 @@ export const CacheEntriesModal: VFC<{ closeModal?: () => void; onCleared?: () =>
         await backend.clearTranslationCache();
         setEntries([]);
         onCleared?.();
-    };
-
-    const onThumbDown = (e: any) => {
-        e.preventDefault();
-        const sc = wrapRef.current?.querySelector(".dt-cache-scroll") as HTMLElement | null;
-        if (!sc) return;
-        const startY = e.clientY;
-        const startScroll = sc.scrollTop;
-        const track = sc.clientHeight;
-        const thumbH = Math.max(24, track * track / sc.scrollHeight);
-        const travel = track - thumbH;
-        const scrollRange = sc.scrollHeight - track;
-        const onMove = (ev: MouseEvent) => {
-            if (travel > 0) sc.scrollTop = startScroll + (ev.clientY - startY) * (scrollRange / travel);
-        };
-        const onUp = () => {
-            document.removeEventListener("mousemove", onMove);
-            document.removeEventListener("mouseup", onUp);
-        };
-        document.addEventListener("mousemove", onMove);
-        document.addEventListener("mouseup", onUp);
     };
 
     const pagerButton = (label: string, enabled: boolean, onClick: () => void) => {
@@ -148,13 +101,20 @@ export const CacheEntriesModal: VFC<{ closeModal?: () => void; onCleared?: () =>
                         </Focusable>
                     )}
                 </div>
-                <style>{`.dt-rowfocus { background: rgba(103,160,255,0.22) !important; }`}</style>
+                {/* Steam's UI hides every scrollbar (::-webkit-scrollbar display: none): this one is turned back on, as
+                    Decky Loader's own error page does */}
+                <style>{`
+                    .dt-rowfocus { background: rgba(103,160,255,0.22) !important; }
+                    .dt-cache-scroll::-webkit-scrollbar { display: initial !important; width: 8px; }
+                    .dt-cache-scroll::-webkit-scrollbar-track { background: rgba(255,255,255,0.08); border-radius: 4px; }
+                    .dt-cache-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.4); border-radius: 4px; }
+                `}</style>
                 {entries === null && <p style={{ color: "#aaa" }}>Loading...</p>}
                 {entries !== null && shown.length === 0 && (
                     <p style={{ color: "#aaa" }}>{all.length === 0 ? "Nothing cached yet." : "Nothing to show."}</p>
                 )}
                 {shown.length > 0 && (
-                    <div ref={wrapRef} style={{ position: "relative", flex: "1 1 auto", minHeight: 0, display: "flex" }}>
+                    <div style={{ flex: "1 1 auto", minHeight: 0, display: "flex" }}>
                         <Focusable key={`${filter}-${page}`} className="dt-cache-scroll" style={{ flex: 1, overflowY: "scroll", display: "flex", flexDirection: "column", gap: "6px", paddingRight: "12px", paddingTop: "8px", paddingBottom: "8px" }}>
                             {pageItems.map((e) => (
                                 <Focusable
@@ -190,9 +150,6 @@ export const CacheEntriesModal: VFC<{ closeModal?: () => void; onCleared?: () =>
                                 </Focusable>
                             ))}
                         </Focusable>
-                        <div ref={trackRef} style={{ position: "absolute", top: 0, right: "2px", width: "8px", height: "100%", borderRadius: "4px", background: "rgba(255,255,255,0.08)", display: "none" }}>
-                            <div ref={thumbRef} onMouseDown={onThumbDown} style={{ position: "absolute", left: 0, width: "100%", height: 0, background: "rgba(255,255,255,0.4)", borderRadius: "4px", cursor: "pointer" }} />
-                        </div>
                     </div>
                 )}
                 {totalPages > 1 && (
