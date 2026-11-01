@@ -45,7 +45,7 @@ if os.path.isdir(os.path.join(BIN_PYTHON_DIR, "python")):
     os.add_dll_directory(os.path.join(BIN_PYTHON_DIR, "python"))
 
 from providers import ProviderRegistry
-from providers.base import ApiKeyError, NetworkError, OCRError, RateLimitError, TranslationError, close_session
+from providers.base import ApiKeyError, NetworkError, OCRError, RateLimitError, TranslationError
 from providers.translation_cache import TranslationCache, PROVIDER_TIERS, normalize
 from settings import SettingsManager  # Decky's own: decky_loader.settings, registered as settings for plugins
 from plugin_settings import (API_KEY_SETTINGS, PROVIDER_SETTINGS, SETTING_DEFAULTS, WORKER_SETTINGS, RedactKeysFilter,
@@ -594,18 +594,5 @@ class Plugin:
             logger.error(traceback.format_exc())
         return
 
-    async def _unload(self):
-        logger.info("Unloading plugin")
-        try:
-            self._resume_paused_games()  # first: never leave a game paused
-            if self._hotkey:
-                self._hotkey.close()
-            if self._overlay:
-                self._overlay.stop()
-            if self._providers:
-                self._providers.shutdown()
-            if self._translation_cache:
-                self._translation_cache.close()
-            await close_session()
-        except Exception:  # noqa: BLE001
-            logger.exception("Error during plugin unload")
+    # No _unload: Decky on Windows ends the plugin with TerminateProcess and never calls it. A game left paused is
+    # resumed on the next start, the workers exit when their stdin closes, SQLite's WAL survives the kill.

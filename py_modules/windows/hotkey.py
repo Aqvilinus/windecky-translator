@@ -21,7 +21,7 @@ user32.GetMessageW.argtypes = [ctypes.POINTER(wintypes.MSG), wintypes.HWND, wint
 user32.PeekMessageW.argtypes = [ctypes.POINTER(wintypes.MSG), wintypes.HWND, wintypes.UINT, wintypes.UINT, wintypes.UINT]
 user32.PostThreadMessageW.argtypes = [wintypes.DWORD, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
 
-WM_HOTKEY, WM_QUIT = 0x0312, 0x0012
+WM_HOTKEY = 0x0312
 WM_APP_ENABLE = 0x8001  # WM_APP + 1, wParam 1/0: register or unregister (a hotkey belongs to the thread that registers it)
 MOD_ALT, MOD_CONTROL, MOD_NOREPEAT = 0x0001, 0x0002, 0x4000
 HOTKEY_ID = 1
@@ -78,8 +78,3 @@ class Hotkey:
         """The plugin was switched on or off: off, Ctrl+Alt+T keeps its normal meaning."""
         if self._tid:
             user32.PostThreadMessageW(self._tid, WM_APP_ENABLE, int(bool(on)), 0)
-
-    def close(self):
-        if self._tid:
-            user32.PostThreadMessageW(self._tid, WM_QUIT, 0, 0)
-            self._thread.join(2)

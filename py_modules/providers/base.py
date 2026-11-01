@@ -97,7 +97,7 @@ async def fetch(method: str, url: str, timeout: float = 10, **kwargs) -> Respons
     """One HTTP request through the engines' shared session (connections stay open between requests; a new TLS
     handshake per request doubled the time of short ones). Connection failures and timeouts raise NetworkError."""
     global _session
-    if _session is None or _session.closed:
+    if _session is None:
         _session = aiohttp.ClientSession()
     try:
         async with _session.request(method, url, timeout=aiohttp.ClientTimeout(total=timeout), **kwargs) as resp:
@@ -134,11 +134,6 @@ def raise_for_api_error(resp: Response, service: str) -> None:
     if resp.status_code == 429:
         raise RateLimitError(f"{service}: rate limit ({message})")
     raise NetworkError(f"{service} error {resp.status_code}: {message}")
-
-
-async def close_session() -> None:
-    if _session is not None:
-        await _session.close()
 
 
 async def probe(method: str, url: str, **kwargs) -> tuple:

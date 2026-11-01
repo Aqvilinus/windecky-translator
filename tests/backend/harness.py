@@ -134,9 +134,6 @@ class FakeOverlay:
         self.hides += 1
         self.visible = False
 
-    def stop(self):
-        self.visible = False
-
     def image(self, index=-1, scale=1.0):
         """What the overlay window would show for the index'th show(), on a monitor the size of the capture."""
         from overlay import render
@@ -150,7 +147,6 @@ class FakeHotkey:
     def __init__(self, on_press):
         self.on_press = on_press
         self.enabled = None
-        self.closed = False
         self.error = None  # 1409: another program owns the combo
 
     def set_enabled(self, on):
@@ -158,9 +154,6 @@ class FakeHotkey:
 
     def status(self):
         return {"registered": bool(self.enabled) and not self.error, "hotkey": "Ctrl+Alt+T", "error": self.error}
-
-    def close(self):
-        self.closed = True
 
 
 class FakeProcesses:
@@ -246,8 +239,6 @@ class Network:
     """Stands in for the engines' HTTP session (providers.base._session, which every request goes through) with the
     services' stubs; records the calls. A request no stub answers, or to a service in `down`, fails like a dead
     network."""
-
-    closed = False
 
     def __init__(self):
         self.dictionary = dict(DICTIONARY)
@@ -356,14 +347,7 @@ class Backend:
         return self.loop.run_until_complete(coro)
 
     def stop(self):
-        """_unload without closing main.py's log files (they belong to the module, which stays imported)."""
-        p = self.plugin
-        if p:
-            self.main.game_process.resume_all()
-            if p._providers:
-                p._providers.shutdown()
-            if p._translation_cache:
-                p._translation_cache.close()
-            if p._overlay:
-                p._overlay.stop()
+        """What the plugin process's end would release: the cache's database file (tmp_path stays deletable)."""
+        if self.plugin and self.plugin._translation_cache:
+            self.plugin._translation_cache.close()
         self.loop.close()

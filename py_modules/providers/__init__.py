@@ -308,11 +308,3 @@ class ProviderRegistry:
             if screenai:
                 screenai.stop_worker()
         return self.downloads[kind].delete()
-
-    def shutdown(self):
-        ct2 = self._translation_providers.get("ct2")
-        if ct2:
-            ct2.shutdown()
-        screenai = self._ocr_providers.get("chromescreenai")
-        if screenai:
-            screenai.stop_worker()

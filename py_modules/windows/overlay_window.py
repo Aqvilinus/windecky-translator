@@ -135,10 +135,6 @@ class OverlayWindow:
     def hide(self):
         self._queue.put(("hide", None, None))
 
-    def stop(self):
-        self._queue.put(("stop", None, None))
-        self._thread.join(timeout=2)
-
     def _run(self):
         hinst = kernel32.GetModuleHandleW(None)
         wc = WNDCLASSW(lpfnWndProc=_WNDPROC, hInstance=hinst, lpszClassName=CLASS_NAME)
@@ -160,8 +156,6 @@ class OverlayWindow:
                         cmds.append(self._queue.get_nowait())
                     except queue.Empty:
                         break
-                if any(c[0] == "stop" for c in cmds):
-                    break
                 draw = False
                 for cmd, state, target in cmds:
                     if cmd == "show":
