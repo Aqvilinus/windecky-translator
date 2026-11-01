@@ -42,10 +42,6 @@ def suspend(hwnd):
     logger.info(f"Paused game {game.pid} ({len(_suspended)} processes)")
 
 
-def is_suspended():
-    return bool(_suspended)
-
-
 def resume_all():
     if not _suspended:
         return

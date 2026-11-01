@@ -91,14 +91,14 @@ class GameProcessTests(unittest.TestCase):
         self.refuse = {GAME, CHILD}
         with self.window_of(GAME), self.assertRaises(game_process.SuspendError):
             game_process.suspend(1)
-        self.assertFalse(game_process.is_suspended())
+        self.assertEqual(game_process._suspended, [])
 
     def test_resume_in_reverse_order(self):
         with self.window_of(GAME):
             game_process.suspend(1)
         game_process.resume_all()
         self.assertEqual(self.log[2:], [("resume", CHILD), ("resume", GAME)])
-        self.assertFalse(game_process.is_suspended())
+        self.assertEqual(game_process._suspended, [])
         self.assertEqual(self.saved(), [])
 
     def test_an_exited_process_is_skipped(self):

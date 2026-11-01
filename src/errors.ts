@@ -9,8 +9,6 @@ export interface ErrorResponse {
 export class BackendError extends Error {}
 export class NetworkError extends BackendError {}
 export class ApiKeyError extends BackendError {}
-export class RateLimitError extends BackendError {}
-export class ModelNotAvailableError extends BackendError {}
 
 function isErrorResponse(value: unknown): value is ErrorResponse {
     return typeof value === 'object' && value !== null && 'error' in value && 'message' in value;
@@ -22,8 +20,6 @@ export function throwIfBackendError<T>(response: T | ErrorResponse): T {
     switch (response.error) {
         case 'network_error': throw new NetworkError(response.message);
         case 'api_key_error': throw new ApiKeyError(response.message);
-        case 'rate_limit_error': throw new RateLimitError(response.message);
-        case 'model_not_available': throw new ModelNotAvailableError(response.message);
-        default: throw new BackendError(response.message);  // ocr_failed, translation_failed
+        default: throw new BackendError(response.message);
     }
 }

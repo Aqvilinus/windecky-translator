@@ -9,9 +9,6 @@ from .base import (
     OCRProvider,
     TranslationProvider,
     TextRegion,
-    NetworkError,
-    ApiKeyError,
-    RateLimitError,
     OCRError,
     TranslationError,
     Downloader,
@@ -30,26 +27,6 @@ _REACHABILITY_CACHE_SECONDS = 4.0
 
 _WEB_OCR_PROVIDERS = {"gemini_vision", "googlecloud"}
 _WEB_TRANSLATION_PROVIDERS = {"googlecloud", "freegoogle", "llm"}
-
-__all__ = [
-    'OCRProvider',
-    'TranslationProvider',
-    'TextRegion',
-    'NetworkError',
-    'ApiKeyError',
-    'RateLimitError',
-    'OCRError',
-    'TranslationError',
-    'GoogleCloudVisionProvider',
-    'GoogleCloudTranslateProvider',
-    'GoogleWebTranslateProvider',
-    'ChromeScreenAIProvider',
-    'GeminiVisionProvider',
-    'NLLBTranslateProvider',
-    'ProviderRegistry',
-]
-
-
 
 
 class ProviderRegistry:
@@ -255,7 +232,7 @@ class ProviderRegistry:
         ocr_pref = self._ocr_provider_preference
         trans_pref = self._translation_provider_preference
 
-        result = {"ocr": None, "translation": None, "checked_at": time.time()}
+        result = {"ocr": None, "translation": None}
 
         # gemini_vision is a combined OCR+translation call; probe once and mirror
         if ocr_pref == "gemini_vision":

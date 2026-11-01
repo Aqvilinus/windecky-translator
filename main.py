@@ -68,8 +68,8 @@ if os.path.isdir(os.path.join(BIN_PYTHON_DIR, "python")):
 
 import decky  # Decky Loader's plugin API (typings/decky.pyi)
 
-from providers import ProviderRegistry, NetworkError, ApiKeyError, RateLimitError, OCRError, TranslationError
-from providers.base import close_session
+from providers import ProviderRegistry
+from providers.base import ApiKeyError, NetworkError, OCRError, RateLimitError, TranslationError, close_session
 from providers.translation_cache import TranslationCache, PROVIDER_TIERS, normalize
 from settings import (API_KEY_SETTINGS, PROVIDER_SETTINGS, SETTING_DEFAULTS, WORKER_SETTINGS, RedactKeysFilter,
                       SettingsStore, clean_pasted_key, mask_key)
@@ -443,12 +443,9 @@ class Plugin:
         return await self._recognize(await asyncio.to_thread(encode_png, image))
 
     @answers_errors("translation_failed", "Translation failed (details in the plugin log)")
-    async def translate_text(self, text_regions, target_language=None, input_language=None):
+    async def translate_text(self, text_regions, target_lang, input_lang):
         if not text_regions:
             return []
-
-        target_lang = target_language or self._settings.get("target_language")
-        input_lang = input_language or self._settings.get("input_language")
 
         if not self._providers:
             logger.error("Provider manager not initialized")

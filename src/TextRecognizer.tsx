@@ -11,14 +11,6 @@ export interface TextRegion {
         bottom: number;
     };
     confidence?: number;
-    textColor?: string;
-    fontSize?: number;
-    textDensity?: number;
-    textContext?: string;
-    lineNumber?: number;
-    indent?: number;
-    typographyType?: string;
-    alignment?: string;
     translatedText?: string;  // from an OCR provider that also translates (Gemini Vision)
 }
 
@@ -127,7 +119,7 @@ export class TextRecognizer {
         }
 
         const groups = Array.from(uf.getGroups().values());
-        return this.extractMergedRegions(groups, regions, "horizontal", medianH);
+        return this.extractMergedRegions(groups, regions, "horizontal");
     }
 
     private assembleParagraphs(lines: TextRegion[], medianH: number): TextRegion[] {
@@ -193,7 +185,7 @@ export class TextRecognizer {
         const groups = Array.from(uf.getGroups().values());
         const refined = this.splitOvermerged(groups, lines, medianH);
         logger.debug('TextRecognizer', `Auto-glue: Split pass refined ${groups.length} groups into ${refined.length} groups`);
-        return this.extractMergedRegions(refined, lines, "vertical", medianH);
+        return this.extractMergedRegions(refined, lines, "vertical");
     }
 
     private splitOvermerged(groups: number[][], lines: TextRegion[], medianH: number): number[][] {
@@ -268,7 +260,6 @@ export class TextRecognizer {
         groups: number[][],
         regions: TextRegion[],
         direction: "horizontal" | "vertical",
-        medianH: number
     ): TextRegion[] {
         const merged: TextRegion[] = [];
 
@@ -296,7 +287,7 @@ export class TextRecognizer {
             for (let i = 1; i < sorted.length; i++) {
                 const region = sorted[i];
                 const separator = direction === "horizontal"
-                    ? this.getHorizontalSpacing(sorted[i - 1], region, medianH)
+                    ? this.getHorizontalSpacing(sorted[i - 1], region)
                     : "\n";
 
                 combinedText += separator + region.text;
@@ -333,7 +324,7 @@ export class TextRecognizer {
         return merged;
     }
 
-    private getHorizontalSpacing(a: TextRegion, b: TextRegion, _medianH: number): string {
+    private getHorizontalSpacing(a: TextRegion, b: TextRegion): string {
         if (STARTS_WITH_CLOSING_PUNCTUATION.test(b.text)) {
             return "";
         }

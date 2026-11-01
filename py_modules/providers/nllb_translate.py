@@ -582,8 +582,6 @@ class NLLBTranslateProvider(TranslationProvider):
             token_counts = result.get("token_counts") or []
             if token_counts:
                 logger.debug(f"  CT2 token counts: {token_counts}")
-            if result.get("confidences"):
-                logger.debug(f"  CT2 per-token log-probs: {result['confidences']}")
             for i, tc in enumerate(token_counts):
                 # Output pinned at the decoding cap means the tail was cut off
                 if tc.get("output", 0) >= min(32 + 3 * tc.get("input", 0), 256):

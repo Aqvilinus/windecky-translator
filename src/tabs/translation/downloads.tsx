@@ -155,10 +155,10 @@ export const ModelDownloadError: VFC<{ state: ModelDownloadState }> = ({ state }
     ) : null
 );
 
-export const StarRating: VFC<{ label: string; filled: number; total?: number }> = ({ label, filled, total = 3 }) => (
+export const StarRating: VFC<{ label: string; filled: number }> = ({ label, filled }) => (
     <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
         <span style={{ color: "#888", fontSize: "11px" }}>{label}</span>
-        {Array.from({ length: total }, (_, i) => (
+        {Array.from({ length: 3 }, (_, i) => (
             <svg key={i} width="10" height="10" viewBox="0 0 24 24" fill={i < filled ? "#ffa726" : "#444"}>
                 <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z"/>
             </svg>

@@ -233,7 +233,6 @@ def main():
 
             translations = []
             token_counts = []
-            confidences = []
             fallbacks = []
             for i, result in enumerate(results):
                 src_text = texts[i]
@@ -242,7 +241,6 @@ def main():
                 if not result.hypotheses or not result.hypotheses[0]:
                     translations.append(src_text)
                     token_counts.append({"input": input_token_count, "output": 0})
-                    confidences.append(0.0)
                     fallbacks.append(True)
                     continue
                 tokens = result.hypotheses[0]
@@ -253,13 +251,11 @@ def main():
                 if not tokens:
                     translations.append(src_text)
                     token_counts.append({"input": input_token_count, "output": 0})
-                    confidences.append(round(score, 3))
                     fallbacks.append(True)
                     continue
                 token_counts.append({"input": input_token_count, "output": len(tokens)})
                 # Per-token log-prob normalizes across output lengths
                 per_token = score / max(len(tokens), 1)
-                confidences.append(round(per_token, 3))
                 text = tokenizer.decode(tokens)
 
                 # Hallucination guard
@@ -294,7 +290,6 @@ def main():
                 "ok": True,
                 "translations": translations,
                 "token_counts": token_counts,
-                "confidences": confidences,
                 "fallbacks": fallbacks,
             }
         except Exception as e:

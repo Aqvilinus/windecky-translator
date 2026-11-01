@@ -10,8 +10,8 @@ export class TextTranslator {
     private targetLanguage: string;
     private inputLanguage: string = "auto";
 
-    constructor(initialLanguage: string = "en") {
-        this.targetLanguage = initialLanguage;
+    constructor() {
+        this.targetLanguage = "en";
     }
 
     setTargetLanguage(language: string): void {

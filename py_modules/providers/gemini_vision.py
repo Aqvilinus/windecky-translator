@@ -194,7 +194,7 @@ class GeminiVisionProvider(OCRProvider):
             },
         }
         # retired model -> current alias, thinking setting the model rejects -> less (gemini_client.generate)
-        response, _ = await gemini_client.generate(self._api_key, self._model, payload, REQUEST_TIMEOUT_SECONDS)
+        response = await gemini_client.generate(self._api_key, self._model, payload, REQUEST_TIMEOUT_SECONDS)
         raise_for_api_error(response, "Gemini Vision")
         return gemini_client.reply_text(response)
 

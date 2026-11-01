@@ -165,9 +165,6 @@ class FakeProcesses:
         self.log.append(("suspend", GAME_PID))
         self.suspended.add(GAME_PID)
 
-    def is_suspended(self):
-        return bool(self.suspended)
-
     def resume_all(self):
         self.log.append("resume_all")
         self.suspended.clear()

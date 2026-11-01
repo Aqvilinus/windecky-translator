@@ -183,7 +183,7 @@ class LLMTranslateProvider(TranslationProvider):
             },
         }
         # retired model -> current alias, thinking setting the model rejects -> less (gemini_client.generate)
-        resp, _ = await gemini_client.generate(self._keys["gemini"], self.model, payload, REQUEST_TIMEOUT_SECONDS)
+        resp = await gemini_client.generate(self._keys["gemini"], self.model, payload, REQUEST_TIMEOUT_SECONDS)
         self._check(resp)
         return gemini_client.reply_text(resp)
 

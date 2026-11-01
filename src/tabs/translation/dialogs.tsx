@@ -40,17 +40,17 @@ export const ApiKeyModal: VFC<{
     currentKey: string;
     onSave: (key: string) => void;
     closeModal?: () => void;
-    title?: string;
-    description?: string;
+    title: string;
+    description: string;
 }> = ({ currentKey, onSave, closeModal, title, description }) => {
     const [apiKey, setApiKey] = useState(currentKey || "");
 
     return (
         <ModalRoot onCancel={closeModal} onEscKeypress={closeModal}>
             <div style={{ padding: "20px", minWidth: "400px" }}>
-                <h2 style={{ marginBottom: "15px" }}>{title || "API Key"}</h2>
+                <h2 style={{ marginBottom: "15px" }}>{title}</h2>
                 <p style={{ marginBottom: "15px", color: "#aaa", fontSize: "13px" }}>
-                    {description || "Enter your API key."}
+                    {description}
                 </p>
                 {currentKey && (
                     <p style={{ marginBottom: "10px", color: "#aaa", fontSize: "13px" }}>

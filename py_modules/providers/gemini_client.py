@@ -7,7 +7,7 @@ least thinking, then none. What it learns is kept for the session, so the next r
 
 import json
 import logging
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 from .base import NetworkError, Response, fetch
 
@@ -51,10 +51,9 @@ async def list_models(key: str) -> List[str]:
     return sorted(n for n in names if n.startswith("gemini") and not any(s in n for s in _NOT_CHAT_MODEL_MARKERS))
 
 
-async def generate(key: str, model: str, payload: dict, timeout: float, thinking: bool = True) -> Tuple[Response, str]:
-    """POST generateContent; returns (the last response, the model that answered).
-
-    thinking=True asks for the least thinking the model allows (faster, cheaper; translation doesn't need it).
+async def generate(key: str, model: str, payload: dict, timeout: float) -> Response:
+    """POST generateContent, asking for the least thinking the model allows (faster, cheaper; OCR and translation
+    don't need it).
     Retries: a retired model (404) once with FALLBACK_MODEL; a 400 that isn't about the key with the least thinking
     level, then with no thinking setting (some models answer a setting they don't take with only "invalid argument")."""
     model = _retired.get(model, model)
@@ -69,8 +68,6 @@ async def generate(key: str, model: str, payload: dict, timeout: float, thinking
                            timeout=timeout)
 
     def first_thinking(m: str) -> Optional[dict]:
-        if not thinking:
-            return None
         return _thinking[m] if m in _thinking else least_thinking(m)
 
     think = first_thinking(model)
@@ -88,9 +85,9 @@ async def generate(key: str, model: str, payload: dict, timeout: float, thinking
         logger.info(f"{model} rejects thinkingConfig {think}; retrying with {retry}")
         think = retry
         resp = await attempt(model, think)
-    if resp.status_code == 200 and thinking:
+    if resp.status_code == 200:
         _thinking[model] = think
-    return resp, model
+    return resp
 
 
 def reply_text(resp: Response) -> str:
