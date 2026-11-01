@@ -2,8 +2,7 @@
 // calls must exist in main.py: tests/frontend/backendContract.test.ts checks this list against it.
 import { callable } from "@decky/api";
 import type { OverlayState } from "./Overlay";
-import type { TextRegion } from "./TextRecognizer";
-import type { TranslatedRegion } from "./TextTranslator";
+import type { TextRegion, TranslatedRegion } from "./regions";
 
 // main.py SETTING_DEFAULTS, keys as the backend names them
 export type BackendSettings = Record<string, any>;

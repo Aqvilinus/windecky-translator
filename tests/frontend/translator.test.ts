@@ -1,4 +1,4 @@
-// src/Translator.tsx: a failure in the pipeline is shown on the overlay with its reason, never as "No text found".
+// src/translator.ts: a failure in the pipeline is shown on the overlay with its reason, never as "No text found".
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 let replies: Record<string, unknown> = {};
@@ -9,7 +9,7 @@ vi.mock('@decky/api', () => ({
     toaster: { toast: vi.fn() },
 }));
 
-const { GameTranslatorLogic } = await import('../../src/Translator');
+const { Translator } = await import('../../src/translator');
 const { ImageState } = await import('../../src/Overlay');
 
 function startTranslator() {
@@ -18,13 +18,15 @@ function startTranslator() {
     state.subscribe(s => {
         if (s.visible && s.processingStep) steps.push({ step: s.processingStep, isError: s.processingIsError });
     });
-    const logic = new GameTranslatorLogic(state);
-    logic.setInputLanguage('auto');
-    logic.setTargetLanguage('en');
-    return { logic, steps };
+    const translator = new Translator(state);
+    translator.applySettings({
+        enabled: true, inputLanguage: 'auto', targetLanguage: 'en', ocrProvider: 'chromescreenai',
+        translationProvider: 'freegoogle', googleApiKey: '', geminiApiKey: '', debugMode: false, fontScale: 1,
+    });
+    return { translator, steps };
 }
 
-describe('GameTranslatorLogic errors', () => {
+describe('Translator errors', () => {
     beforeEach(() => {
         replies = {
             capture_screen: { id: 1 },
@@ -33,23 +35,23 @@ describe('GameTranslatorLogic errors', () => {
 
     it('shows why OCR failed', async () => {
         replies.recognize_capture = { error: 'ocr_failed', message: 'On-device OCR timed out after 120 s' };
-        const { logic, steps } = startTranslator();
-        await logic.takeScreenshotAndTranslate();
+        const { translator, steps } = startTranslator();
+        await translator.translateScreen();
         expect(steps.at(-1)).toEqual({ step: 'On-device OCR timed out after 120 s', isError: true });
     });
 
     it('shows why translation failed', async () => {
         replies.recognize_capture = [{ text: 'Neues Spiel', rect: { left: 0, top: 0, right: 90, bottom: 20 } }];
         replies.translate_text = { error: 'translation_failed', message: 'The translation service did not answer' };
-        const { logic, steps } = startTranslator();
-        await logic.takeScreenshotAndTranslate();
+        const { translator, steps } = startTranslator();
+        await translator.translateScreen();
         expect(steps.at(-1)).toEqual({ step: 'The translation service did not answer', isError: true });
     });
 
     it('still says "No text found" when the screen has no text', async () => {
         replies.recognize_capture = [];
-        const { logic, steps } = startTranslator();
-        await logic.takeScreenshotAndTranslate();
+        const { translator, steps } = startTranslator();
+        await translator.translateScreen();
         expect(steps.at(-1)).toEqual({ step: 'No text found', isError: false });
     });
 });

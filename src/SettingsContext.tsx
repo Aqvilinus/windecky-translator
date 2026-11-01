@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useReducer } from 'react';
+import { toaster } from '@decky/api';
 import { backend, BackendSettings } from './backend';
-import { GameTranslatorLogic } from './Translator';
+import { Translator } from './translator';
 import { logger } from './log';
 import { LLM_DEFAULT_MODELS } from './llm';
 import type { OcrEngine, TranslationEngine } from './providers';
@@ -110,27 +111,12 @@ export function settingsFromBackend(server: BackendSettings): SavedSettings {
     return settings as SavedSettings;
 }
 
-// What a setting changes in the translator logic, which keeps what Ctrl+Alt+T needs
-function applyToLogic(logic: GameTranslatorLogic, key: keyof SavedSettings, value: any): void {
-    switch (key) {
-        case 'inputLanguage': logic.setInputLanguage(value); break;
-        case 'targetLanguage': logic.setTargetLanguage(value); break;
-        case 'enabled': logic.setEnabled(value); break;
-        case 'debugMode': logger.setDebugEnabled(value); break;
-        case 'fontScale': logic.setFontScale(value); break;
-        case 'ocrProvider': logic.setOcrProvider(value); break;
-        case 'translationProvider': logic.setTranslationProvider(value); break;
-        case 'googleApiKey': logic.setHasGoogleApiKey(!!value); break;
-        case 'geminiApiKey': logic.setHasGeminiApiKey(!!value); break;
-    }
-}
-
-// The backend's settings into the logic; null if they can't be read. Called at plugin start (index.tsx): Decky
+// The backend's settings into the translator; null if they can't be read. Called at plugin start (index.tsx): Decky
 // renders the panel, and with it SettingsProvider, only while the panel is open, but Ctrl+Alt+T works from the start.
-export async function loadSettingsIntoLogic(logic: GameTranslatorLogic): Promise<SavedSettings | null> {
+export async function loadSettings(translator: Translator): Promise<SavedSettings | null> {
     try {
         const settings = settingsFromBackend(await backend.getAllSettings());
-        for (const key of SAVED_KEYS) applyToLogic(logic, key, settings[key]);
+        translator.applySettings(settings);
         logger.debug('SettingsContext', 'Settings', settings);
         return settings;
     } catch (error) {
@@ -162,17 +148,17 @@ const SettingsContext = createContext<SettingsContextType | undefined>(undefined
 
 interface SettingsProviderProps {
     children: React.ReactNode;
-    logic: GameTranslatorLogic;
+    translator: Translator;
 }
 
 export const SettingsProvider: React.FC<SettingsProviderProps> = ({
                                                                       children,
-                                                                      logic
+                                                                      translator
                                                                   }) => {
     const [settings, dispatch] = useReducer(settingsReducer, initialSettings);
 
     const loadAllSettings = async () => {
-        const loaded = await loadSettingsIntoLogic(logic);
+        const loaded = await loadSettings(translator);
         if (loaded) dispatch({ type: 'INITIALIZE_SETTINGS', settings: loaded });
         dispatch({ type: 'SET_INITIALIZED', initialized: true });
     };
@@ -183,19 +169,24 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
             type: 'UPDATE_SETTING', key,
             value: SECRET_SETTINGS.has(key) && typeof value === 'string' ? displayKey(value) : value,
         });
-        applyToLogic(logic, key, value);
         try {
             if (await backend.setSetting(BACKEND_KEYS[key], value)) return true;
         } catch (error) {
             logger.error('SettingsContext', `Failed to update ${key}`, error);
         }
-        logic.notify(`Failed to update ${label || key}`, 2000);
+        const title = `Failed to update ${label || key}`;
+        toaster.toast({ title, body: title, duration: 2000, critical: true });
         return false;
     };
 
     useEffect(() => {
         loadAllSettings();
     }, []);
+
+    // every change reaches the translator, which keeps what Ctrl+Alt+T needs
+    useEffect(() => {
+        if (settings.initialized) translator.applySettings(settings);
+    }, [settings]);
 
     return (
         <SettingsContext.Provider value={{

@@ -7,7 +7,7 @@ import { addEventListener, removeEventListener, toaster } from '@decky/api';
 import { backend } from './backend';
 import { Router } from '@decky/ui';
 import { ImageState, OverlayState } from './Overlay';
-import type { GameTranslatorLogic } from './Translator';
+import type { Translator } from './translator';
 import { logger } from './log';
 
 // The translate/close hotkey (py_modules/windows/hotkey.py HOTKEY)
@@ -50,11 +50,11 @@ export function forwardOverlayToBackend(state: ImageState, dismiss: () => void):
 // Ctrl+Alt+T (py_modules/windows/hotkey.py): translate the screen, or dismiss the translation (or the
 // translation in progress) when it is up. Windows only gives XInput to the foreground app, so on most setups this
 // is the shortcut; a controller button can be mapped to it (OneXConsole, Steam Input).
-export function listenForHotkey(logic: GameTranslatorLogic): () => void {
+export function listenForHotkey(translator: Translator): () => void {
     const onHotkey = () => {
-        if (logic.imageState.isVisible()) logic.dismiss();
+        if (translator.overlay.isVisible()) translator.dismiss();
         else closeAllSideMenus()
-            .then(() => logic.takeScreenshotAndTranslate())
+            .then(() => translator.translateScreen())
             .catch(err => logger.error('Hotkey', 'Translation failed', err));
     };
     addEventListener('translator_hotkey', onHotkey);

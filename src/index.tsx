@@ -18,10 +18,10 @@ import {
 
 import { BsTranslate } from "react-icons/bs";
 import { ImageState } from "./Overlay";
-import { GameTranslatorLogic } from "./Translator";
+import { Translator } from "./translator";
 import { forwardOverlayToBackend, listenForHotkey, listenForProblems, showStartupErrors } from "./windows";
 import { adoptActivePlugin } from "./deckyState";
-import { SettingsProvider, useSettings, loadSettingsIntoLogic } from "./SettingsContext";
+import { SettingsProvider, useSettings, loadSettings } from "./SettingsContext";
 import { logger } from "./log";
 import { WEB_OCR_ENGINES, WEB_TRANSLATION_ENGINES } from "./providers";
 
@@ -79,9 +79,9 @@ const TabsBox: VFC<{ children: any }> = ({ children }) => {
 
 const STATUS_POLL_INTERVAL_MS = 10000;
 
-const GameTranslator: VFC<{ logic: GameTranslatorLogic }> = ({ logic }) => {
+const GameTranslator: VFC<{ translator: Translator }> = ({ translator }) => {
     const { settings, initialized } = useSettings();
-    const [overlayVisible, setOverlayVisible] = useState<boolean>(logic.isOverlayVisible());
+    const [overlayVisible, setOverlayVisible] = useState<boolean>(translator.overlay.isVisible());
     const [models, setModels] = useState<InstalledModels | null>(null);
     const [currentTabRoute, setCurrentTabRoute] = useState<string>("main");
     const [pendingScrollTarget, setPendingScrollTarget] = useState<string | null>(null);
@@ -100,7 +100,7 @@ const GameTranslator: VFC<{ logic: GameTranslatorLogic }> = ({ logic }) => {
         setPendingScrollTarget(scrollTargetId ?? null);
     };
 
-    useEffect(() => logic.imageState.subscribe(s => setOverlayVisible(s.visible)), [logic]);
+    useEffect(() => translator.overlay.subscribe(s => setOverlayVisible(s.visible)), [translator]);
 
     const probeReachability = useCallback(async () => {
         const s = settingsRef.current;
@@ -184,7 +184,7 @@ const GameTranslator: VFC<{ logic: GameTranslatorLogic }> = ({ logic }) => {
                         {
                             // @ts-ignore
                             title: <IconTranslate />,
-                            content: <TabMain logic={logic} overlayVisible={overlayVisible} models={models} webReachability={webReachability} onNavigateToTab={handleNavigateToTab} />,
+                            content: <TabMain translator={translator} overlayVisible={overlayVisible} models={models} webReachability={webReachability} onNavigateToTab={handleNavigateToTab} />,
                             id: "main",
                         },
                         {
@@ -206,10 +206,10 @@ const GameTranslator: VFC<{ logic: GameTranslatorLogic }> = ({ logic }) => {
     );
 };
 
-const TranslatorApp: VFC<{ logic: GameTranslatorLogic }> = ({ logic }) => {
+const TranslatorApp: VFC<{ translator: Translator }> = ({ translator }) => {
     return (
-        <SettingsProvider logic={logic}>
-            <GameTranslator logic={logic}/>
+        <SettingsProvider translator={translator}>
+            <GameTranslator translator={translator}/>
         </SettingsProvider>
     );
 };
@@ -241,26 +241,26 @@ const FitTitle: VFC<{ text: string }> = ({ text }) => {
 
 export default definePlugin(() => {
     const imageState = new ImageState();
-    const logic = new GameTranslatorLogic(imageState);
+    const translator = new Translator(imageState);
 
-    const stopForwarding = forwardOverlayToBackend(imageState, logic.dismiss);
-    const stopHotkey = listenForHotkey(logic);
+    const stopForwarding = forwardOverlayToBackend(imageState, translator.dismiss);
+    const stopHotkey = listenForHotkey(translator);
     const stopProblems = listenForProblems(PLUGIN_NAME);
     // after a reload the side menu would keep showing the unloaded instance (deckyState.ts)
     const stopAdopting = adoptActivePlugin(PLUGIN_NAME,
-        p => (p.content as { props?: { logic?: unknown } } | undefined)?.props?.logic === logic);
+        p => (p.content as { props?: { translator?: unknown } } | undefined)?.props?.translator === translator);
     // a Steam UI reload leaves the backend running: hide a translation the old UI left on screen (and resume a game
     // it paused), since this UI starts with none
     backend.updateOverlay({ visible: false }).catch(() => { /* logged by the backend */ });
     showStartupErrors(PLUGIN_NAME);
 
-    loadSettingsIntoLogic(logic);  // Ctrl+Alt+T needs them before the panel is ever opened
+    loadSettings(translator);  // Ctrl+Alt+T needs them before the panel is ever opened
 
     return {
         name: PLUGIN_NAME,
         title: <div className={staticClasses.Title}>{PLUGIN_NAME}</div>,
         titleView: <FitTitle text={PLUGIN_NAME} />,
-        content: <TranslatorApp logic={logic}/>,
+        content: <TranslatorApp translator={translator}/>,
         icon: <BsTranslate/>,
         onDismount() {
             stopForwarding();

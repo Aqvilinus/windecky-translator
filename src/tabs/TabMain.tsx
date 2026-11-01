@@ -11,7 +11,7 @@ import { BsTranslate, BsXLg, BsEye, BsStars } from "react-icons/bs";
 import { HiInboxArrowDown } from "react-icons/hi2";
 import { useSettings } from "../SettingsContext";
 import type { ModelKind, ModelStatus } from "../backend";
-import { GameTranslatorLogic } from "../Translator";
+import { Translator } from "../translator";
 import { LLM_BACKEND_LABELS, llmModel } from "../llm";
 import { logger } from "../log";
 import { closeAllSideMenus } from "../windows";
@@ -74,7 +74,7 @@ const ReachabilityRow: VFC<{ result: ReachResult; expectedProvider: string }> = 
 export type InstalledModels = Record<ModelKind, ModelStatus | null>;
 
 interface TabMainProps {
-    logic: GameTranslatorLogic;
+    translator: Translator;
     overlayVisible: boolean;
     models: InstalledModels | null;
     webReachability: {
@@ -84,7 +84,7 @@ interface TabMainProps {
     onNavigateToTab: (tabId: string, scrollTargetId?: string) => void;
 }
 
-export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, models, webReachability, onNavigateToTab }) => {
+export const TabMain: VFC<TabMainProps> = ({ translator, overlayVisible, models, webReachability, onNavigateToTab }) => {
     const { settings, updateSetting } = useSettings();
 
     const ocrNeedsDownload =
@@ -97,7 +97,7 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, models, webR
 
     const handleButtonClick = () => {
         if (overlayVisible) {
-            logic.dismiss();
+            translator.dismiss();
             closeAllSideMenus().catch(err => logger.error('TabMain', 'Closing the side menu failed', err));
             return;
         }
@@ -110,7 +110,7 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, models, webR
             return;
         }
         closeAllSideMenus()
-            .then(() => logic.takeScreenshotAndTranslate())
+            .then(() => translator.translateScreen())
             .catch(err => logger.error('TabMain', 'Screenshot failed', err));
     };
 

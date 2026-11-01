@@ -1,7 +1,7 @@
 // The translation overlay's state. The backend draws it over the game window
 // (py_modules/overlay.py); src/windows.ts forwards every change there.
 
-import { TranslatedRegion } from "./TextTranslator";
+import { TranslatedRegion } from "./regions";
 
 // What the backend draws (main.py update_overlay -> overlay.py render)
 export interface OverlayState {

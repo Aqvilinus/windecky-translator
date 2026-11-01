@@ -7,7 +7,7 @@ vi.mock('@decky/ui', () => ({ Router: {} }));
 // Steam provides React at runtime; the module only needs these names to load
 vi.mock('react', () => ({ default: {}, createContext: () => ({}), useContext: vi.fn(), useEffect: vi.fn(), useReducer: vi.fn() }));
 
-const { settingsFromBackend, loadSettingsIntoLogic } = await import('../../src/SettingsContext');
+const { settingsFromBackend, loadSettings } = await import('../../src/SettingsContext');
 
 describe('settingsFromBackend', () => {
     it('keeps a stored 0 (the slider allows it)', () => {
@@ -23,15 +23,14 @@ describe('settingsFromBackend', () => {
     });
 });
 
-describe('loadSettingsIntoLogic', () => {
-    it('gives the translator logic what Ctrl+Alt+T needs', async () => {
+describe('loadSettings', () => {
+    it('gives the translator what Ctrl+Alt+T needs', async () => {
         reply = { input_language: 'de', target_language: 'ru', ocr_provider: 'windows_ocr', gemini_api_key: 'AIz…k3Fz' };
-        const calls: string[] = [];
-        const logic = new Proxy({}, { get: (_t, name) => (value: unknown) => calls.push(`${String(name)}=${value}`) });
-        await loadSettingsIntoLogic(logic as never);
-        expect(calls).toEqual(expect.arrayContaining([
-            'setInputLanguage=de', 'setTargetLanguage=ru', 'setOcrProvider=windows_ocr', 'setHasGeminiApiKey=true',
-            'setHasGoogleApiKey=false', 'setEnabled=true',
-        ]));
+        const applied: unknown[] = [];
+        await loadSettings({ applySettings: (s: unknown) => applied.push(s) } as never);
+        expect(applied).toEqual([expect.objectContaining({
+            inputLanguage: 'de', targetLanguage: 'ru', ocrProvider: 'windows_ocr', geminiApiKey: 'AIz…k3Fz',
+            googleApiKey: '', enabled: true,
+        })]);
     });
 });
