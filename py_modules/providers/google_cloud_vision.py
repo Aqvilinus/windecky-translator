@@ -1,4 +1,4 @@
-# providers/google_ocr.py
+# providers/google_cloud_vision.py
 # Google Cloud Vision OCR provider
 
 import asyncio
@@ -12,7 +12,7 @@ from .base import (OCRProvider, TextRegion, NetworkError, ApiKeyError, RateLimit
 logger = logging.getLogger(__name__)
 
 
-class GoogleVisionProvider(OCRProvider):
+class GoogleCloudVisionProvider(OCRProvider):
     """OCR provider using Google Cloud Vision API."""
 
     SUPPORTED_LANGUAGES = [
@@ -25,7 +25,7 @@ class GoogleVisionProvider(OCRProvider):
         """Initialize the Google Vision provider."""
         self._api_key = api_key
         self._endpoint = "https://vision.googleapis.com/v1/images:annotate"
-        logger.debug("GoogleVisionProvider initialized")
+        logger.debug("GoogleCloudVisionProvider initialized")
 
     def set_api_key(self, api_key: str) -> None:
         """Update the API key."""

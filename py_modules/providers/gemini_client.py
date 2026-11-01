@@ -1,4 +1,4 @@
-# providers/gemini_api.py
+# providers/gemini_client.py
 # Google's Gemini REST API, shared by Gemini Vision (OCR + translation, gemini_vision.py) and AI translation
 # (llm_translate.py): the address, the key header, the model list, and the retries a request may need.
 #

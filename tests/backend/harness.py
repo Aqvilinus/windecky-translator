@@ -345,8 +345,8 @@ class Backend:
         p = self.plugin
         if p:
             self.main.game_pause.resume_all()
-            if p._provider_manager:
-                p._provider_manager.shutdown()
+            if p._providers:
+                p._providers.shutdown()
             if p._translation_cache:
                 p._translation_cache.close()
             if p._overlay:

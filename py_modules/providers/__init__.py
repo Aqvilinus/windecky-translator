@@ -1,5 +1,5 @@
 # providers/__init__.py
-# Provider factory and manager
+# ProviderRegistry: creates the provider the settings choose by its id, keeps it, and owns the model downloads
 
 import hashlib
 import logging
@@ -15,17 +15,15 @@ from .base import (
     RateLimitError,
     OCRError,
     TranslationError,
+    Downloader,
 )
-from .google_ocr import GoogleVisionProvider
-from .google_translate import GoogleTranslateProvider
-from .free_translate import FreeTranslateProvider
-from .chromescreenai_provider import ChromeScreenAIProvider
+from .google_cloud_vision import GoogleCloudVisionProvider
+from .google_cloud_translate import GoogleCloudTranslateProvider
+from .google_web_translate import GoogleWebTranslateProvider
+from .chrome_screen_ai import ChromeScreenAIDownloader, ChromeScreenAIProvider
 from .gemini_vision import GeminiVisionProvider
-from .ct2_translate import CT2TranslateProvider
+from .nllb_translate import NLLBDownloader, NLLBTranslateProvider
 from .llm_translate import LLMTranslateProvider
-from .model_download import ModelDownload
-from .nllb_downloader import NLLBDownload
-from .screenai_downloader import ScreenAIDownload
 
 logger = logging.getLogger(__name__)
 
@@ -44,20 +42,20 @@ __all__ = [
     'RateLimitError',
     'OCRError',
     'TranslationError',
-    'GoogleVisionProvider',
-    'GoogleTranslateProvider',
-    'FreeTranslateProvider',
+    'GoogleCloudVisionProvider',
+    'GoogleCloudTranslateProvider',
+    'GoogleWebTranslateProvider',
     'ChromeScreenAIProvider',
     'GeminiVisionProvider',
-    'CT2TranslateProvider',
-    'ProviderManager',
+    'NLLBTranslateProvider',
+    'ProviderRegistry',
 ]
 
 
 
 
-class ProviderManager:
-    """Factory and manager for OCR and Translation providers."""
+class ProviderRegistry:
+    """The OCR and translation providers by id, created on first use with the settings main.py passes in."""
 
     def __init__(self):
         """Initialize the provider manager."""
@@ -78,14 +76,14 @@ class ProviderManager:
 
         # The models the user downloads in the settings, by kind: "nllb" (offline translation), "chromescreenai"
         # (on-device OCR); configure() creates them with their folders
-        self.downloads: Dict[str, ModelDownload] = {}
+        self.downloads: Dict[str, Downloader] = {}
 
         self._reachability_cache: dict = {}
 
         # AI translation settings (applied to the provider when it's created)
         self._llm_config: dict = {}
 
-        logger.debug("ProviderManager initialized")
+        logger.debug("ProviderRegistry initialized")
 
     def configure(
         self,
@@ -106,9 +104,9 @@ class ProviderManager:
             ct2_models_dir: Directory for CT2 translation model storage
         """
         if ct2_models_dir and "nllb" not in self.downloads:
-            self.downloads["nllb"] = NLLBDownload(ct2_models_dir)
+            self.downloads["nllb"] = NLLBDownloader(ct2_models_dir)
         if screenai_models_dir and "chromescreenai" not in self.downloads:
-            self.downloads["chromescreenai"] = ScreenAIDownload(screenai_models_dir)
+            self.downloads["chromescreenai"] = ChromeScreenAIDownloader(screenai_models_dir)
         self._google_api_key = google_api_key
         self._gemini_api_key = gemini_api_key
 
@@ -202,7 +200,7 @@ class ProviderManager:
             from .windows_ocr import WindowsOCRProvider  # winrt, loaded only when chosen
             return WindowsOCRProvider()
         if engine == "googlecloud":
-            return GoogleVisionProvider(self._google_api_key)
+            return GoogleCloudVisionProvider(self._google_api_key)
         if engine == "gemini_vision":
             provider = GeminiVisionProvider(api_key=self._gemini_api_key, model=self._gemini_model)
             provider.set_target_language(self._gemini_target_language)
@@ -222,9 +220,9 @@ class ProviderManager:
 
     def _make_translation_provider(self, engine: str) -> Optional[TranslationProvider]:
         if engine == "freegoogle":
-            return FreeTranslateProvider()
+            return GoogleWebTranslateProvider()
         if engine == "googlecloud":
-            return GoogleTranslateProvider(self._google_api_key)
+            return GoogleCloudTranslateProvider(self._google_api_key)
         if engine == "llm":
             # shares the free provider, so a Google pause after a 429 holds for both
             llm = LLMTranslateProvider(fallback=self.get_translation_provider("freegoogle"))
@@ -235,7 +233,7 @@ class ProviderManager:
         if engine == "ct2":
             if "nllb" not in self.downloads:
                 return None
-            provider = CT2TranslateProvider(self.downloads["nllb"])
+            provider = NLLBTranslateProvider(self.downloads["nllb"])
             if self._ct2_persistent_mode:
                 provider.set_persistent_mode(True)
             return provider

@@ -1,4 +1,4 @@
-# providers/google_translate.py
+# providers/google_cloud_translate.py
 # Google Cloud Translation provider
 
 import logging
@@ -10,7 +10,7 @@ from .base import (TranslationProvider, NetworkError, ApiKeyError, RateLimitErro
 logger = logging.getLogger(__name__)
 
 
-class GoogleTranslateProvider(TranslationProvider):
+class GoogleCloudTranslateProvider(TranslationProvider):
     """Translation provider using Google Cloud Translation API."""
 
     SUPPORTED_LANGUAGES = [
@@ -23,7 +23,7 @@ class GoogleTranslateProvider(TranslationProvider):
         """Initialize the Google Translate provider."""
         self._api_key = api_key
         self._endpoint = "https://translation.googleapis.com/language/translate/v2"
-        logger.debug("GoogleTranslateProvider initialized")
+        logger.debug("GoogleCloudTranslateProvider initialized")
 
     def set_api_key(self, api_key: str) -> None:
         """Update the API key."""

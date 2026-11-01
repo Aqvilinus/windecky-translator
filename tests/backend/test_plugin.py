@@ -76,12 +76,12 @@ def test_every_setting_has_a_value_from_the_start(backend):
 
 def test_the_saved_gemini_model_is_used_after_a_restart(start):
     b = start({"gemini_model": "gemini-9-pro"})
-    assert b.plugin._provider_manager._gemini_model == "gemini-9-pro"
+    assert b.plugin._providers._gemini_model == "gemini-9-pro"
 
 
 def test_a_worker_stays_up_only_for_the_chosen_engine_while_the_plugin_is_on(start):
     b = start({"translation_provider": "ct2", "ct2_persistent_mode": True})  # no model: nothing really starts
-    pm = b.plugin._provider_manager
+    pm = b.plugin._providers
     assert pm._ct2_persistent_mode is True
     b.call("set_setting", "enabled", False)
     assert pm._ct2_persistent_mode is False
@@ -160,7 +160,7 @@ def test_google_rate_limit_falls_back_to_bing(backend, net):
 def test_a_translation_that_gives_nothing_back_is_an_error(backend, net, monkeypatch):
     """Google refuses and Bing's answer is unusable: say so instead of showing the originals as if translated."""
     net.google_status = 429
-    free = backend.plugin._provider_manager.get_translation_provider()
+    free = backend.plugin._providers.get_translation_provider()
 
     async def unusable(texts, src, tgt):
         return [None] * len(texts)
@@ -174,8 +174,8 @@ def test_a_translation_that_gives_nothing_back_is_an_error(backend, net, monkeyp
 
 def test_offline_translation_failures_are_errors(backend, monkeypatch):
     from providers import TranslationError
-    from providers.ct2_translate import CT2TranslateProvider
-    provider = CT2TranslateProvider.__new__(CT2TranslateProvider)  # no worker, no model folder
+    from providers.nllb_translate import NLLBTranslateProvider
+    provider = NLLBTranslateProvider.__new__(NLLBTranslateProvider)  # no worker, no model folder
     with pytest.raises(TranslationError, match="source language"):
         provider._translate_batch_sync(["Hallo"], "auto", "en")
 
@@ -218,7 +218,7 @@ def test_no_network(backend, net):
 def test_ocr_engine_failures_reach_the_frontend(backend, monkeypatch):
     """A failing engine is reported with its reason, not as an empty result ("No text found")."""
     from providers import OCRError
-    provider = backend.plugin._provider_manager.get_ocr_provider()
+    provider = backend.plugin._providers.get_ocr_provider()
 
     async def times_out(image, language="auto"):
         raise OCRError("On-device OCR timed out after 120 s")
@@ -238,7 +238,7 @@ def test_chrome_screen_ai_failures_raise(monkeypatch, tmp_path):
     """The engine's own failures (crash, timeout, unreadable output) become OCRError with a reason."""
     import subprocess
     from providers import OCRError
-    from providers.chromescreenai_provider import ChromeScreenAIProvider
+    from providers.chrome_screen_ai import ChromeScreenAIProvider
     provider = ChromeScreenAIProvider(model_dir=str(tmp_path))
     provider._python_path = "python.exe"
 

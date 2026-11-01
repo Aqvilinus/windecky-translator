@@ -1,11 +1,11 @@
-"""providers/model_download.py: a model download in its thread, staged and moved into place only when complete.
+"""providers/base.py Downloader: a model download in its thread, staged and moved into place only when complete.
 The 'server' is a local file (urllib reads file:// URLs too)."""
 import hashlib
 import os
 import pathlib
 import time
 
-from providers.model_download import DownloadError, ModelDownload
+from providers.base import DownloadError, Downloader
 
 
 def wait(download):
@@ -22,7 +22,7 @@ def make(tmp_path, content, expected_sha256=None, max_mb=None):
     source.write_bytes(content)
     url = pathlib.Path(source).as_uri()
 
-    class Model(ModelDownload):
+    class Model(Downloader):
         name = "model"
         approx_size_mb = 1
         required_files = ("model.bin",)

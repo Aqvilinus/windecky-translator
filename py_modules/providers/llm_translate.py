@@ -12,8 +12,8 @@ from typing import Dict, List, Optional
 
 from .base import (TranslationProvider, NetworkError, ApiKeyError, RateLimitError, Response,
                    chunk_indices, error_message, fetch, probe, raise_for_api_error)
-from . import gemini_api
-from .free_translate import FreeTranslateProvider
+from . import gemini_client
+from .google_web_translate import GoogleWebTranslateProvider
 from .gemini_vision import LANG_NAMES
 
 logger = logging.getLogger(__name__)
@@ -22,7 +22,7 @@ GROQ_URL = "https://api.groq.com/openai/v1"
 
 BACKENDS = ("gemini", "groq", "custom")
 DEFAULT_MODELS = {
-    "gemini": gemini_api.FALLBACK_MODEL,  # Google's alias for the current Flash-Lite; fixed names get retired
+    "gemini": gemini_client.FALLBACK_MODEL,  # Google's alias for the current Flash-Lite; fixed names get retired
     "groq": "openai/gpt-oss-120b",
     "custom": "",
 }
@@ -111,8 +111,8 @@ def _retry_after(resp: Response) -> float:
 class LLMTranslateProvider(TranslationProvider):
     """Translation with Gemini / Groq / an OpenAI-compatible API, the free Google -> Bing chain as fallback."""
 
-    def __init__(self, fallback: Optional[FreeTranslateProvider] = None):
-        self._fallback = fallback or FreeTranslateProvider()
+    def __init__(self, fallback: Optional[GoogleWebTranslateProvider] = None):
+        self._fallback = fallback or GoogleWebTranslateProvider()
         self._backend = "gemini"
         self._keys: Dict[str, str] = {"gemini": "", "groq": "", "custom": ""}
         self._models: Dict[str, str] = dict(DEFAULT_MODELS)
@@ -188,10 +188,10 @@ class LLMTranslateProvider(TranslationProvider):
                 "responseSchema": TRANSLATIONS_SCHEMA,
             },
         }
-        # retired model -> current alias, thinking setting the model rejects -> less (gemini_api.generate)
-        resp, _ = await gemini_api.generate(self._keys["gemini"], self.model, payload, REQUEST_TIMEOUT)
+        # retired model -> current alias, thinking setting the model rejects -> less (gemini_client.generate)
+        resp, _ = await gemini_client.generate(self._keys["gemini"], self.model, payload, REQUEST_TIMEOUT)
         self._check(resp)
-        return gemini_api.reply_text(resp)
+        return gemini_client.reply_text(resp)
 
     async def _openai_request(self, system: str, user: str) -> str:
         payload = {
@@ -277,7 +277,7 @@ class LLMTranslateProvider(TranslationProvider):
         """Models the key can use, for the model picker (text models only)."""
         try:
             if backend == "gemini":
-                return await gemini_api.list_models(self._keys["gemini"])
+                return await gemini_client.list_models(self._keys["gemini"])
             base = GROQ_URL if backend == "groq" else self._custom_url
             if not base:
                 return []
@@ -301,8 +301,8 @@ class LLMTranslateProvider(TranslationProvider):
 
         # Reads the model's info (Gemini) or the model list: checks address and key without using request quota
         if self._backend == "gemini":
-            resp, error = await probe("GET", f"{gemini_api.API_URL}/{self.model}",
-                                      headers=gemini_api.headers(self._keys["gemini"]))
+            resp, error = await probe("GET", f"{gemini_client.API_URL}/{self.model}",
+                                      headers=gemini_client.headers(self._keys["gemini"]))
         else:
             resp, error = await probe("GET", f"{self._openai_base()}/models", headers=self._openai_headers())
         if resp is None:

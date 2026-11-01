@@ -1,12 +1,12 @@
-"""ProviderManager.configure: which OCR and translation providers the settings select."""
+"""ProviderRegistry.configure: which OCR and translation providers the settings select."""
 import unittest
 
-from providers import ProviderManager
+from providers import ProviderRegistry
 
 
 class Configure(unittest.TestCase):
     def prefs(self, **kw):
-        pm = ProviderManager()
+        pm = ProviderRegistry()
         pm.configure(**kw)
         return pm._ocr_provider_preference, pm._translation_provider_preference
 

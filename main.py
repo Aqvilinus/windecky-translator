@@ -85,7 +85,7 @@ if os.path.isdir(os.path.join(BIN_PYTHON_DIR, "python")):
 import decky  # Decky Loader's plugin API (typings/decky.pyi)
 
 # Import provider system
-from providers import ProviderManager, NetworkError, ApiKeyError, RateLimitError, OCRError, TranslationError
+from providers import ProviderRegistry, NetworkError, ApiKeyError, RateLimitError, OCRError, TranslationError
 from providers.base import close_session
 from providers.translation_cache import TranslationCache, PROVIDER_TIERS, normalize
 from plugin_core.secrets import SENSITIVE_SETTING_KEYS, UrlKeyRedactFilter, clean_api_key, display_key, mask_for_log
@@ -180,7 +180,7 @@ def answers_errors(fallback_code, fallback_message):
 class Plugin:
     _settings = None
     _pause_problems_shown: frozenset = frozenset()  # pause problems already shown to the user (_report_pause_problem)
-    _provider_manager: ProviderManager = None
+    _providers: ProviderRegistry = None
 
     # Windows: the translation overlay window, the window the last screenshot came from, the Ctrl+Alt+T hotkey
     _overlay = None
@@ -236,7 +236,7 @@ class Plugin:
 
     def _configure_providers(self):
         """Engine choice, keys and models -> the provider manager."""
-        pm = self._provider_manager
+        pm = self._providers
         if not pm:
             return
         pm.configure(google_api_key=self._get("google_api_key"), gemini_api_key=self._get("gemini_api_key"),
@@ -254,7 +254,7 @@ class Plugin:
     def _sync_workers(self):
         """The Screen AI and NLLB workers stay up between requests only while the plugin is on, their engine is the
         chosen one and its "Faster ..." setting is on; otherwise each request starts and stops its own."""
-        pm = self._provider_manager
+        pm = self._providers
         if not pm:
             return
         on = bool(self._get("enabled"))
@@ -273,9 +273,9 @@ class Plugin:
     async def get_llm_models(self, backend: str):
         """Models the configured key can use on that AI backend, for the model picker."""
         try:
-            if not self._provider_manager:
+            if not self._providers:
                 return []
-            llm = self._provider_manager.get_llm_provider()
+            llm = self._providers.get_llm_provider()
             return await llm.list_models(backend)
         except Exception as e:
             logger.error(f"Error fetching {backend} models: {e}")
@@ -285,8 +285,8 @@ class Plugin:
         try:
             if not self._get("gemini_api_key"):
                 return []
-            gemini = self._provider_manager.get_ocr_provider() if (
-                self._provider_manager and self._get("ocr_provider") == "gemini_vision"
+            gemini = self._providers.get_ocr_provider() if (
+                self._providers and self._get("ocr_provider") == "gemini_vision"
             ) else None
             if not gemini:
                 from providers.gemini_vision import GeminiVisionProvider
@@ -298,8 +298,8 @@ class Plugin:
 
     async def get_provider_status(self):
         try:
-            if self._provider_manager:
-                return self._provider_manager.get_provider_status()
+            if self._providers:
+                return self._providers.get_provider_status()
             return {"error": "Provider manager not initialized"}
         except Exception as e:
             logger.error(f"Error getting provider status: {str(e)}")
@@ -307,8 +307,8 @@ class Plugin:
 
     async def check_web_reachability(self):
         try:
-            if self._provider_manager:
-                return await self._provider_manager.check_web_reachability()
+            if self._providers:
+                return await self._providers.check_web_reachability()
             return {"error": "Provider manager not initialized"}
         except Exception as e:
             logger.error(f"Error checking web reachability: {str(e)}")
@@ -457,11 +457,11 @@ class Plugin:
                 image_data = image_data.split(',', 1)[1]
             image_bytes = base64.b64decode(image_data)
 
-        if not self._provider_manager:
+        if not self._providers:
             logger.error("Provider manager not initialized")
             return []
 
-        if self._get("ocr_provider") == "chromescreenai" and not self._provider_manager.model_installed("chromescreenai"):
+        if self._get("ocr_provider") == "chromescreenai" and not self._providers.model_installed("chromescreenai"):
             return {"error": "model_not_available", "message": "Chrome Screen AI engine not downloaded.\nDownload it in plugin settings"}
 
         if self._get("ocr_provider") == "windows_ocr" and self._get("input_language") not in ("", "auto"):
@@ -476,10 +476,10 @@ class Plugin:
         # If using Gemini Vision, set the target language before OCR
         # so it can translate in the same API call
         if self._get("ocr_provider") == "gemini_vision":
-            self._provider_manager.set_gemini_target_language(self._get("target_language"))
+            self._providers.set_gemini_target_language(self._get("target_language"))
 
         start_time = time.time()
-        text_regions = await self._provider_manager.recognize_text(
+        text_regions = await self._providers.recognize_text(
             image_bytes,
             language=self._get("input_language")
         )
@@ -516,7 +516,7 @@ class Plugin:
         target_lang = target_language or self._get("target_language")
         input_lang = input_language or self._get("input_language")
 
-        if not self._provider_manager:
+        if not self._providers:
             logger.error("Provider manager not initialized")
             return None
 
@@ -537,7 +537,7 @@ class Plugin:
 
         # Check if CT2 provider has the needed models
         if self._get("translation_provider") == "ct2":
-            provider = self._provider_manager.get_translation_provider()
+            provider = self._providers.get_translation_provider()
             if provider and not provider.is_available(input_lang, target_lang):
                 if input_lang == "auto":
                     return {"error": "model_not_available", "message": "Offline translation requires a specific source language. Select one in plugin settings"}
@@ -569,7 +569,7 @@ class Plugin:
             to_request = texts_to_translate
 
         start_time = time.time()
-        requested = await self._provider_manager.translate_text(
+        requested = await self._providers.translate_text(
             to_request, source_lang=input_lang, target_lang=target_lang
         ) if to_request else []
         elapsed = time.time() - start_time
@@ -668,21 +668,21 @@ class Plugin:
 
     async def get_model_status(self, kind):
         """{downloaded, size, approx_size_mb, downloading, progress, error}, or None for an unknown kind."""
-        return self._provider_manager.model_status(kind) if self._provider_manager else None
+        return self._providers.model_status(kind) if self._providers else None
 
     async def download_model(self, kind):
-        return bool(self._provider_manager and self._provider_manager.download_model(kind))
+        return bool(self._providers and self._providers.download_model(kind))
 
     async def cancel_model_download(self, kind):
-        if self._provider_manager:
-            self._provider_manager.cancel_model_download(kind)
+        if self._providers:
+            self._providers.cancel_model_download(kind)
 
     async def clear_model_error(self, kind):
-        if self._provider_manager:
-            self._provider_manager.clear_model_error(kind)
+        if self._providers:
+            self._providers.clear_model_error(kind)
 
     async def delete_model(self, kind):
-        return bool(self._provider_manager and self._provider_manager.delete_model(kind))
+        return bool(self._providers and self._providers.delete_model(kind))
 
     def _start_windows(self):
         """Windows parts, first and each on its own: a failure anywhere else in the start must not leave a game paused
@@ -722,14 +722,14 @@ class Plugin:
                 logger.error(f"Failed to open translation cache, continuing without it: {e}")
                 self._translation_cache = None
 
-            self._provider_manager = ProviderManager()
-            self._provider_manager.configure(ct2_models_dir=ct2_models_dir, screenai_models_dir=models_dir)
+            self._providers = ProviderRegistry()
+            self._providers.configure(ct2_models_dir=ct2_models_dir, screenai_models_dir=models_dir)
             for key in ("debug_mode", "enabled"):  # log level; Ctrl+Alt+T on or off
                 self._apply_setting(key)
             self._configure_providers()
             self._sync_workers()
 
-            provider_status = self._provider_manager.get_provider_status()
+            provider_status = self._providers.get_provider_status()
             logger.info(f"Initialized - OCR: {provider_status.get('ocr_provider', '?')}, "
                         f"Translation: {provider_status.get('translation_provider', '?')}, "
                         f"Target lang: {self._get('target_language')}")
@@ -747,8 +747,8 @@ class Plugin:
                 self._hotkey.close()
             if self._overlay:
                 self._overlay.stop()
-            if self._provider_manager:
-                self._provider_manager.shutdown()
+            if self._providers:
+                self._providers.shutdown()
             if self._translation_cache:
                 self._translation_cache.close()
             await close_session()

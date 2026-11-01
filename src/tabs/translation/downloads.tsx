@@ -80,7 +80,7 @@ export function useModelDownload(kind: ModelKind, approxMb: number): ModelDownlo
 }
 
 export function useChromeScreenAIStatus() {
-    return useModelDownload('chromescreenai', 80);  // until the backend answers (screenai_downloader.py)
+    return useModelDownload('chromescreenai', 80);  // until the backend answers (chrome_screen_ai.py)
 }
 
 export function useNllbModelStatus() {

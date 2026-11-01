@@ -1,4 +1,4 @@
-# providers/free_translate.py
+# providers/google_web_translate.py
 # Free translation using direct HTTP requests to Google Translate
 
 import logging
@@ -14,7 +14,7 @@ GOOGLE_BATCH_CHARS = 4500       # texts per POST, one per line
 logger = logging.getLogger(__name__)
 
 
-class FreeTranslateProvider(TranslationProvider):
+class GoogleWebTranslateProvider(TranslationProvider):
     """Translation provider using free Google Translate (unofficial API)."""
 
     # The plugin's language codes are Google Translate's (and Bing's, mapped in bing_translate.py)
@@ -30,7 +30,7 @@ class FreeTranslateProvider(TranslationProvider):
         """Initialize the free translation provider."""
         self._google_paused_until = 0.0
         self._bing = BingTranslator()
-        logger.debug("FreeTranslateProvider initialized")
+        logger.debug("GoogleWebTranslateProvider initialized")
 
     def _pause_google(self, status):
         self._google_paused_until = time.time() + GOOGLE_PAUSE_SECONDS

@@ -10,7 +10,7 @@ import re
 from typing import List, Optional
 
 
-from . import gemini_api
+from . import gemini_client
 from .base import (
     OCRProvider,
     TextRegion,
@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 # gemini-2.5-flash (upstream's default) answers 404 "no longer available to new users" since 2026. On a 1920x1200 game
 # frame (2026-10-30): gemini-3.5-flash 12 s, gemini-flash-lite-latest 6.5 s, gemini-flash-latest 55-77 s (too slow).
-DEFAULT_MODEL = "gemini-3.5-flash"  # a retired model falls back to gemini_api.FALLBACK_MODEL
+DEFAULT_MODEL = "gemini-3.5-flash"  # a retired model falls back to gemini_client.FALLBACK_MODEL
 REQUEST_TIMEOUT = 30
 
 # Gemini's reply: each line of text on the screen, its translation and its box (y0, x0, y1, x1 in 0-1000)
@@ -198,10 +198,10 @@ class GeminiVisionProvider(OCRProvider):
                 "responseSchema": REGIONS_SCHEMA,
             },
         }
-        # retired model -> current alias, thinking setting the model rejects -> less (gemini_api.generate)
-        response, _ = await gemini_api.generate(self._api_key, self._model, payload, REQUEST_TIMEOUT)
+        # retired model -> current alias, thinking setting the model rejects -> less (gemini_client.generate)
+        response, _ = await gemini_client.generate(self._api_key, self._model, payload, REQUEST_TIMEOUT)
         raise_for_api_error(response, "Gemini Vision")
-        return gemini_api.reply_text(response)
+        return gemini_client.reply_text(response)
 
     async def recognize(self, image_data: bytes, language: str = "auto") -> List[TextRegion]:
         if not self._api_key:
@@ -265,15 +265,15 @@ class GeminiVisionProvider(OCRProvider):
         if not self._api_key:
             return []
         # Flash models read images fast
-        models = [m for m in await gemini_api.list_models(self._api_key) if "flash" in m]
+        models = [m for m in await gemini_client.list_models(self._api_key) if "flash" in m]
         logger.info(f"Available Gemini models: {models}")
         return models
 
     async def test_network(self) -> tuple:
         if not self._api_key:
             return False, "API key required"
-        resp, error = await probe("GET", gemini_api.API_URL, params={"pageSize": 1},
-                                  headers=gemini_api.headers(self._api_key))
+        resp, error = await probe("GET", gemini_client.API_URL, params={"pageSize": 1},
+                                  headers=gemini_client.headers(self._api_key))
         if resp is None:
             return False, error
         if resp.status_code == 200:

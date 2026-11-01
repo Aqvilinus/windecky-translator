@@ -23,7 +23,7 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import language_detection
+import unicode_scripts
 
 IDLE_TIMEOUT = 600  # 10 minutes
 
@@ -97,19 +97,19 @@ def _is_source_copy_with_tail(src, out):
 
 
 def _output_script_mismatch(src, out, tgt_lang):
-    expected = language_detection.flores_families(tgt_lang)
+    expected = unicode_scripts.flores_families(tgt_lang)
     if not expected:
         return False
     out_letters = sum(1 for c in out if c.isalpha())
     if out_letters < 4:
         return False
-    fams = language_detection.letter_families(out)
+    fams = unicode_scripts.letter_families(out)
     in_target = sum(n for f, n in fams.items() if f in expected)
     if in_target / out_letters >= 0.5:
         return False
     src_letters = sum(1 for c in src if c.isalpha())
     if src_letters:
-        src_fams = language_detection.letter_families(src)
+        src_fams = unicode_scripts.letter_families(src)
         if sum(n for f, n in src_fams.items() if f in expected) / src_letters >= 0.5:
             return False
     return True

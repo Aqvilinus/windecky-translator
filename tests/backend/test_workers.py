@@ -3,7 +3,7 @@ they may import their sibling modules, never the plugin's providers package (its
 import os
 
 PROVIDERS = os.path.join(os.path.dirname(__file__), "..", "..", "py_modules", "providers")
-WORKERS = ("chromescreenai_subprocess.py", "ct2_translate_worker.py", "language_detection.py")
+WORKERS = ("chrome_screen_ai_worker.py", "nllb_worker.py", "unicode_scripts.py")
 
 
 def test_workers_import_no_plugin_package():

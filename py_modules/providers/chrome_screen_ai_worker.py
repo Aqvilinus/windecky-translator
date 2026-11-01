@@ -3,8 +3,8 @@
 Subprocess OCR runner for Chrome Screen AI. Loads chrome_screen_ai.dll via
 ctypes, answering JSON lines on stdin/stdout.
 
-  Oneshot: python chromescreenai_subprocess.py <image> <model_dir> <min_conf>
-  Worker:  python chromescreenai_subprocess.py --worker
+  Oneshot: python chrome_screen_ai_worker.py <image> <model_dir> <min_conf>
+  Worker:  python chrome_screen_ai_worker.py --worker
 """
 
 import ctypes
@@ -171,7 +171,7 @@ def _load_image_rgba(image_path, max_dim):
 
 def _proto_to_regions(proto_bytes, scale_x, scale_y, min_confidence):
     # from this script's folder, not the plugin's providers package (that runs in Decky's Python, with aiohttp)
-    from chromescreenai_protos.chrome_screen_ai_pb2 import VisualAnnotation
+    from chrome_screen_ai_pb2 import VisualAnnotation
 
     ann = VisualAnnotation()
     ann.ParseFromString(proto_bytes)
@@ -319,7 +319,7 @@ def main():
 
     if len(sys.argv) < 4:
         print(json.dumps({
-            "error": "Usage: chromescreenai_subprocess.py <image> <model_dir> <min_confidence>",
+            "error": "Usage: chrome_screen_ai_worker.py <image> <model_dir> <min_confidence>",
             "regions": [],
         }))
         sys.exit(1)

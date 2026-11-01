@@ -1,5 +1,5 @@
 // The OCR and translation engines, by the ids the backend uses (main.py SETTING_DEFAULTS ocr_provider /
-// translation_provider, py_modules/providers/__init__.py ProviderManager).
+// translation_provider, py_modules/providers/__init__.py ProviderRegistry).
 
 export type OcrEngine = 'chromescreenai' | 'windows_ocr' | 'googlecloud' | 'gemini_vision';
 export type TranslationEngine = 'freegoogle' | 'googlecloud' | 'ct2' | 'llm';

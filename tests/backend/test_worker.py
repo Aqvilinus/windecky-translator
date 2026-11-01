@@ -1,8 +1,8 @@
-"""providers/worker_process.py JsonLineWorker against a small worker script on this test's own Python."""
+"""providers/worker.py Worker against a small worker script on this test's own Python."""
 import sys
 import textwrap
 
-from providers.worker_process import JsonLineWorker
+from providers.worker import Worker
 
 WORKER = textwrap.dedent('''
     import json, os, sys, time
@@ -22,7 +22,7 @@ WORKER = textwrap.dedent('''
 def worker(tmp_path, **kw):
     script = tmp_path / "worker.py"
     script.write_text(WORKER, encoding="utf-8")
-    w = JsonLineWorker("test", str(script), **kw)
+    w = Worker("test", str(script), **kw)
     assert w.start(sys.executable, "", env={"TEST_VAR": "on"})
     return w
 
