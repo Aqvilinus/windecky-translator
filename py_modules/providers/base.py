@@ -181,8 +181,8 @@ class OCRProvider(ABC):
         """The text regions of a PNG or JPEG image; language is a code or "auto"."""
 
     @abstractmethod
-    def is_available(self, language: str = "auto") -> bool:
-        """Whether the provider can handle this language."""
+    def is_available(self) -> bool:
+        """Configured and installed: a key set, a model downloaded."""
 
 
 class TranslationProvider(ABC):

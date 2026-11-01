@@ -6,7 +6,6 @@ Returns one region per text line; the frontend groups lines into paragraphs (Tex
 import asyncio
 import io
 import logging
-import sys
 from typing import List, Optional
 
 from .base import OCRProvider, TextRegion
@@ -70,8 +69,8 @@ class WindowsOCRProvider(OCRProvider):
         self._engines[want] = engine
         return engine
 
-    def is_available(self, language: str = "auto") -> bool:
-        return sys.platform == "win32" and bool(self.installed_languages())
+    def is_available(self) -> bool:
+        return bool(self.installed_languages())
 
     def get_supported_languages(self) -> List[str]:
         """The installed OCR packs as plugin codes."""

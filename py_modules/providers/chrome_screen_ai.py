@@ -39,12 +39,6 @@ class ChromeScreenAIProvider(OCRProvider):
     """OCR provider backed by chrome_screen_ai.dll. Oneshot subprocess by
     default; persistent worker is opt-in for lower per-call latency."""
 
-    # The engine detects the script itself (77+ of them); these are the plugin's languages plus 'auto'.
-    SUPPORTED_LANGUAGES = [
-        'auto', 'ar', 'bg', 'zh-CN', 'zh-TW', 'hr', 'cs', 'da', 'nl', 'no', 'en',
-        'fi', 'fr', 'de', 'el', 'hi', 'hu', 'it', 'ja', 'ko', 'pl', 'pt',
-        'ro', 'ru', 'es', 'sv', 'th', 'tr', 'uk', 'vi',
-    ]
 
     def __init__(
         self,
@@ -111,10 +105,8 @@ class ChromeScreenAIProvider(OCRProvider):
 
         return True
 
-    def is_available(self, language: str = "auto") -> bool:
-        if not self._check_availability():
-            return False
-        return language in self.SUPPORTED_LANGUAGES
+    def is_available(self) -> bool:
+        return self._check_availability()
 
     def set_persistent_mode(self, enabled: bool) -> None:
         enabled = bool(enabled)

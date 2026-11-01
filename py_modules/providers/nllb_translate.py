@@ -366,7 +366,6 @@ def _split_on_clauses(text: str) -> List[str]:
 class NLLBTranslateProvider(TranslationProvider):
     """The model runs in a worker process, so it isn't reloaded for every request."""
 
-    SUPPORTED_LANGUAGES = list(NLLB_LANG_MAP.keys())
 
     def __init__(self, model: NLLBDownloader, plugin_dir: str = ""):
         self._model = model
@@ -427,7 +426,7 @@ class NLLBTranslateProvider(TranslationProvider):
     def name(self) -> str:
         return "Offline (NLLB)"
 
-    def is_available(self, source_lang: str = "auto", target_lang: str = "en") -> bool:
+    def is_available(self, source_lang: str, target_lang: str) -> bool:
         if source_lang == "auto":
             return False
         return self._model.is_installed()

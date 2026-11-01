@@ -11,12 +11,6 @@ logger = logging.getLogger(__name__)
 
 
 class GoogleCloudVisionProvider(OCRProvider):
-    SUPPORTED_LANGUAGES = [
-        'auto', 'en', 'ja', 'zh-CN', 'zh-TW', 'ko', 'de', 'fr', 'es', 'it',
-        'pt', 'ru', 'ar', 'nl', 'no', 'pl', 'tr', 'uk', 'hi', 'el', 'th', 'vi', 'fi', 'id', 'ro', 'bg', 'hr',
-        'cs', 'hu', 'sv', 'da'
-    ]
-
     def __init__(self, api_key: str = ""):
         self._api_key = api_key
         self._endpoint = "https://vision.googleapis.com/v1/images:annotate"
@@ -29,8 +23,8 @@ class GoogleCloudVisionProvider(OCRProvider):
     def name(self) -> str:
         return "Google Cloud Vision"
 
-    def is_available(self, language: str = "auto") -> bool:
-        return bool(self._api_key) and language in self.SUPPORTED_LANGUAGES
+    def is_available(self) -> bool:
+        return bool(self._api_key)
 
     async def recognize(self, image_data: bytes, language: str = "auto") -> List[TextRegion]:
         """language is unused: Google Vision detects it."""

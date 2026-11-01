@@ -147,7 +147,7 @@ class GeminiVisionProvider(OCRProvider):
     def name(self) -> str:
         return "Gemini Vision"
 
-    def is_available(self, language: str = "auto") -> bool:
+    def is_available(self) -> bool:
         return bool(self._api_key)
 
     def _build_system_instruction(self) -> str:

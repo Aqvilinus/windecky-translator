@@ -229,7 +229,7 @@ class ProviderRegistry:
         language: str = "auto"
     ) -> List[TextRegion]:
         provider = self.get_ocr_provider()
-        if not provider or not provider.is_available(language):
+        if not provider or not provider.is_available():
             raise OCRError(f"{provider.name if provider else 'The OCR engine'} is unavailable")
         logger.debug(f"Using {provider.name} for OCR")
         return await provider.recognize(image_data, language)

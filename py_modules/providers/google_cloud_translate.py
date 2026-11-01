@@ -10,12 +10,6 @@ logger = logging.getLogger(__name__)
 
 
 class GoogleCloudTranslateProvider(TranslationProvider):
-    SUPPORTED_LANGUAGES = [
-        'auto', 'en', 'ja', 'zh-CN', 'zh-TW', 'ko', 'de', 'fr', 'es', 'it',
-        'pt', 'ru', 'ar', 'nl', 'no', 'pl', 'tr', 'uk', 'hi', 'el', 'th', 'vi', 'fi', 'id', 'ro', 'bg', 'hr',
-        'cs', 'hu', 'sv', 'da'
-    ]
-
     def __init__(self, api_key: str = ""):
         self._api_key = api_key
         self._endpoint = "https://translation.googleapis.com/language/translate/v2"
@@ -29,12 +23,7 @@ class GoogleCloudTranslateProvider(TranslationProvider):
         return "Google Cloud Translation"
 
     def is_available(self, source_lang: str, target_lang: str) -> bool:
-        if not self._api_key:
-            return False
-        return (
-            (source_lang in self.SUPPORTED_LANGUAGES or source_lang == 'auto') and
-            target_lang in self.SUPPORTED_LANGUAGES
-        )
+        return bool(self._api_key)
 
     async def translate_batch(self, texts: List[str], source_lang: str, target_lang: str) -> List[str]:
         if not self._api_key:

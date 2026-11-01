@@ -14,12 +14,6 @@ logger = logging.getLogger(__name__)
 
 
 class GoogleWebTranslateProvider(TranslationProvider):
-    # The plugin's language codes are Google Translate's (and Bing's, mapped in bing_translate.py)
-    SUPPORTED_LANGUAGES = [
-        'en', 'ja', 'zh-CN', 'zh-TW', 'ko', 'de', 'fr', 'es', 'it', 'pt', 'ru', 'ar', 'el', 'fi', 'nl', 'no', 'pl',
-        'tr', 'uk', 'hi', 'th', 'vi', 'id', 'ro', 'bg', 'hr', 'cs', 'hu', 'sv', 'da',
-    ]
-
     TRANSLATE_URL = "https://translate.googleapis.com/translate_a/single"
 
     def __init__(self):
@@ -67,9 +61,7 @@ class GoogleWebTranslateProvider(TranslationProvider):
         return "Free Google Translate"
 
     def is_available(self, source_lang: str, target_lang: str) -> bool:
-        return (
-            source_lang in self.SUPPORTED_LANGUAGES or source_lang == 'auto'
-        ) and target_lang in self.SUPPORTED_LANGUAGES
+        return True
 
     async def _translate_lines(self, texts: List[str], src: str, tgt: str) -> List[Optional[str]]:
         """Google first (one request per batch), Bing for whatever Google didn't translate or while it is paused."""
