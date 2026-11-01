@@ -196,6 +196,13 @@ def test_translation_cache(start, net):
     assert len(net.calls(harness.GOOGLE_URL)) == 4
 
 
+def test_a_google_vision_failure_is_shown_not_taken_for_no_text(backend, net):
+    net.routes[("POST", harness.VISION_URL)] = lambda params, body: (500, "backend error")
+    shot = backend.call("take_screenshot", "Game")
+    assert backend.call("recognize_text_file", shot["path"]) == {
+        "error": "ocr_failed", "message": "Google Cloud Vision error 500 (details in the plugin log)"}
+
+
 def test_no_network(backend, net):
     net.down |= {harness.GOOGLE_URL, harness.VISION_URL}
     shot = backend.call("take_screenshot", "Game")

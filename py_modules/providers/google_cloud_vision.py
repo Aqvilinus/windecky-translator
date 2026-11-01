@@ -3,10 +3,9 @@
 import asyncio
 import base64
 import logging
-from typing import List
+from typing import List, Optional
 
-from .base import (OCRProvider, TextRegion, NetworkError, ApiKeyError, RateLimitError,
-                   classify_google_error, fetch, probe, raise_for_google_error, to_jpeg)
+from .base import OCRError, OCRProvider, TextRegion, classify_google_error, fetch, probe, raise_for_google_error, to_jpeg
 
 logger = logging.getLogger(__name__)
 
@@ -35,28 +34,25 @@ class GoogleCloudVisionProvider(OCRProvider):
 
     async def recognize(self, image_data: bytes, language: str = "auto") -> List[TextRegion]:
         """language is unused: Google Vision detects it."""
-        if not self._api_key:
-            logger.error("Google Vision API key not configured")
-            return []
-
         request_data = {
             "requests": [{
                 "image": {"content": base64.b64encode(await asyncio.to_thread(to_jpeg, image_data)).decode('utf-8')},
                 "features": [{"type": "DOCUMENT_TEXT_DETECTION", "maxResults": 50}],
             }]
         }
+        response = await fetch("POST", self._endpoint, json=request_data, headers={"x-goog-api-key": self._api_key})
+        if response.status_code != 200:
+            raise_for_google_error(response)  # the key, billing or quota: the user can act on those
+            raise OCRError(f"Google Cloud Vision error {response.status_code} (details in the plugin log)")
         try:
-            logger.debug("Sending request to Google Cloud Vision API")
-            response = await fetch("POST", self._endpoint, json=request_data, headers={"x-goog-api-key": self._api_key})
-            if response.status_code != 200:
-                raise_for_google_error(response)
-                return []
-            return self._parse_response(response.json())
-        except (ApiKeyError, RateLimitError, NetworkError):
-            raise
-        except Exception as e:
-            logger.error(f"Google Vision OCR error: {e}")
-            return []
+            result = response.json()["responses"][0]
+        except (ValueError, KeyError, IndexError) as e:
+            raise OCRError("Google Cloud Vision gave an unreadable answer (details in the plugin log)") from e
+        if "error" in result:  # a request-level error comes with HTTP 200
+            raise OCRError(f"Google Cloud Vision: {result['error'].get('message', result['error'])}")
+        pages = result.get("fullTextAnnotation", {}).get("pages", [])
+        return [region for page in pages[:1] for block in page.get("blocks", [])
+                for paragraph in block.get("paragraphs", []) if (region := _paragraph_region(paragraph))]
 
     async def test_network(self) -> tuple:
         if not self._api_key:
@@ -72,114 +68,15 @@ class GoogleCloudVisionProvider(OCRProvider):
             return True, ""
         return False, reason
 
-    def _parse_response(self, result: dict) -> List[TextRegion]:
-        text_regions = []
 
-        try:
-            if 'responses' not in result or not result['responses']:
-                logger.warning("No responses in API result")
-                return []
-
-            response = result['responses'][0]
-            full_text_annotation = response.get('fullTextAnnotation', {})
-            pages = full_text_annotation.get('pages', [])
-
-            if pages:
-                blocks = pages[0].get('blocks', [])
-                logger.debug(f"Found {len(blocks)} text blocks")
-
-                for block_idx, block in enumerate(blocks):
-                    paragraphs = block.get('paragraphs', [])
-                    for para_idx, paragraph in enumerate(paragraphs):
-                        region = self._parse_paragraph(paragraph, block_idx, para_idx)
-                        if region:
-                            text_regions.append(region)
-            else:
-                # textAnnotations[0] is the whole text, the rest single words
-                text_annotations = response.get('textAnnotations', [])
-                logger.debug(f"Using {len(text_annotations)} text annotations")
-
-                for idx, annotation in enumerate(text_annotations[1:], 1):
-                    region = self._parse_annotation(annotation, idx)
-                    if region:
-                        text_regions.append(region)
-
-        except Exception as e:
-            logger.error(f"Error parsing Google Vision response: {e}")
-
-        logger.debug(f"Extracted {len(text_regions)} text regions")
-        return text_regions
-
-    def _parse_paragraph(self, paragraph: dict, block_idx: int, para_idx: int) -> TextRegion:
-        try:
-            confidence = paragraph.get('confidence', 0.0)
-            vertices = paragraph.get('boundingBox', {}).get('vertices', [])
-
-            if not vertices or len(vertices) < 4:
-                return None
-
-            x_coords = [v.get('x', 0) for v in vertices]
-            y_coords = [v.get('y', 0) for v in vertices]
-
-            if not x_coords or not y_coords:
-                return None
-
-            para_text = ""
-            for word in paragraph.get('words', []):
-                word_text = ""
-                for symbol in word.get('symbols', []):
-                    word_text += symbol.get('text', '')
-                if word_text:
-                    para_text += word_text + " "
-
-            para_text = para_text.strip()
-            if not para_text:
-                return None
-
-            is_dialog = len(para_text) > 15 or any(p in para_text for p in '.?!,:;"')
-
-            return TextRegion(
-                text=para_text,
-                rect={
-                    "left": min(x_coords),
-                    "top": min(y_coords),
-                    "right": max(x_coords),
-                    "bottom": max(y_coords)
-                },
-                confidence=confidence,
-                is_dialog=is_dialog
-            )
-        except Exception as e:
-            logger.debug(f"Error parsing paragraph {block_idx}_{para_idx}: {e}")
-            return None
-
-    def _parse_annotation(self, annotation: dict, idx: int) -> TextRegion:
-        try:
-            text = annotation.get('description', '')
-            vertices = annotation.get('boundingPoly', {}).get('vertices', [])
-
-            if not text or not vertices or len(vertices) < 4:
-                return None
-
-            x_coords = [v.get('x', 0) for v in vertices]
-            y_coords = [v.get('y', 0) for v in vertices]
-
-            if not x_coords or not y_coords:
-                return None
-
-            is_dialog = len(text) > 15 or any(p in text for p in '.?!,:;"')
-
-            return TextRegion(
-                text=text,
-                rect={
-                    "left": min(x_coords),
-                    "top": min(y_coords),
-                    "right": max(x_coords),
-                    "bottom": max(y_coords)
-                },
-                confidence=0.8,  # textAnnotations come without one
-                is_dialog=is_dialog
-            )
-        except Exception as e:
-            logger.debug(f"Error parsing annotation {idx}: {e}")
-            return None
+def _paragraph_region(paragraph: dict) -> Optional[TextRegion]:
+    text = " ".join("".join(s.get("text", "") for s in w.get("symbols", [])) for w in paragraph.get("words", []))
+    text = text.strip()
+    if not text:
+        return None
+    vertices = paragraph["boundingBox"]["vertices"]
+    xs = [v.get("x", 0) for v in vertices]  # a zero coordinate is left out of Google's JSON
+    ys = [v.get("y", 0) for v in vertices]
+    return TextRegion(text=text, rect={"left": min(xs), "top": min(ys), "right": max(xs), "bottom": max(ys)},
+                      confidence=paragraph.get("confidence", 0.0),
+                      is_dialog=len(text) > 15 or any(p in text for p in '.?!,:;"'))
