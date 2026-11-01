@@ -74,6 +74,13 @@ class GameProcessTests(unittest.TestCase):
             game_process.suspend(1)
         self.assertEqual(self.log, [])
 
+    def test_a_process_the_plugin_may_not_read_is_reported_as_such(self):
+        def denied(pid):
+            raise psutil.AccessDenied(pid)
+        with self.window_of(GAME), mock.patch.object(game_process.psutil, "Process", denied):
+            with self.assertRaisesRegex(game_process.SuspendError, "administrator"):
+                game_process.suspend(1)
+
     def test_suspend_the_game_and_its_children(self):
         with self.window_of(GAME):
             game_process.suspend(1)

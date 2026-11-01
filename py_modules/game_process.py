@@ -30,8 +30,6 @@ def suspend(hwnd):
     if _suspended:
         return
     game = _steam_game(hwnd)
-    if game is None:
-        raise SuspendError("this window isn't a game Steam started, so it keeps running")
     for p in [game, *game.children(recursive=True)]:
         try:
             p.suspend()
@@ -75,10 +73,15 @@ def _steam_game(hwnd):
     try:
         process = psutil.Process(pid.value)
         env = process.environ()  # keys upper-cased on Windows
-    except psutil.Error:  # e.g. a game running as administrator
-        return None
+    except psutil.AccessDenied:
+        raise SuspendError("Windows didn't let the plugin look into the game's process "
+                           "(is the game running as administrator?)") from None
+    except psutil.NoSuchProcess:
+        raise SuspendError("the game window is gone") from None
     game_id = env.get("STEAMGAMEID") or env.get("STEAMAPPID") or ""
-    return process if game_id not in ("", "0") else None
+    if game_id in ("", "0"):
+        raise SuspendError("this window isn't a game Steam started, so it keeps running")
+    return process
 
 
 def _resume(entries):
