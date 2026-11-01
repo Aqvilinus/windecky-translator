@@ -22,17 +22,17 @@ REQUIRED_PYTHON = (3, 14)
 
 BUNDLED_PYTHON_RELPATH = os.path.join("bin", "python314", "python", "python.exe")
 
-# The plugin's folder (py_modules/providers/ is two levels below it), for when DECKY_PLUGIN_DIR isn't set
+# py_modules/providers/ is two levels below the plugin's folder
 PLUGIN_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 _cached_path: Optional[str] = None
 
 
-def worker_pythonpath(plugin_dir: str) -> str:
+def worker_pythonpath() -> str:
     """PYTHONPATH for the worker subprocesses: bin/py_modules (pip packages), then py_modules (plugin source)."""
-    candidates = [os.path.join(plugin_dir, "bin", "py_modules"), os.path.join(plugin_dir, "py_modules")]
+    candidates = [os.path.join(PLUGIN_DIR, "bin", "py_modules"), os.path.join(PLUGIN_DIR, "py_modules")]
     paths = [p for p in candidates if os.path.exists(p)]
-    return os.pathsep.join(paths) if paths else os.path.join(plugin_dir, "py_modules")
+    return os.pathsep.join(paths) if paths else os.path.join(PLUGIN_DIR, "py_modules")
 
 
 def missing_message() -> str:
@@ -45,13 +45,13 @@ def popen_kwargs() -> dict:
     return {"creationflags": subprocess.CREATE_NO_WINDOW}
 
 
-def find_python(plugin_dir: str) -> Optional[str]:
+def find_python() -> Optional[str]:
     """Path of the bundled interpreter if it is there and is REQUIRED_PYTHON, else None."""
     global _cached_path
     if _cached_path and os.path.exists(_cached_path):
         return _cached_path
 
-    bundled = os.path.join(plugin_dir, BUNDLED_PYTHON_RELPATH)
+    bundled = os.path.join(PLUGIN_DIR, BUNDLED_PYTHON_RELPATH)
     if os.path.exists(bundled):
         if _is_compatible(bundled):
             logger.debug(f"Using bundled Python: {bundled}")

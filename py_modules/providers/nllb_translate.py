@@ -10,7 +10,7 @@ from typing import List, Optional
 
 from .base import DownloadError, Downloader, TranslationError, TranslationProvider
 from .unicode_scripts import CJK_FAMILIES, dominant_family, flores_families
-from .worker import PLUGIN_DIR, Worker, find_python, worker_pythonpath
+from .worker import Worker, find_python, worker_pythonpath
 
 logger = logging.getLogger(__name__)
 
@@ -366,29 +366,20 @@ def _split_on_clauses(text: str) -> List[str]:
 class NLLBTranslateProvider(TranslationProvider):
     """The model runs in a worker process, so it isn't reloaded for every request."""
 
-
-    def __init__(self, model: NLLBDownloader, plugin_dir: str = ""):
+    def __init__(self, model: NLLBDownloader):
         self._model = model
-        self._plugin_dir = plugin_dir or os.environ.get("DECKY_PLUGIN_DIR", PLUGIN_DIR)
         self._loaded_model_dir = None
         self._python_path = None
         self._persistent_mode = False
 
-        bin_worker = os.path.join(
-            self._plugin_dir, "bin", "py_modules", "providers", "nllb_worker.py"
-        )
-        root_worker = os.path.join(
-            self._plugin_dir, "py_modules", "providers", "nllb_worker.py"
-        )
-        self._worker_script = bin_worker if os.path.exists(bin_worker) else root_worker
-
-        self._py_modules_path = worker_pythonpath(self._plugin_dir)
-        self._worker = Worker("NLLB", self._worker_script, env={"OMP_NUM_THREADS": "4", "MKL_NUM_THREADS": "4"})
+        self._py_modules_path = worker_pythonpath()
+        self._worker = Worker("NLLB", os.path.join(os.path.dirname(__file__), "nllb_worker.py"),
+                              env={"OMP_NUM_THREADS": "4", "MKL_NUM_THREADS": "4"})
 
     def _find_python_interpreter(self) -> Optional[str]:
         if self._python_path:
             return self._python_path
-        self._python_path = find_python(self._plugin_dir)
+        self._python_path = find_python()
         return self._python_path
 
     def _ensure_worker(self) -> bool:

@@ -171,7 +171,10 @@ def _load_image_rgba(image_path, max_dim):
     return img.tobytes(), w, h, scale_x, scale_y
 
 
-def _proto_to_regions(proto_bytes, scale_x, scale_y, min_confidence):
+MIN_CONFIDENCE = 0.5  # the engine's lines below this are mostly noise
+
+
+def _proto_to_regions(proto_bytes, scale_x, scale_y):
     # from this script's folder, not the plugin's providers package (that runs in Decky's Python, with aiohttp)
     from chrome_screen_ai_pb2 import VisualAnnotation
 
@@ -185,7 +188,7 @@ def _proto_to_regions(proto_bytes, scale_x, scale_y, min_confidence):
             continue
         # in [0,1]; drop low-confidence noise
         confidence = float(line.confidence) if line.confidence else 0.0
-        if confidence and confidence < min_confidence:
+        if confidence and confidence < MIN_CONFIDENCE:
             continue
 
         # Treat the proto's rotated rect as axis-aligned; good enough for the overlay.
@@ -204,7 +207,7 @@ def _proto_to_regions(proto_bytes, scale_x, scale_y, min_confidence):
     return regions
 
 
-def run_oneshot(image_path, model_dir, min_confidence):
+def run_oneshot(image_path, model_dir):
     debug = []
     try:
         debug.append(f"Python: {sys.version}")
@@ -218,7 +221,7 @@ def run_oneshot(image_path, model_dir, min_confidence):
         if proto is None:
             return {"error": "PerformOCR returned null", "regions": [], "debug": debug}
 
-        regions = _proto_to_regions(proto, sx, sy, min_confidence)
+        regions = _proto_to_regions(proto, sx, sy)
         return {"error": None, "regions": regions, "debug": debug}
 
     except Exception as e:
@@ -235,7 +238,7 @@ def _write_line(obj):
 def worker_main():
     """Long-lived worker: one JSON request per line on stdin, one JSON reply per line on stdout.
 
-      >>> {"type":"init","model_dir":"...","min_confidence":0.5}
+      >>> {"type":"init","model_dir":"..."}
       <<< {"type":"ready","error":null}
 
       >>> {"type":"recognize","image_path":"/tmp/x.png"}
@@ -244,7 +247,7 @@ def worker_main():
       >>> {"type":"shutdown"}
     """
     engine = None
-    cfg = {"model_dir": "", "min_confidence": 0.5}
+    cfg = {"model_dir": ""}
 
     try:
         while True:
@@ -291,7 +294,7 @@ def worker_main():
                     if proto is None:
                         _write_line({"type": "result", "error": "PerformOCR null", "regions": []})
                         continue
-                    regions = _proto_to_regions(proto, sx, sy, cfg["min_confidence"])
+                    regions = _proto_to_regions(proto, sx, sy)
                     _write_line({"type": "result", "error": None, "regions": regions})
                 except Exception as e:
                     import traceback
@@ -317,17 +320,16 @@ def main():
         worker_main()
         return
 
-    if len(sys.argv) < 4:
+    if len(sys.argv) < 3:
         print(json.dumps({
-            "error": "Usage: chrome_screen_ai_worker.py <image> <model_dir> <min_confidence>",
+            "error": "Usage: chrome_screen_ai_worker.py <image> <model_dir>",
             "regions": [],
         }))
         sys.exit(1)
 
     image_path = sys.argv[1]
     model_dir = sys.argv[2]
-    min_confidence = float(sys.argv[3])
-    print(json.dumps(run_oneshot(image_path, model_dir, min_confidence)))
+    print(json.dumps(run_oneshot(image_path, model_dir)))
 
 
 if __name__ == '__main__':

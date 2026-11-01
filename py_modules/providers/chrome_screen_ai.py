@@ -17,11 +17,11 @@ import zipfile
 from typing import List, Optional
 
 from .base import DownloadError, Downloader, OCRError, OCRProvider, TextRegion
-from .worker import PLUGIN_DIR, Worker, find_python, missing_message, popen_kwargs, worker_pythonpath
+from .worker import Worker, find_python, missing_message, popen_kwargs, worker_pythonpath
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MIN_CONFIDENCE = 0.5
+WORKER_SCRIPT = os.path.join(os.path.dirname(__file__), "chrome_screen_ai_worker.py")
 SCREENAI_LIBRARY = "chrome_screen_ai.dll"
 OCR_TIMEOUT_SECONDS = 30  # a screen takes about a second; a hung engine must not hold a paused game long
 WORKER_READY_TIMEOUT_SECONDS = 60
@@ -39,44 +39,19 @@ class ChromeScreenAIProvider(OCRProvider):
     """OCR provider backed by chrome_screen_ai.dll. Oneshot subprocess by
     default; persistent worker is opt-in for lower per-call latency."""
 
-
-    def __init__(
-        self,
-        plugin_dir: str = "",
-        model_dir: str = "",
-        min_confidence: float = DEFAULT_MIN_CONFIDENCE,
-    ):
-        self._plugin_dir = plugin_dir or os.environ.get("DECKY_PLUGIN_DIR", PLUGIN_DIR)
+    def __init__(self, model_dir: str = ""):
         # model_dir holds the DLL and TFLite files (ChromeScreenAIDownloader below).
         self._model_dir = model_dir
-        self._min_confidence = max(0.0, min(1.0, min_confidence))
         self._init_error: Optional[str] = None
         self._python_path: Optional[str] = None
 
         self._persistent_mode = False
         self._start_lock = threading.Lock()
 
-        # Prefer the extracted bin/py_modules copy (Decky Store install),
-        # fall back to root py_modules in dev.
-        bin_script = os.path.join(
-            self._plugin_dir, "bin", "py_modules", "providers",
-            "chrome_screen_ai_worker.py",
-        )
-        root_script = os.path.join(
-            self._plugin_dir, "py_modules", "providers",
-            "chrome_screen_ai_worker.py",
-        )
-        self._subprocess_script = bin_script if os.path.exists(bin_script) else root_script
-
-        self._py_modules_dir = worker_pythonpath(self._plugin_dir)
+        self._py_modules_dir = worker_pythonpath()
         # the engine picks its own thread count: don't pass the plugin's limits on
-        self._worker = Worker("Chrome Screen AI", self._subprocess_script, ["--worker"],
-                                      env={k: None for k in _THREAD_LIMIT_VARS})
-
-        logger.debug(
-            f"ChromeScreenAIProvider initialized "
-            f"(model_dir={self._model_dir}, min_confidence={min_confidence})"
-        )
+        self._worker = Worker("Chrome Screen AI", WORKER_SCRIPT, ["--worker"],
+                              env={k: None for k in _THREAD_LIMIT_VARS})
 
     @property
     def name(self) -> str:
@@ -85,19 +60,12 @@ class ChromeScreenAIProvider(OCRProvider):
     def _check_availability(self) -> bool:
         self._init_error = None
 
-        if not os.path.exists(self._subprocess_script):
-            self._init_error = (
-                f"Chrome Screen AI subprocess script missing: {self._subprocess_script}"
-            )
-            logger.warning(self._init_error)
-            return False
-
         so_path = os.path.join(self._model_dir or "", SCREENAI_LIBRARY)
         if not self._model_dir or not os.path.exists(so_path):
             self._init_error = "Chrome Screen AI engine not downloaded"
             return False
 
-        self._python_path = find_python(self._plugin_dir)
+        self._python_path = find_python()
         if not self._python_path:
             self._init_error = missing_message()
             logger.warning(self._init_error)
@@ -133,8 +101,7 @@ class ChromeScreenAIProvider(OCRProvider):
             if not self._worker.start(self._python_path, self._py_modules_dir):
                 return False
             start = time.time()
-            ready = self._worker.request({"type": "init", "model_dir": self._model_dir,
-                                          "min_confidence": self._min_confidence}, WORKER_READY_TIMEOUT_SECONDS)
+            ready = self._worker.request({"type": "init", "model_dir": self._model_dir}, WORKER_READY_TIMEOUT_SECONDS)
             if not ready or ready.get("error"):
                 logger.error(f"Chrome Screen AI worker init failed: {(ready or {}).get('error') or 'no answer'}")
                 self._worker.stop()
@@ -194,8 +161,7 @@ class ChromeScreenAIProvider(OCRProvider):
                 raise OCRError("On-device OCR is unavailable: no Python interpreter for it")
 
             cmd = [
-                self._python_path, '-S', self._subprocess_script,
-                temp_path, self._model_dir, str(self._min_confidence),
+                self._python_path, '-S', WORKER_SCRIPT, temp_path, self._model_dir,
             ]
             try:
                 result = subprocess.run(
