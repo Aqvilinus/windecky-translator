@@ -196,12 +196,10 @@ def _proto_to_regions(proto_bytes, scale_x, scale_y, min_confidence):
         right = int(round((x + w) * scale_x))
         bottom = int(round((y + h) * scale_y))
 
-        is_dialog = len(text) > 15 or any(p in text for p in '.?!,:;"')
         regions.append({
             "text": text,
             "rect": {"left": left, "top": top, "right": right, "bottom": bottom},
             "confidence": confidence,
-            "is_dialog": is_dialog,
         })
     return regions
 

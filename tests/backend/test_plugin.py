@@ -207,7 +207,7 @@ def test_no_network(backend, net):
     net.down |= {harness.GOOGLE_URL, harness.VISION_URL}
     shot = backend.call("take_screenshot", "Game")
     assert backend.call("recognize_text_file", shot["path"]) == {"error": "network_error", "message": "No internet connection"}
-    regions = [{"text": "Hallo Welt", "rect": {"left": 0, "top": 0, "right": 10, "bottom": 10}, "confidence": 1, "isDialog": False}]
+    regions = [{"text": "Hallo Welt", "rect": {"left": 0, "top": 0, "right": 10, "bottom": 10}, "confidence": 1}]
     assert backend.call("translate_text", regions, "en", "auto") == {"error": "network_error", "message": "No internet connection"}
 
 

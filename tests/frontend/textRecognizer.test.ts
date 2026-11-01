@@ -6,7 +6,7 @@ vi.mock('@decky/api', () => ({ callable: () => vi.fn() }));
 const { TextRecognizer } = await import('../../src/TextRecognizer');
 
 const box = (text: string, left: number, top: number, width: number, height = 20, confidence = 1) =>
-    ({ text, rect: { left, top, right: left + width, bottom: top + height }, isDialog: false, confidence });
+    ({ text, rect: { left, top, right: left + width, bottom: top + height }, confidence });
 
 describe('applyAutoGlue', () => {
     const recognizer = new TextRecognizer();

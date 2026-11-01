@@ -156,7 +156,6 @@ class TextRegion:
     text: str
     rect: Dict[str, int]  # left, top, right, bottom
     confidence: float = 0.0
-    is_dialog: bool = False
     translated_text: Optional[str] = None  # from an engine that translates while it reads (Gemini Vision)
 
     def to_dict(self) -> Dict:
@@ -165,7 +164,6 @@ class TextRegion:
             "text": self.text,
             "rect": self.rect,
             "confidence": self.confidence,
-            "isDialog": self.is_dialog
         }
         if self.translated_text is not None:
             d["translatedText"] = self.translated_text

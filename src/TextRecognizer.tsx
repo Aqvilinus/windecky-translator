@@ -10,7 +10,6 @@ export interface TextRegion {
         right: number;
         bottom: number;
     };
-    isDialog: boolean;
     confidence?: number;
     textColor?: string;
     fontSize?: number;
@@ -291,7 +290,6 @@ export class TextRecognizer {
             let combinedText = sorted[0].text;
             let combinedTranslatedText = sorted[0].translatedText ?? null;
             let combinedRect = { ...sorted[0].rect };
-            let isDialog = sorted[0].isDialog;
             let confidenceSum = sorted[0].confidence ?? 0;
             let confidenceCount = sorted[0].confidence !== undefined ? 1 : 0;
 
@@ -313,7 +311,6 @@ export class TextRecognizer {
                     bottom: Math.max(combinedRect.bottom, region.rect.bottom),
                 };
 
-                isDialog = isDialog || region.isDialog;
                 if (region.confidence !== undefined) {
                     confidenceSum += region.confidence;
                     confidenceCount++;
@@ -323,7 +320,6 @@ export class TextRecognizer {
             const result: TextRegion = {
                 text: combinedText,
                 rect: combinedRect,
-                isDialog,
             };
             if (combinedTranslatedText !== null) {
                 result.translatedText = combinedTranslatedText;
@@ -351,28 +347,6 @@ export class TextRecognizer {
         }
 
         return " ";
-    }
-
-    private detectDialog(region: TextRegion): boolean {
-        if (region.isDialog) return true;
-
-        const text = region.text;
-        let score = 0;
-
-        if (/"[^"]+"/g.test(text) || /[\u00AB\u00BB]/g.test(text)) score += 2;
-
-        const excl = (text.match(/!/g) || []).length;
-        const quest = (text.match(/\?/g) || []).length;
-        score += (excl + quest) * 0.5;
-
-        if (/[A-Z][^.!?]+[.!?]\s*"/.test(text) || /"[^"]+"\s*[A-Z][^.!?]+[.!?]/.test(text)) {
-            score += 2;
-        }
-
-        score += Math.min(2, text.length / 50);
-        if (text.includes('\n')) score += 1.5;
-
-        return score >= 3;
     }
 
     // A merged paragraph's rect (the union of its lines) can reach into its neighbours. Of two overlapping regions
@@ -482,15 +456,9 @@ export class TextRecognizer {
             return yCenterA - yCenterB;
         });
 
-        // on whole paragraphs: the cues (quotes, length, several lines) only show after merging
-        const annotated = paragraphs.map(p => ({
-            ...p,
-            isDialog: this.detectDialog(p),
-        }));
-
-        const resolved = this.resolveOverlaps(annotated);
-        if (resolved.length !== annotated.length) {
-            logger.debug('TextRecognizer', `Auto-glue: Overlap resolution reduced ${annotated.length} to ${resolved.length} regions`);
+        const resolved = this.resolveOverlaps(paragraphs);
+        if (resolved.length !== paragraphs.length) {
+            logger.debug('TextRecognizer', `Auto-glue: Overlap resolution reduced ${paragraphs.length} to ${resolved.length} regions`);
         }
         return resolved;
     }
