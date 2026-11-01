@@ -62,7 +62,7 @@ class BingTranslator:
 
     async def translate_lines(self, texts: List[str], src: str, tgt: str) -> List[Optional[str]]:
         """Translate texts with as few requests as possible; None for any text that failed."""
-        results: List[Optional[str]] = [t if not t or not t.strip() else None for t in texts]
+        results: List[Optional[str]] = [None] * len(texts)
         for chunk in chunk_indices(texts, MAX_CHARS, sep_chars=1):
             lines = [" ".join(texts[i].split()) for i in chunk]  # one line per text
             try:

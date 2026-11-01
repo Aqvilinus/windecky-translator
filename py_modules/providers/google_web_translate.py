@@ -51,9 +51,6 @@ class GoogleWebTranslateProvider(TranslationProvider):
                     results[i] = t.strip()
             else:
                 logger.debug(f"Google returned {len(out)} lines for {len(chunk)}; Bing translates this chunk")
-        for i, t in enumerate(texts):
-            if not t or not t.strip():
-                results[i] = t
         return results
 
     @property
@@ -63,25 +60,17 @@ class GoogleWebTranslateProvider(TranslationProvider):
     def is_available(self, source_lang: str, target_lang: str) -> bool:
         return True
 
-    async def _translate_lines(self, texts: List[str], src: str, tgt: str) -> List[Optional[str]]:
-        """Google first (one request per batch), Bing for whatever Google didn't translate or while it is paused."""
+    async def translate_batch(self, texts: List[str], source_lang: str, target_lang: str) -> List[Optional[str]]:
+        """Google first (one request per batch), Bing for whatever Google didn't translate or while it is paused.
+        Failed items stay None so they aren't cached as real results."""
         results: List[Optional[str]] = [None] * len(texts)
         if time.time() >= self._google_paused_until:
-            results = await self._google_batch(texts, src, tgt)
-        missing = [i for i, r in enumerate(results) if r is None and texts[i] and texts[i].strip()]
+            results = await self._google_batch(texts, source_lang, target_lang)
+        missing = [i for i, r in enumerate(results) if r is None]
         if missing:
-            for i, t in zip(missing, await self._bing.translate_lines([texts[i] for i in missing], src, tgt)):
+            bing = await self._bing.translate_lines([texts[i] for i in missing], source_lang, target_lang)
+            for i, t in zip(missing, bing):
                 results[i] = t
-        return results
-
-    async def translate_batch(self, texts: List[str], source_lang: str, target_lang: str) -> List[str]:
-        """Failed items stay None so they aren't cached as real results."""
-        if not texts:
-            return texts
-
-        logger.debug(f"Batch translating {len(texts)} texts: {source_lang} -> {target_lang}")
-        results = await self._translate_lines(list(texts), source_lang, target_lang)
-        logger.debug(f"Batch translation complete: {len(results)} results")
         return results
 
     async def test_network(self) -> tuple:

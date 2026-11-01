@@ -219,10 +219,9 @@ class LLMTranslateProvider(TranslationProvider):
             logger.debug(f"{self.name} reply: {reply[:200]!r}")  # screen text: only with debug logging on
         return result
 
-    async def _translate_lines(self, texts: List[str], source_lang: str, target_lang: str) -> List[Optional[str]]:
+    async def translate_batch(self, texts: List[str], source_lang: str, target_lang: str) -> List[Optional[str]]:
         results: List[Optional[str]] = [None] * len(texts)
         sources: List[Optional[str]] = [None] * len(texts)
-        order = [i for i, t in enumerate(texts) if t and t.strip()]
         chunks = chunk_indices(texts, MAX_CHARS_PER_REQUEST, max_items=MAX_TEXTS_PER_REQUEST)
 
         for chunk in chunks:
@@ -244,24 +243,16 @@ class LLMTranslateProvider(TranslationProvider):
                 if t.strip():
                     results[i], sources[i] = t.strip(), SOURCE_LLM
 
-        missing = [i for i in order if results[i] is None]
+        missing = [i for i, r in enumerate(results) if r is None]
         if missing:
-            fallback = await self._fallback._translate_lines([texts[i] for i in missing], source_lang, target_lang)
+            fallback = await self._fallback.translate_batch([texts[i] for i in missing], source_lang, target_lang)
             for i, t in zip(missing, fallback):
                 results[i] = t
                 if t is not None:
                     sources[i] = SOURCE_FALLBACK
-        for i, t in enumerate(texts):
-            if not t or not t.strip():
-                results[i] = t
         out = Translations(results)
         out.sources = sources
         return out
-
-    async def translate_batch(self, texts: List[str], source_lang: str, target_lang: str) -> List[Optional[str]]:
-        if not texts:
-            return texts
-        return await self._translate_lines(list(texts), source_lang, target_lang)
 
     # -- settings UI helpers --
 
