@@ -100,20 +100,20 @@ def _is_source_copy_with_tail(src, out):
 
 
 def _output_script_mismatch(src, out, tgt_lang):
-    expected = unicode_scripts.flores_families(tgt_lang)
+    expected = unicode_scripts.flores_scripts(tgt_lang)
     if not expected:
         return False
     out_letters = sum(1 for c in out if c.isalpha())
     if out_letters < 4:
         return False
-    fams = unicode_scripts.letter_families(out)
-    in_target = sum(n for f, n in fams.items() if f in expected)
+    scripts = unicode_scripts.letter_scripts(out)
+    in_target = sum(n for s, n in scripts.items() if s in expected)
     if in_target / out_letters >= 0.5:
         return False
     src_letters = sum(1 for c in src if c.isalpha())
     if src_letters:
-        src_fams = unicode_scripts.letter_families(src)
-        if sum(n for f, n in src_fams.items() if f in expected) / src_letters >= 0.5:
+        src_scripts = unicode_scripts.letter_scripts(src)
+        if sum(n for s, n in src_scripts.items() if s in expected) / src_letters >= 0.5:
             return False
     return True
 

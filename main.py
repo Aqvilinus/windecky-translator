@@ -363,8 +363,8 @@ class Plugin:
         if self._setting("ocr_provider") == "windows_ocr" and self._setting("input_language") not in ("", "auto"):
             from providers.windows_ocr import WindowsOCRProvider, plugin_code
             if plugin_code(self._setting("input_language")) not in WindowsOCRProvider().get_supported_languages():
-                from providers.gemini_vision import LANG_NAMES
-                lang = LANG_NAMES.get(self._setting("input_language"), self._setting("input_language"))
+                from providers.base import LANGUAGE_NAMES
+                lang = LANGUAGE_NAMES.get(self._setting("input_language"), self._setting("input_language"))
                 return {"error": "model_not_available",
                         "message": f"No Windows OCR language pack for {lang}.\n"
                                    "Add it in Windows Settings or use On-Device (Chrome)"}

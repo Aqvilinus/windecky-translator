@@ -9,11 +9,10 @@ import re
 import time
 from typing import Dict, List, Optional
 
-from .base import (TranslationProvider, NetworkError, ApiKeyError, RateLimitError, Response,
+from .base import (LANGUAGE_NAMES, TranslationProvider, NetworkError, ApiKeyError, RateLimitError, Response,
                    api_error, chunk_indices, error_message, fetch, probe)
 from . import gemini_client
 from .google_web_translate import GoogleWebTranslateProvider
-from .gemini_vision import LANG_NAMES
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +51,7 @@ class Translations(list):
 
 
 def _lang_name(code: str) -> str:
-    return LANG_NAMES.get(code, code)
+    return LANGUAGE_NAMES.get(code, code)
 
 
 def _system_prompt(source_lang: str, target_lang: str) -> str:

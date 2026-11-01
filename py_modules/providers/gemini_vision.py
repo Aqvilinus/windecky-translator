@@ -11,6 +11,7 @@ from typing import List
 
 from . import gemini_client
 from .base import (
+    LANGUAGE_NAMES,
     OCRProvider,
     TextRegion,
     ApiKeyError,
@@ -40,23 +41,6 @@ REGIONS_SCHEMA = {
         "required": ["text", "translated_text", "box_2d"],
     },
 }
-
-# for the prompts
-LANG_NAMES = {
-    "auto": "auto-detect",
-    "en": "English", "ja": "Japanese", "ko": "Korean",
-    "zh-CN": "Simplified Chinese", "zh-TW": "Traditional Chinese",
-    "de": "German", "fr": "French", "es": "Spanish",
-    "it": "Italian", "pt": "Portuguese", "nl": "Dutch",
-    "pl": "Polish", "tr": "Turkish", "ro": "Romanian",
-    "vi": "Vietnamese", "fi": "Finnish", "ru": "Russian",
-    "uk": "Ukrainian", "el": "Greek", "th": "Thai",
-    "bg": "Bulgarian", "ar": "Arabic", "hi": "Hindi",
-    "id": "Indonesian", "ms": "Malay", "sv": "Swedish",
-    "da": "Danish", "no": "Norwegian", "cs": "Czech",
-    "hu": "Hungarian", "he": "Hebrew", "hr": "Croatian",
-}
-
 
 _SEPARATOR = re.compile(r'\s*,?\s*')
 
@@ -114,11 +98,11 @@ class GeminiVisionProvider(OCRProvider):
         )
 
     def _build_prompt(self, source_lang: str, target_lang: str) -> str:
-        tgt_name = LANG_NAMES.get(target_lang, target_lang)
+        tgt_name = LANGUAGE_NAMES.get(target_lang, target_lang)
 
         source_hint = ""
         if source_lang and source_lang != "auto":
-            src_name = LANG_NAMES.get(source_lang, source_lang)
+            src_name = LANGUAGE_NAMES.get(source_lang, source_lang)
             source_hint = f" The source language is {src_name}."
 
         prompt = (

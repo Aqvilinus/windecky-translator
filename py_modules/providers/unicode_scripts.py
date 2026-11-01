@@ -26,8 +26,8 @@ SCRIPT_RANGES = [
     ((0xAC00, 0xD7AF), "Hangul"),
 ]
 
-# FLORES-200 code suffix -> letter families that text in that language may use
-_SUFFIX_FAMILIES = {
+# FLORES-200 code suffix -> scripts that text in that language may use
+_SUFFIX_SCRIPTS = {
     "Latn": {"Latin"},
     "Cyrl": {"Cyrillic"},
     "Grek": {"Greek"},
@@ -40,41 +40,41 @@ _SUFFIX_FAMILIES = {
     "Hant": {"Han"},
 }
 
-CJK_FAMILIES = {"Hiragana", "Katakana", "Han"}
+CJK_SCRIPTS = {"Hiragana", "Katakana", "Han"}
 
 
-def family_of(char):
+def script_of(char):
     cp = ord(char)
-    for (lo, hi), fam in SCRIPT_RANGES:
+    for (lo, hi), script in SCRIPT_RANGES:
         if lo <= cp <= hi:
-            return fam
+            return script
     return None
 
 
-def letter_families(text):
+def letter_scripts(text):
     counts = {}
     for c in text:
         if not c.isalpha():
             continue
-        fam = family_of(c)
-        if fam:
-            counts[fam] = counts.get(fam, 0) + 1
+        script = script_of(c)
+        if script:
+            counts[script] = counts.get(script, 0) + 1
     return counts
 
 
-def dominant_family(text, min_letters=2, min_ratio=0.5):
+def dominant_script(text, min_letters=2, min_ratio=0.5):
     total = sum(1 for c in text if c.isalpha())
     if total < min_letters:
         return None
-    counts = letter_families(text)
+    counts = letter_scripts(text)
     if not counts:
         return None
-    fam = max(counts, key=counts.get)
-    if counts[fam] / total >= min_ratio:
-        return fam
+    script = max(counts, key=counts.get)
+    if counts[script] / total >= min_ratio:
+        return script
     return None
 
 
-def flores_families(code):
+def flores_scripts(code):
     suffix = code.rsplit("_", 1)[-1] if code else ""
-    return _SUFFIX_FAMILIES.get(suffix, set())
+    return _SUFFIX_SCRIPTS.get(suffix, set())

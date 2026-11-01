@@ -9,12 +9,12 @@ import unicodedata
 from typing import List
 
 from .base import DownloadError, Downloader, TranslationError, TranslationProvider
-from .unicode_scripts import CJK_FAMILIES, dominant_family, flores_families
+from .unicode_scripts import CJK_SCRIPTS, dominant_script, flores_scripts
 from .worker import Worker
 
 logger = logging.getLogger(__name__)
 
-NLLB_LANG_MAP = {
+_NLLB_CODES = {
     "en": "eng_Latn",
     "ja": "jpn_Jpan",
     "zh-CN": "zho_Hans",
@@ -120,10 +120,10 @@ _TRAILING_ENDERS = ".!?。！？।…"
 
 _BULLET_RE = re.compile(r"^(?:[-*•·▪●‣◦›»]|\d{1,3}[.)])(?:\s|$)")
 
-_FAMILY_LANGS = {}
-for _code, _nllb in NLLB_LANG_MAP.items():
-    for _fam in flores_families(_nllb):
-        _FAMILY_LANGS.setdefault(_fam, set()).add(_code)
+_SCRIPT_LANGS = {}
+for _code, _nllb in _NLLB_CODES.items():
+    for _script in flores_scripts(_nllb):
+        _SCRIPT_LANGS.setdefault(_script, set()).add(_code)
 
 _LID_MIN_LETTERS = 12
 _PLUGIN_TO_LID = {"zh-CN": "zh", "zh-TW": "zh", "no": "nb"}
@@ -197,14 +197,14 @@ def _append_terminal_punct(frag: str):
         return stripped, False
     if not stripped[-1].isalnum():
         return stripped, False
-    fam = dominant_family(stripped)
-    if fam in CJK_FAMILIES:
+    script = dominant_script(stripped)
+    if script in CJK_SCRIPTS:
         if len(stripped) <= 8:
             return stripped, False
         return stripped + "。", True
     if len(stripped.split()) <= 3:
         return stripped, False
-    if fam == "Devanagari":
+    if script == "Devanagari":
         return stripped + "।", True
     return stripped + ".", True
 
@@ -227,8 +227,8 @@ def _soft_wrap_joiner(prev: str, line: str):
             and prev[-1].isalpha() and prev[-1].islower()
             and len(line.split()) == 1):
         return " "
-    pf = dominant_family(prev)
-    if pf in CJK_FAMILIES and dominant_family(line) in CJK_FAMILIES and len(prev) >= 20:
+    pf = dominant_script(prev)
+    if pf in CJK_SCRIPTS and dominant_script(line) in CJK_SCRIPTS and len(prev) >= 20:
         return ""
     return None
 
@@ -255,22 +255,22 @@ def _lid_eligible(text: str) -> bool:
     letters = sum(1 for c in text if c.isalpha())
     if letters < _LID_MIN_LETTERS:
         return False
-    if dominant_family(text) not in CJK_FAMILIES and len(text.split()) < 2:
+    if dominant_script(text) not in CJK_SCRIPTS and len(text.split()) < 2:
         return False
     return True
 
 
 def _route_line(text: str, src_code: str, tgt_code: str):
-    src_fams = flores_families(NLLB_LANG_MAP.get(src_code, ""))
-    tgt_fams = flores_families(NLLB_LANG_MAP.get(tgt_code, ""))
-    fam = dominant_family(text)
-    if fam is None:
+    src_scripts = flores_scripts(_NLLB_CODES.get(src_code, ""))
+    tgt_scripts = flores_scripts(_NLLB_CODES.get(tgt_code, ""))
+    script = dominant_script(text)
+    if script is None:
         return "translate", src_code
-    if fam in src_fams:
+    if script in src_scripts:
         # Latin source can't be told from English (or a Latin target)
-        if fam == "Latin" and _lid_eligible(text):
+        if script == "Latin" and _lid_eligible(text):
             cands = list(dict.fromkeys(
-                [src_code, "en"] + ([tgt_code] if fam in tgt_fams else [])
+                [src_code, "en"] + ([tgt_code] if script in tgt_scripts else [])
             ))
             if len(cands) >= 2:
                 on = {c: ("translate", c) for c in cands}
@@ -279,9 +279,9 @@ def _route_line(text: str, src_code: str, tgt_code: str):
                 return "lid", {"cands": cands, "on": on,
                                "default": ("translate", src_code)}
         return "translate", src_code
-    if fam in tgt_fams:
+    if script in tgt_scripts:
         # Already target language
-        if fam == "Latin" and tgt_code != "en" and _lid_eligible(text):
+        if script == "Latin" and tgt_code != "en" and _lid_eligible(text):
             return "lid", {"cands": [tgt_code, "en"],
                            "on": {"en": ("translate", "en"),
                                   tgt_code: ("passthrough", None)},
@@ -289,9 +289,9 @@ def _route_line(text: str, src_code: str, tgt_code: str):
         return "passthrough", None
     # Latin text on a non-Latin source/target pair is almost always English
     # (Steam UI, changelogs)
-    if fam == "Latin":
+    if script == "Latin":
         return "translate", "en"
-    langs = sorted(_FAMILY_LANGS.get(fam, ()))
+    langs = sorted(_SCRIPT_LANGS.get(script, ()))
     if len(langs) == 1:
         return "translate", langs[0]
     if langs and _lid_eligible(text):
@@ -426,8 +426,8 @@ class NLLBTranslateProvider(TranslationProvider):
         if source_lang == "auto":
             raise TranslationError("Offline translation needs a source language: select one in plugin settings")
 
-        src_nllb = NLLB_LANG_MAP.get(source_lang)
-        tgt_nllb = NLLB_LANG_MAP.get(target_lang)
+        src_nllb = _NLLB_CODES.get(source_lang)
+        tgt_nllb = _NLLB_CODES.get(target_lang)
         if not src_nllb or not tgt_nllb:
             raise TranslationError(f"Offline translation does not support {source_lang} -> {target_lang}")
 
@@ -470,7 +470,7 @@ class NLLBTranslateProvider(TranslationProvider):
                     lines_meta.append({"orig": line, "sep": sep,
                                        "kind": "translate",
                                        "frags": _build_frags(body, was_caps),
-                                       "tag": NLLB_LANG_MAP.get(route) or src_nllb})
+                                       "tag": _NLLB_CODES.get(route) or src_nllb})
             slots.append({"source": t, "kind": "translate",
                           "start": start, "end": len(lines_meta)})
 
@@ -504,7 +504,7 @@ class NLLBTranslateProvider(TranslationProvider):
                     lm["kind"] = "passthrough"
                 else:
                     lm["kind"] = "translate"
-                    lm["tag"] = NLLB_LANG_MAP.get(code) or src_nllb
+                    lm["tag"] = _NLLB_CODES.get(code) or src_nllb
                     lm["frags"] = _build_frags(lm["body"], lm["caps"])
 
         # Dedupe identical fragments (repeated UI strings, names, HP/Lv labels)

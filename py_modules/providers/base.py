@@ -18,6 +18,22 @@ import aiohttp  # Decky Loader's own: its server runs on it, so the plugin doesn
 
 logger = logging.getLogger(__name__)
 
+# The plugin's language codes in English: for the AI engines' prompts and the plugin's messages
+LANGUAGE_NAMES = {
+    "auto": "auto-detect",
+    "en": "English", "ja": "Japanese", "ko": "Korean",
+    "zh-CN": "Simplified Chinese", "zh-TW": "Traditional Chinese",
+    "de": "German", "fr": "French", "es": "Spanish",
+    "it": "Italian", "pt": "Portuguese", "nl": "Dutch",
+    "pl": "Polish", "tr": "Turkish", "ro": "Romanian",
+    "vi": "Vietnamese", "fi": "Finnish", "ru": "Russian",
+    "uk": "Ukrainian", "el": "Greek", "th": "Thai",
+    "bg": "Bulgarian", "ar": "Arabic", "hi": "Hindi",
+    "id": "Indonesian", "ms": "Malay", "sv": "Swedish",
+    "da": "Danish", "no": "Norwegian", "cs": "Czech",
+    "hu": "Hungarian", "he": "Hebrew", "hr": "Croatian",
+}
+
 
 class NetworkError(Exception):
     pass
