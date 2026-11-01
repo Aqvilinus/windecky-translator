@@ -8,7 +8,7 @@ import { backend } from './backend';
 import { Router } from '@decky/ui';
 import { ImageState, OverlayState } from './Overlay';
 import type { GameTranslatorLogic } from './Translator';
-import { logger } from './Logger';
+import { logger } from './log';
 
 // The translate/close hotkey (py_modules/windows/hotkey.py HOTKEY)
 export const WINDOWS_HOTKEY = 'Ctrl+Alt+T';

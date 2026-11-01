@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useReducer } from 'react';
 import { backend, BackendSettings } from './backend';
 import { GameTranslatorLogic } from './Translator';
-import { logger } from './Logger';
+import { logger } from './log';
 import { LLM_DEFAULT_MODELS } from './llm';
 import type { OcrEngine, TranslationEngine } from './providers';
 
@@ -116,7 +116,7 @@ function applyToLogic(logic: GameTranslatorLogic, key: keyof SavedSettings, valu
         case 'inputLanguage': logic.setInputLanguage(value); break;
         case 'targetLanguage': logic.setTargetLanguage(value); break;
         case 'enabled': logic.setEnabled(value); break;
-        case 'debugMode': logger.setEnabled(value); break;
+        case 'debugMode': logger.setDebugEnabled(value); break;
         case 'fontScale': logic.setFontScale(value); break;
         case 'ocrProvider': logic.setOcrProvider(value); break;
         case 'translationProvider': logic.setTranslationProvider(value); break;
@@ -131,7 +131,7 @@ export async function loadSettingsIntoLogic(logic: GameTranslatorLogic): Promise
     try {
         const settings = settingsFromBackend(await backend.getAllSettings());
         for (const key of SAVED_KEYS) applyToLogic(logic, key, settings[key]);
-        logger.logObject('SettingsContext', 'Settings', settings);
+        logger.debug('SettingsContext', 'Settings', settings);
         return settings;
     } catch (error) {
         logger.error('SettingsContext', 'Error loading settings', error);

@@ -4,7 +4,7 @@ import { TextRecognizer } from "./TextRecognizer";
 import { BackendError, NetworkError, ApiKeyError } from "./errors";
 import { TextTranslator } from "./TextTranslator";
 import { ImageState } from "./Overlay";
-import { logger } from "./Logger";
+import { logger } from "./log";
 import { OCR_ENGINE_LABELS, TRANSLATION_ENGINE_LABELS } from "./providers";
 
 const NO_TEXT_MESSAGE_MS = 2000;

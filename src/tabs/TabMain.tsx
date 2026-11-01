@@ -13,7 +13,7 @@ import { useSettings } from "../SettingsContext";
 import type { ModelKind, ModelStatus } from "../backend";
 import { GameTranslatorLogic } from "../Translator";
 import { LLM_BACKEND_LABELS, llmModel } from "../llm";
-import { logger } from "../Logger";
+import { logger } from "../log";
 import { closeAllSideMenus } from "../windows";
 
 const StatusDot: VFC<{ ok: boolean }> = ({ ok }) => (

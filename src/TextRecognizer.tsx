@@ -1,5 +1,5 @@
 import { backend } from "./backend";
-import { logger } from "./Logger";
+import { logger } from "./log";
 import { throwIfBackendError } from "./errors";
 
 export interface TextRegion {

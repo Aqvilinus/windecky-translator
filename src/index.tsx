@@ -22,7 +22,7 @@ import { GameTranslatorLogic } from "./Translator";
 import { forwardOverlayToBackend, listenForHotkey, listenForProblems, showStartupErrors } from "./windows";
 import { adoptActivePlugin } from "./deckyState";
 import { SettingsProvider, useSettings, loadSettingsIntoLogic } from "./SettingsContext";
-import { logger } from "./Logger";
+import { logger } from "./log";
 import { WEB_OCR_ENGINES, WEB_TRANSLATION_ENGINES } from "./providers";
 
 import { TabMain, TabTranslation, TabControls } from "./tabs";
