@@ -249,7 +249,7 @@ export default definePlugin(() => {
     // Create logic instance
     const logic = new GameTranslatorLogic(imageState);
 
-    // The backend draws the overlay over the game window (py_modules/winport/overlay.py)
+    // The backend draws the overlay over the game window (py_modules/overlay.py)
     const stopForwarding = forwardOverlayToBackend(imageState, logic.dismiss);
     const stopHotkey = listenForHotkey(logic);
     const stopProblems = listenForProblems(PLUGIN_NAME);

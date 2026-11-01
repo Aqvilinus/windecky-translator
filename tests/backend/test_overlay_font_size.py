@@ -1,11 +1,11 @@
-"""Label font size of the Windows overlay (py_modules/winport/overlay.py font_size_for): the wrapped text fits."""
+"""Label font size of the Windows overlay (py_modules/overlay.py font_size_for): the wrapped text fits."""
 import sys
 import unittest
 
 if sys.platform != "win32":
-    raise unittest.SkipTest("winport is Windows-only")
+    raise unittest.SkipTest("Windows-only")
 
-from winport.overlay import LINE_SPACING, font_for, font_size_for, wrap  # noqa: E402
+from overlay import LINE_SPACING, font_for, font_size_for, wrap  # noqa: E402
 
 CASES = [  # text, width, height of the label's room
     ("Продолжить", 230, 40),

@@ -3,7 +3,7 @@
 - Decky's module (decky) is a stand-in with the directories in a temporary folder, a logger, and
   emit() recording the events sent to the frontend.
 - The Windows parts behind main.py's own names are replaced: the capture returns a test image of a game screen, the
-  overlay window records what it is told and draws it with the real winport.overlay.render (Pillow) into an image,
+  overlay window records what it is told and draws it with the real overlay.render (Pillow) into an image,
   the hotkey and the process pause record their calls.
 - HTTP: the engines' session is replaced (Network): Google Translate, Bing and Google Cloud Vision answer from the stubs below;
   any other request fails like a dead network, so no test can reach a real service.
@@ -68,7 +68,7 @@ def import_main():
 
 # ---------------------------------------------------------------- the game screen
 def font(size=28):
-    from winport.overlay import font_for
+    from overlay import font_for
     return font_for("Willkommen", size)
 
 
@@ -95,13 +95,13 @@ def screen_image(width=640, height=360):
 
 
 def capture_of(img, left=100, top=50):
-    from winport.capture import Capture
+    from windows.capture import Capture
     return Capture(image=img, width=img.width, height=img.height, left=left, top=top, hwnd=GAME_HWND)
 
 
 # ---------------------------------------------------------------- Windows parts
 class FakeOverlay:
-    """winport.overlay.Overlay: records show/hide and draws each shown state with the real render()."""
+    """windows.overlay_window.Overlay: records show/hide and draws each shown state with the real render()."""
     instances = []
 
     def __init__(self, on_error=None):
@@ -125,7 +125,7 @@ class FakeOverlay:
 
     def image(self, index=-1, scale=1.0):
         """What the overlay window would show for the index'th show(), on a monitor the size of the capture."""
-        from winport.overlay import render
+        from overlay import render
         state, target = self.shown[index]
         tgt = dict(target)
         mon = (tgt["left"], tgt["top"], tgt["width"], tgt["height"])
@@ -150,7 +150,7 @@ class FakeHotkey:
 
 
 class FakeProcesses:
-    """winport.pause: the game's pause (NtSuspendProcess) recorded instead of done."""
+    """windows.pause: the game's pause (NtSuspendProcess) recorded instead of done."""
 
     def __init__(self):
         self.suspended = set()

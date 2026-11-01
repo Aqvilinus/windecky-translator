@@ -1,7 +1,7 @@
 // Windows port (Decky Loader for Windows).
 // On SteamOS gamescope keeps Steam's UI, and with it the translation overlay, above the game. On Windows Big Picture
 // is a normal window behind the game, so the backend draws the overlay in a click-through window of its own
-// (py_modules/winport/overlay.py). This forwards every ImageState change to it; the screenshot itself stays in the
+// (py_modules/overlay.py). This forwards every ImageState change to it; the screenshot itself stays in the
 // backend, which took it.
 import { addEventListener, removeEventListener, toaster } from '@decky/api';
 import { backend } from './backend';
@@ -10,7 +10,7 @@ import { ImageState, OverlayState } from './Overlay';
 import type { GameTranslatorLogic } from './Translator';
 import { logger } from './Logger';
 
-// The translate/close hotkey (py_modules/winport/hotkey.py HOTKEY)
+// The translate/close hotkey (py_modules/windows/hotkey.py HOTKEY)
 export const WINDOWS_HOTKEY = 'Ctrl+Alt+T';
 
 // How often the side menus are checked while a translation is on screen
@@ -47,7 +47,7 @@ export function forwardOverlayToBackend(state: ImageState, dismiss: () => void):
     };
 }
 
-// Ctrl+Alt+T (py_modules/winport/hotkey.py): translate the screen, or dismiss the translation (or the
+// Ctrl+Alt+T (py_modules/windows/hotkey.py): translate the screen, or dismiss the translation (or the
 // translation in progress) when it is up. Windows only gives XInput to the foreground app, so on most setups this
 // is the shortcut; a controller button can be mapped to it (OneXConsole, Steam Input).
 export function listenForHotkey(logic: GameTranslatorLogic): () => void {

@@ -1,4 +1,4 @@
-"""Pause Game While Translating (py_modules/winport/pause.py), with psutil's processes replaced by fakes."""
+"""Pause Game While Translating (py_modules/windows/pause.py), with psutil's processes replaced by fakes."""
 import json
 import os
 import sys
@@ -7,11 +7,11 @@ import unittest
 from unittest import mock
 
 if sys.platform != "win32":
-    raise unittest.SkipTest("winport is Windows-only")
+    raise unittest.SkipTest("Windows-only")
 
 import psutil  # noqa: E402
 
-from winport import pause  # noqa: E402
+from windows import pause  # noqa: E402
 
 GAME, CHILD, BROWSER = 100, 101, 200
 

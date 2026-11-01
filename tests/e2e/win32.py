@@ -31,7 +31,7 @@ user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
 user32.IsIconic.argtypes = [wintypes.HWND]
 WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
 
-OVERLAY_CLASS = "DeckyTranslatorOverlay"  # py_modules/winport/overlay.py CLASS_NAME
+OVERLAY_CLASS = "DeckyTranslatorOverlay"  # py_modules/windows/overlay_window.py CLASS_NAME
 
 
 def title(hwnd):

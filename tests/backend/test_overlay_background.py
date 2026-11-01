@@ -1,16 +1,16 @@
-"""Label background colour of the Windows overlay (py_modules/winport/overlay.py _background)."""
+"""Label background colour of the Windows overlay (py_modules/overlay.py _background)."""
 import sys
 import unittest
 
 
 if sys.platform != "win32":
-    raise unittest.SkipTest("winport is Windows-only")
+    raise unittest.SkipTest("Windows-only")
 try:
     from PIL import Image, ImageDraw
 except ImportError:
     raise unittest.SkipTest("Pillow is not installed")
 
-from winport.overlay import _background  # noqa: E402
+from overlay import _background  # noqa: E402
 
 
 class Background(unittest.TestCase):

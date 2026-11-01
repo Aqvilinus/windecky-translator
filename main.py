@@ -121,29 +121,29 @@ except (OSError, ValueError):
 logger.info(f"WinDecky Translator v{_plugin_version} starting")
 
 
-# The capture's name for the frontend (no file is written; suspended.json of winport/pause.py lives here too)
+# The capture's name for the frontend (no file is written; suspended.json of windows/pause.py lives here too)
 SCREENSHOT_DIR = os.path.join(tempfile.gettempdir(), "decky-translator")
 # What keeps parts of the plugin from working, for the frontend to show (get_boot_status). Capture and overlay load
 # compiled modules (winrt, Pillow) built for one Python version into Decky's own interpreter: after a Decky update
 # that changes its Python they fail to import, and the rest of the plugin should still load and say why.
 _BOOT_ERRORS = []
-# Decky Loader for Windows: capture, hotkey, overlay and pause are in py_modules/winport
+# Decky Loader for Windows: capture, hotkey, overlay and pause are in py_modules/windows
 if sys.version_info[:2] != (3, 14):
     _BOOT_ERRORS.append(f"Decky Loader runs Python {sys.version_info[0]}.{sys.version_info[1]}, this build of the "
                         "plugin was made for 3.14: update the plugin")
 try:
-    from winport.capture import capture_foreground, encode_png
+    from windows.capture import capture_foreground, encode_png
 except Exception as _e:  # noqa: BLE001 - ImportError, or OSError from a DLL that won't load
     capture_foreground = encode_png = None
     _BOOT_ERRORS.append(f"Screen capture is unavailable: {_e}")
 try:
-    from winport.overlay import Overlay
+    from windows.overlay_window import Overlay
 except Exception as _e:  # noqa: BLE001
     Overlay = None
     _BOOT_ERRORS.append(f"The translation overlay is unavailable: {_e}")
-from winport.hotkey import Hotkey  # ctypes only
+from windows.hotkey import Hotkey  # ctypes only
 try:
-    from winport import pause as game_pause
+    from windows import pause as game_pause
 except Exception as _e:  # noqa: BLE001
     game_pause = None
     _BOOT_ERRORS.append(f"Pause Game While Translating is unavailable: {_e}")
@@ -311,7 +311,7 @@ class Plugin:
             return {"error": str(e)}
 
     async def take_screenshot(self, app_name: str = ""):
-        """Capture the foreground window (winport/capture.py) and remember where it is for the overlay.
+        """Capture the foreground window (windows/capture.py) and remember where it is for the overlay.
         {"path": name for recognize_text_file} or {"path": "", "error": why nothing was captured}."""
         if self._capturing:
             return {"path": "", "error": "A capture is already running"}
@@ -340,7 +340,7 @@ class Plugin:
         finally:
             self._capturing = False
 
-    # Windows: the frontend sends upstream's overlay state on every change; winport/overlay.py draws it over the
+    # Windows: the frontend sends upstream's overlay state on every change; overlay.py draws it over the
     # captured window (Steam's UI can't sit over other windows on Windows)
     async def native_overlay_update(self, state):
         try:
@@ -418,7 +418,7 @@ class Plugin:
 
     async def get_clipboard_text(self):
         """Text on the Windows clipboard, for the Paste button of the key dialogs."""
-        from winport import clipboard
+        from windows import clipboard
         return clipboard.get_text()
 
     async def get_boot_status(self):
