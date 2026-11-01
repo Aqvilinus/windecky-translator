@@ -121,7 +121,6 @@ class Plugin:
 
     _overlay = None
     _overlay_visible = False
-    _capturing = False
     _capture = None  # the last capture: the window it came from (for the overlay) and its pixels until OCR
     _capture_id = 0
     _hotkey = None
@@ -245,12 +244,9 @@ class Plugin:
     async def capture_screen(self):
         """{"id": n} for recognize_capture, or {"error": why nothing was captured}. The pixels stay here: the
         overlay window, not the frontend, shows them."""
-        if self._capturing:
-            return {"error": "A capture is already running"}
-        self._capturing = True
+        if capture_foreground is None:
+            return {"error": "Screen capture is unavailable: see the plugin's start-up message"}
         try:
-            if capture_foreground is None:
-                return {"error": "Screen capture is unavailable: see the plugin's start-up message"}
             cap = await capture_foreground()
             if cap is None:
                 return {"error": "No game window in front to capture"}
@@ -261,8 +257,6 @@ class Plugin:
         except Exception as e:  # noqa: BLE001 - reported to the user, details in the log
             logger.exception("Screenshot error")
             return {"error": f"Screen capture failed: {e}"}
-        finally:
-            self._capturing = False
 
     # Windows: the frontend sends upstream's overlay state on every change; overlay.py draws it over the
     # captured window (Steam's UI can't sit over other windows on Windows)
