@@ -439,14 +439,7 @@ class NLLBTranslateProvider(TranslationProvider):
 
         load_result = self._load_model()
         if not load_result.get("ok"):
-            error = load_result.get("error", "Unknown error")
-            logger.error(f"Failed to load NLLB model: {error}")
-            self._kill_worker()
-            if not self._ensure_worker():
-                raise TranslationError("Offline translation could not start (details in the plugin log)")
-            load_result = self._load_model()
-            if not load_result.get("ok"):
-                raise TranslationError(f"Offline model failed to load: {load_result.get('error', 'unknown error')}")
+            raise TranslationError(f"Offline model failed to load: {load_result['error']}")
 
         slots = []
         lines_meta = []
@@ -499,7 +492,7 @@ class NLLBTranslateProvider(TranslationProvider):
             langs = resp.get("langs") if resp.get("ok") else None
             for j, lm in enumerate(pending):
                 detected = None
-                if isinstance(langs, list) and j < len(langs) and langs[j]:
+                if langs and langs[j]:
                     detected = lid_maps[j].get(langs[j])
                 action = lm["spec"]["on"].get(detected) if detected else None
                 if action is None:
@@ -555,23 +548,13 @@ class NLLBTranslateProvider(TranslationProvider):
             if not result.get("ok"):
                 raise TranslationError(f"Offline translation failed: {result.get('error')}")
 
-            unique_translations = result.get("translations")
-            if not isinstance(unique_translations, list) or len(unique_translations) != len(unique_fragments):
-                logger.error(
-                    f"Worker returned malformed response: expected {len(unique_fragments)} "
-                    f"translations, got {len(unique_translations) if isinstance(unique_translations, list) else type(unique_translations).__name__}"
-                )
-                raise TranslationError("Offline translation gave an unreadable answer (details in the plugin log)")
-            fallback_flags = result.get("fallbacks")
-            if not isinstance(fallback_flags, list) or len(fallback_flags) != len(unique_fragments):
-                fallback_flags = [False] * len(unique_fragments)
-
-            token_counts = result.get("token_counts") or []
-            if token_counts:
-                logger.debug(f"  CT2 token counts: {token_counts}")
+            unique_translations = result["translations"]
+            fallback_flags = result["fallbacks"]
+            token_counts = result["token_counts"]
+            logger.debug(f"  CT2 token counts: {token_counts}")
             for i, tc in enumerate(token_counts):
                 # Output pinned at the decoding cap means the tail was cut off
-                if tc.get("output", 0) >= min(32 + 3 * tc.get("input", 0), 256):
+                if tc["output"] >= min(32 + 3 * tc["input"], 256):
                     logger.warning(
                         f"  CT2 possible truncation on fragment {i}: {unique_fragments[i][:80]}"
                     )
