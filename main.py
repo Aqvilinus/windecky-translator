@@ -2,9 +2,9 @@ import asyncio
 import functools
 import os
 import sys
+import shutil
 import traceback
 import time
-from datetime import datetime
 import logging
 import sqlite3
 import tarfile
@@ -13,43 +13,27 @@ import decky  # Decky Loader's plugin API (typings/decky.pyi)
 
 PLUGIN_DIR = decky.DECKY_PLUGIN_DIR
 
-# Decky Store installs ship the third-party packages as an archive: extracted before anything imports them
+# Decky downloads the third-party packages (package.json remote_binary, filled by scripts/build_windows.py) into bin/
+# as one archive and doesn't unpack it. Every install and update starts from an empty bin/.
 BIN_DIR = os.path.join(PLUGIN_DIR, "bin")
 DEPENDENCIES_ARCHIVE = os.path.join(BIN_DIR, "plugin-dependencies.tar.gz")
-EXTRACTION_MARKER = os.path.join(BIN_DIR, ".dependencies-extracted")
-# The archive (scripts/build_windows.py) holds py_modules (cp314 wheels) and python314 (the workers' interpreter)
+# The archive holds py_modules (cp314 wheels) and python314 (the workers' interpreter)
 BIN_PY_MODULES_DIR = os.path.join(BIN_DIR, "py_modules")
 BIN_PYTHON_DIR = os.path.join(BIN_DIR, "python314")
 
-def _should_extract_dependencies():
-    if not os.path.exists(DEPENDENCIES_ARCHIVE):
-        return False
-
-    if not os.path.exists(EXTRACTION_MARKER):
-        return True  # written only after an extraction succeeded
-
-    archive_mtime = os.path.getmtime(DEPENDENCIES_ARCHIVE)
-    marker_mtime = os.path.getmtime(EXTRACTION_MARKER)
-    if archive_mtime > marker_mtime:
-        return True  # the plugin was updated
-
-    if not all(os.path.exists(d) for d in [BIN_PY_MODULES_DIR, BIN_PYTHON_DIR]):
-        return True  # deleted since
-
-    return False
-
-if _should_extract_dependencies():
+if os.path.exists(DEPENDENCIES_ARCHIVE) and not os.path.isdir(BIN_PY_MODULES_DIR):
+    staging = os.path.join(BIN_DIR, "extracting")  # a start cut short leaves no half-extracted packages in place
     try:
-        print(f"[WinDecky Translator] Extracting dependencies from {DEPENDENCIES_ARCHIVE}...")
+        decky.logger.info(f"Extracting {DEPENDENCIES_ARCHIVE}")
+        for leftover in (staging, BIN_PYTHON_DIR):
+            shutil.rmtree(leftover, ignore_errors=True)
         with tarfile.open(DEPENDENCIES_ARCHIVE, "r:gz") as tar:
-            tar.extractall(path=BIN_DIR, filter="data")  # no links or paths out of BIN_DIR (3.14's default too)
-        with open(EXTRACTION_MARKER, "w", encoding="utf-8") as f:
-            f.write(f"Extracted at {datetime.now().isoformat()}\n")
-        print("[WinDecky Translator] Dependencies extracted successfully")
-    except Exception as e:
-        print(f"[WinDecky Translator] Failed to extract dependencies: {e}")
-        if os.path.exists(EXTRACTION_MARKER):
-            os.remove(EXTRACTION_MARKER)  # the next start retries
+            tar.extractall(path=staging, filter="data")  # no links or paths out of staging (3.14's default too)
+        os.replace(os.path.join(staging, "python314"), BIN_PYTHON_DIR)
+        os.replace(os.path.join(staging, "py_modules"), BIN_PY_MODULES_DIR)  # last: it marks a finished extraction
+        os.rmdir(staging)
+    except Exception as e:  # noqa: BLE001 - e.g. a full disk: the parts that need the packages report it
+        decky.logger.error(f"Could not extract the dependencies: {e}")
 
 # Decky puts the plugin's own py_modules on sys.path; the extracted third-party packages are ours to add
 if os.path.exists(BIN_PY_MODULES_DIR) and BIN_PY_MODULES_DIR not in sys.path:
