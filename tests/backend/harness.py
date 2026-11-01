@@ -148,24 +148,27 @@ class FakeHotkey:
 
 
 class FakeProcesses:
-    """windows.pause: the game's pause (NtSuspendProcess) recorded instead of done."""
+    """game_process: the game's pause recorded instead of done."""
 
     def __init__(self):
         self.suspended = set()
         self.log = []
 
-    def resume_leftovers(self):
-        self.log.append("resume_leftovers")
+    class SuspendError(Exception):
+        pass
 
-    def game_pid(self, hwnd):
-        return GAME_PID if hwnd == GAME_HWND else 0
+    def resume_after_restart(self):
+        self.log.append("resume_after_restart")
 
-    def suspend(self, pid):
-        self.log.append(("suspend", pid))
-        self.suspended.add(pid)
-        return True
+    def suspend(self, hwnd):
+        if self.suspended:
+            return
+        if hwnd != GAME_HWND:
+            raise self.SuspendError("this window isn't a game Steam started, so it keeps running")
+        self.log.append(("suspend", GAME_PID))
+        self.suspended.add(GAME_PID)
 
-    def any_suspended(self):
+    def is_suspended(self):
         return bool(self.suspended)
 
     def resume_all(self):
@@ -203,7 +206,7 @@ class FakeWindows:
 
     def install(self, main):
         seams = {"capture_foreground": self.capture_foreground, "OverlayWindow": self.overlay_cls,
-                 "Hotkey": self._make_hotkey, "game_pause": self.processes}
+                 "Hotkey": self._make_hotkey, "game_process": self.processes}
         for name, value in seams.items():
             self._saved[name] = getattr(main, name)
             setattr(main, name, value)
@@ -342,7 +345,7 @@ class Backend:
         """_unload without closing main.py's log files (they belong to the module, which stays imported)."""
         p = self.plugin
         if p:
-            self.main.game_pause.resume_all()
+            self.main.game_process.resume_all()
             if p._providers:
                 p._providers.shutdown()
             if p._translation_cache:

@@ -73,7 +73,6 @@ CLASS_NAME = "DeckyTranslatorOverlay"
 TICK_SECONDS = 0.2
 
 
-
 class WNDCLASSW(ctypes.Structure):
     _fields_ = [("style", wintypes.UINT), ("lpfnWndProc", WNDPROC), ("cbClsExtra", ctypes.c_int),
                 ("cbWndExtra", ctypes.c_int), ("hInstance", wintypes.HINSTANCE), ("hIcon", wintypes.HICON),

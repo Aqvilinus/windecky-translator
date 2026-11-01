@@ -5,7 +5,6 @@
   hotkey.py          Ctrl+Alt+T as a system-wide hotkey (Windows gives controller input only to the app in front, so
                      the shortcut is a key a controller button can be mapped to)
   clipboard.py       text on the clipboard, for the Paste button of the key dialogs
-  pause.py           Pause Game While Translating (moves out to game_process.py)
 
 The process is made per-monitor DPI aware once (each Decky plugin backend is its own process), so window rectangles,
 captured frames and the overlay all use real screen pixels.

@@ -7,7 +7,7 @@ version = "1.0.0"
 requires-python = "==3.14.*"
 dependencies = [
     "Pillow==13.0.0",
-    "psutil==7.2.2",  # Pause Game While Translating: the game's processes (windows/pause.py)
+    "psutil==7.2.2",  # Pause Game While Translating: the game's processes (game_process.py)
     # pywinrt: Windows.Graphics.Capture (screenshots), Windows.Media.Ocr (on-device OCR)
     "winrt-runtime==4.0.3",
     "winrt-Windows.Foundation==4!10.0.28000.2705",

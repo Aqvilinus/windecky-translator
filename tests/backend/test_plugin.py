@@ -32,7 +32,7 @@ def translate_screen(backend):
 
 # ---------------------------------------------------------------- start and settings
 def test_start_on_windows(backend, windows):
-    assert windows.processes.log[0] == "resume_leftovers"  # a game an earlier run paused is resumed first
+    assert windows.processes.log[0] == "resume_after_restart"  # a game an earlier run paused is resumed first
     assert windows.hotkey.enabled is True
     s = backend.call("get_all_settings")
     assert s["ocr_provider"] == "googlecloud" and s["translation_provider"] == "freegoogle" and s["enabled"] is True
@@ -279,7 +279,9 @@ def test_pause_game_while_translating(start, windows, net):
 def test_a_game_that_cannot_be_paused_is_reported_once(start, windows, net, main):
     b = start({"pause_game_on_overlay": True})
     _, _, translated = translate_screen(b)
-    windows.processes.suspend = lambda pid: False  # e.g. access denied
+    def refused(hwnd):
+        raise windows.processes.SuspendError("Windows didn't let the plugin pause this game (details in the plugin log)")
+    windows.processes.suspend = refused
 
     async def show_twice():
         for _ in range(2):

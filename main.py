@@ -121,7 +121,7 @@ except (OSError, ValueError):
 logger.info(f"WinDecky Translator v{_plugin_version} starting")
 
 
-# The capture's name for the frontend (no file is written; suspended.json of windows/pause.py lives here too)
+# The capture's name for the frontend (no file is written; suspended.json of game_process.py lives here too)
 SCREENSHOT_DIR = os.path.join(tempfile.gettempdir(), "decky-translator")
 # What keeps parts of the plugin from working, for the frontend to show (get_boot_status). Capture and overlay load
 # compiled modules (winrt, Pillow) built for one Python version into Decky's own interpreter: after a Decky update
@@ -143,9 +143,9 @@ except Exception as _e:  # noqa: BLE001
     _BOOT_ERRORS.append(f"The translation overlay is unavailable: {_e}")
 from windows.hotkey import Hotkey  # ctypes only
 try:
-    from windows import pause as game_pause
+    import game_process
 except Exception as _e:  # noqa: BLE001
-    game_pause = None
+    game_process = None
     _BOOT_ERRORS.append(f"Pause Game While Translating is unavailable: {_e}")
 for _error in _BOOT_ERRORS:
     logger.error(_error)
@@ -374,15 +374,12 @@ class Plugin:
     # so the screenshot shows it running) and everything paused is resumed when the translation is hidden, however
     # it was started (Ctrl+Alt+T, the side menu, a controller shortcut) and even if the game exited meanwhile.
     def _pause_captured_game(self):
-        if not game_pause:
+        if not game_process:
             return  # reported at start (_BOOT_ERRORS)
-        pid = game_pause.game_pid((self._capture_target or {}).get("hwnd"))
-        if not pid:
-            self._report_pause_problem("Pause Game While Translating: this window isn't a game Steam started, "
-                                       "so it keeps running")
-        elif not game_pause.suspend(pid):
-            self._report_pause_problem("Pause Game While Translating: Windows didn't let the plugin pause this game "
-                                       "(details in the plugin log)")
+        try:
+            game_process.suspend((self._capture_target or {}).get("hwnd"))
+        except game_process.SuspendError as e:
+            self._report_pause_problem(f"Pause Game While Translating: {e}")
 
     def _report_pause_problem(self, message):
         """A toast once per kind of problem, not on every translation."""
@@ -393,8 +390,8 @@ class Plugin:
             self._emit("translator_problem", message)
 
     def _resume_paused_games(self):
-        if game_pause and game_pause.any_suspended():
-            game_pause.resume_all()
+        if game_process:
+            game_process.resume_all()
 
     # Windows: Ctrl+Alt+T in a game (hotkey thread) -> the frontend translates or dismisses (src/windows.ts)
     def _emit(self, event, *args):
@@ -682,8 +679,8 @@ class Plugin:
         """Windows parts, first and each on its own: a failure anywhere else in the start must not leave a game paused
         by an earlier run or the shortcut dead."""
         try:
-            if game_pause:
-                game_pause.resume_leftovers()
+            if game_process:
+                game_process.resume_after_restart()
         except Exception as e:
             logger.error(f"Could not resume games left paused: {e}")
         self._loop = asyncio.get_running_loop()
