@@ -12,7 +12,7 @@ corepack pnpm run build
 uv run python scripts/build_windows.py --version dev --skip-frontend
 ```
 
-The last command builds `out/plugin-dependencies.tar.gz`; copy it into `bin/`, and the plugin unpacks it on its next start. Installing a release zip over a clone replaces the clone.
+The last command builds `out/plugin-dependencies.tar.gz`; copy it into `bin/`, and the plugin unpacks it on its next start. Don't install a release zip over a clone: Decky deletes the plugin folder first, and the clone with it.
 
 `uv lock --upgrade` updates the Python packages in `uv.lock` (the versions are in `pyproject.toml`).
 
@@ -20,12 +20,12 @@ The last command builds `out/plugin-dependencies.tar.gz`; copy it into `bin/`, a
 
 ```powershell
 corepack pnpm run typecheck
-corepack pnpm test      # tests/frontend: every backend method the frontend calls exists in main.py
+corepack pnpm test      # tests/frontend: the frontend's logic, and every backend method it calls exists in main.py
 uv run pytest           # tests/backend: main.py without Decky, Steam or a game, and single modules
 corepack pnpm test:e2e  # tests/e2e: the real device
 ```
 
-CI runs all but the last on every push. `test:e2e` is the check before a release: run it from the plugin folder Decky loads (it needs `bin/`), with Steam Big Picture and Decky Loader running and The Banner Saga installed (`E2E_APPID` and `E2E_WINDOW` pick another game). It starts the game, translates with Ctrl+Alt+T and the side menu button, reloads the plugin and checks the screen (screenshots go to `tests/e2e/artifacts`). It takes over the screen and keyboard for about a minute.
+CI runs all but the last on pull requests to main and on main. `test:e2e` is the check before a release: run it from the plugin folder Decky loads (it needs `bin/`), with Steam Big Picture and Decky Loader running and The Banner Saga installed (`E2E_APPID` and `E2E_WINDOW` pick another game). It starts the game, translates with Ctrl+Alt+T and the side menu button and checks the screen (screenshots go to `tests/e2e/artifacts`). It takes over the screen and keyboard for about a minute.
 
 ## Releases
 
