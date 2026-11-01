@@ -33,6 +33,7 @@ user32.GetAncestor.restype = wintypes.HWND
 user32.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
 GA_ROOT = 2
 DWMWA_EXTENDED_FRAME_BOUNDS = 9
+FRAME_TIMEOUT_SECONDS = 1.0
 
 _device = None
 
@@ -50,8 +51,7 @@ class Capture:
 def _frame_bounds(hwnd):
     """The window's visible bounds on screen, which is what Windows.Graphics.Capture captures."""
     r = wintypes.RECT()
-    if dwmapi.DwmGetWindowAttribute(wintypes.HWND(hwnd), DWMWA_EXTENDED_FRAME_BOUNDS, ctypes.byref(r), ctypes.sizeof(r)) != 0:
-        user32.GetWindowRect(wintypes.HWND(hwnd), ctypes.byref(r))
+    dwmapi.DwmGetWindowAttribute(wintypes.HWND(hwnd), DWMWA_EXTENDED_FRAME_BOUNDS, ctypes.byref(r), ctypes.sizeof(r))
     return r.left, r.top
 
 
@@ -63,21 +63,21 @@ def foreground_window():
     return int(hwnd)
 
 
-async def capture_window(hwnd, timeout=1.0):
+async def capture_window(hwnd):
     """One frame of the window as a SoftwareBitmap (BGRA8, premultiplied). The D3D device is made once; if it was lost
     (GPU reset, driver update, sometimes after sleep) the capture fails, and a new device is made for a second try."""
     global _device
     try:
-        return await _capture_window(hwnd, timeout)
+        return await _capture_window(hwnd)
     except TimeoutError:
         raise
     except Exception as e:  # noqa: BLE001 - any WinRT failure: retry once on a fresh device
         logger.warning("capture failed (%r), retrying with a new D3D device", e)
         _device = None
-        return await _capture_window(hwnd, timeout)
+        return await _capture_window(hwnd)
 
 
-async def _capture_window(hwnd, timeout):
+async def _capture_window(hwnd):
     global _device
     if _device is None:
         _device = create_direct3d11_device()
@@ -95,7 +95,7 @@ async def _capture_window(hwnd, timeout):
         except Exception:  # noqa: BLE001
             pass
         session.start_capture()
-        deadline = time.monotonic() + timeout
+        deadline = time.monotonic() + FRAME_TIMEOUT_SECONDS
         frame = None
         while frame is None and time.monotonic() < deadline:
             frame = pool.try_get_next_frame()
