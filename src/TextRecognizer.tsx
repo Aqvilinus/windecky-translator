@@ -1,6 +1,6 @@
 import { backend } from "./backend";
 import { logger } from "./log";
-import { throwIfBackendError } from "./errors";
+import { throwIfBackendError } from "./backend";
 
 export interface TextRegion {
     text: string;

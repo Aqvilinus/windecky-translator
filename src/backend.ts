@@ -1,7 +1,6 @@
 // Every call into the backend (main.py, the Plugin class's async methods), typed in one place. A method the frontend
 // calls must exist in main.py: tests/frontend/backendContract.test.ts checks this list against it.
 import { callable } from "@decky/api";
-import type { ErrorResponse } from "./errors";
 import type { OverlayState } from "./Overlay";
 import type { TextRegion } from "./TextRecognizer";
 import type { TranslatedRegion } from "./TextTranslator";
@@ -19,6 +18,18 @@ export interface ModelStatus {
     error: string | null;
 }
 export interface Reachability { ok: boolean; reason: string; provider: string }
+
+// A failure the backend reported as {error: code, message} (main.py catch_errors): the message is shown on the overlay
+export interface ErrorResponse { error: string; message: string }
+export class BackendError extends Error {}
+
+// A backend reply that reports a failure as a BackendError; any other reply passes through
+export function throwIfBackendError<T>(response: T | ErrorResponse): T {
+    if (typeof response === 'object' && response !== null && 'error' in response && 'message' in response) {
+        throw new BackendError(response.message);
+    }
+    return response as T;
+}
 
 export const backend = {
     getAllSettings: callable<[], BackendSettings>('get_all_settings'),

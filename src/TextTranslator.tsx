@@ -1,6 +1,6 @@
 import { backend } from "./backend";
 import { TextRegion } from "./TextRecognizer";
-import { BackendError, throwIfBackendError } from "./errors";
+import { BackendError, throwIfBackendError } from "./backend";
 
 export interface TranslatedRegion extends TextRegion {
     translatedText: string;

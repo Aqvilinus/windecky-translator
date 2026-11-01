@@ -1,13 +1,13 @@
 import { toaster } from "@decky/api";
-import { backend } from "./backend";
+import { BackendError, backend } from "./backend";
 import { TextRecognizer } from "./TextRecognizer";
-import { BackendError, NetworkError, ApiKeyError } from "./errors";
 import { TextTranslator } from "./TextTranslator";
 import { ImageState } from "./Overlay";
 import { logger } from "./log";
 import { OCR_ENGINE_LABELS, TRANSLATION_ENGINE_LABELS } from "./providers";
 
 const NO_TEXT_MESSAGE_MS = 2000;
+const ERROR_MESSAGE_MS = 3000;
 
 export class GameTranslatorLogic {
     private isProcessing = false;
@@ -139,14 +139,11 @@ export class GameTranslatorLogic {
 
             // Every failure is shown on the overlay for a moment: the backend's reason, or a generic one
             let message = "Translation failed";
-            if (error instanceof BackendError && error.message) message = error.message;
-            else if (error instanceof NetworkError) message = "No internet connection";
-            else if (error instanceof ApiKeyError) message = "Invalid API key";
-            const quick = error instanceof NetworkError || error instanceof ApiKeyError;
+            if (error instanceof BackendError) message = error.message;
             this.imageState.updateProcessingStep(message, true);
             setTimeout(() => {
                 if (!isCancelled()) this.imageState.hide();
-            }, quick ? 2500 : 3000);
+            }, ERROR_MESSAGE_MS);
         }
         finally {
             if (!isCancelled()) {
