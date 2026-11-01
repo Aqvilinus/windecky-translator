@@ -1,4 +1,4 @@
-// src/Translator.tsx: a failure in the pipeline is shown on the overlay with its reason, never as "No text found".
+// src/translator.ts: a failure in the pipeline is shown on the overlay with its reason, never as "No text found".
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 let replies: Record<string, unknown> = {};
@@ -8,60 +8,62 @@ vi.mock('@decky/api', () => ({
     callable: (method: string) => vi.fn(() => Promise.resolve(replies[method])),
     toaster: { toast: vi.fn() },
 }));
-vi.mock('@decky/ui', () => ({ Router: { MainRunningApp: { display_name: 'Game' } } }));
+vi.mock('@decky/ui', () => ({ Router: {} }));  // Steam's, which the overlay's side-menu check reads
 
-const { GameTranslatorLogic } = await import('../../src/Translator');
-const { ImageState } = await import('../../src/Overlay');
+const { Translator } = await import('../../src/translator');
+const { OverlayStore } = await import('../../src/overlay');
 
 function startTranslator() {
-    const state = new ImageState();
+    const state = new OverlayStore();
     const steps: Array<{ step: string; isError: boolean }> = [];
     state.subscribe(s => {
-        if (s.visible && s.processingStep) steps.push({ step: s.processingStep, isError: s.processingIsError });
+        if (s.visible && s.status) steps.push({ step: s.status, isError: s.isError });
     });
-    const logic = new GameTranslatorLogic(state);
-    logic.setInputLanguage('auto');
-    logic.setTargetLanguage('en');
-    return { logic, steps };
+    const translator = new Translator(state);
+    translator.applySettings({
+        enabled: true, sourceLanguage: 'auto', targetLanguage: 'en', ocrProvider: 'chrome_screen_ai',
+        translationProvider: 'google_web', googleApiKey: '', geminiApiKey: '', debugMode: false, fontScale: 1,
+    });
+    return { translator, steps };
 }
 
-describe('GameTranslatorLogic errors', () => {
+describe('Translator errors', () => {
     beforeEach(() => {
         replies = {
-            take_screenshot: { path: 'shot.png' },
+            capture_screen: { id: 1 },
         };
     });
 
     it('shows why OCR failed', async () => {
-        replies.recognize_text_file = { error: 'ocr_failed', message: 'On-device OCR timed out after 120 s' };
-        const { logic, steps } = startTranslator();
-        await logic.takeScreenshotAndTranslate();
+        replies.recognize_capture = { error: 'ocr_failed', message: 'On-device OCR timed out after 120 s' };
+        const { translator, steps } = startTranslator();
+        await translator.translateScreen();
         expect(steps.at(-1)).toEqual({ step: 'On-device OCR timed out after 120 s', isError: true });
     });
 
     it('shows why translation failed', async () => {
-        replies.recognize_text_file = [{ text: 'Neues Spiel', rect: { left: 0, top: 0, right: 90, bottom: 20 }, confidence: 1 }];
+        replies.recognize_capture = [{ text: 'Neues Spiel', rect: { left: 0, top: 0, right: 90, bottom: 20 } }];
         replies.translate_text = { error: 'translation_failed', message: 'The translation service did not answer' };
-        const { logic, steps } = startTranslator();
-        await logic.takeScreenshotAndTranslate();
+        const { translator, steps } = startTranslator();
+        await translator.translateScreen();
         expect(steps.at(-1)).toEqual({ step: 'The translation service did not answer', isError: true });
     });
 
     it('still says "No text found" when the screen has no text', async () => {
-        replies.recognize_text_file = [];
-        const { logic, steps } = startTranslator();
-        await logic.takeScreenshotAndTranslate();
+        replies.recognize_capture = [];
+        const { translator, steps } = startTranslator();
+        await translator.translateScreen();
         expect(steps.at(-1)).toEqual({ step: 'No text found', isError: false });
     });
 });
 
-describe('ImageState', () => {
+describe('OverlayStore', () => {
     it('sends the changes made in one go once', async () => {
-        const state = new ImageState();
+        const state = new OverlayStore();
         const sent: boolean[] = [];
         state.subscribe(s => sent.push(s.visible));
-        state.startLoading('Recognizing');
-        state.updateProcessingStep('Recognizing', false, 'On-Device');
+        state.showLoading('Recognizing');
+        state.setStatus('Recognizing', false, 'On-Device');
         await Promise.resolve();
         expect(sent).toEqual([true]);
         state.hide();

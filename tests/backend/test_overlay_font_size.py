@@ -1,11 +1,11 @@
-"""Label font size of the Windows overlay (py_modules/winport/overlay.py font_size_for): the wrapped text fits."""
+"""Label font size of the Windows overlay (py_modules/overlay.py fit_font_size): the wrapped text fits."""
 import sys
 import unittest
 
 if sys.platform != "win32":
-    raise unittest.SkipTest("winport is Windows-only")
+    raise unittest.SkipTest("Windows-only")
 
-from winport.overlay import LINE_SPACING, font_for, font_size_for, wrap  # noqa: E402
+from overlay import LINE_SPACING, font_for, fit_font_size, wrap_text  # noqa: E402
 
 CASES = [  # text, width, height of the label's room
     ("Продолжить", 230, 40),
@@ -20,11 +20,11 @@ class FontSize(unittest.TestCase):
     def test_wrapped_text_fits_its_room(self):
         for text, width, height in CASES:
             with self.subTest(text=text):
-                size = font_size_for(text, width, height, max_size=64, min_size=8)
+                size = fit_font_size(text, width, height, max_size=64, min_size=8)
                 font = font_for(text, size)
-                lines = wrap(text, font, width)
+                lines = wrap_text(text, font, width)
                 self.assertLessEqual(max(font.getlength(line) for line in lines), width)
                 self.assertLessEqual(len(lines) * size * LINE_SPACING, height)
 
     def test_at_most_the_original_line_size(self):
-        self.assertEqual(font_size_for("Quit", 400, 40, max_size=30, min_size=8), 30)
+        self.assertEqual(fit_font_size("Quit", 400, 40, max_size=30, min_size=8), 30)

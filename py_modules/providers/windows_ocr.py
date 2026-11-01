@@ -1,16 +1,15 @@
-# providers/windows_ocr.py
-# OCR with Windows' own engine (Windows.Media.Ocr), for Decky Loader on Windows.
-# On-device, no download: Windows ships the engine, and each language needs its OCR language pack
-# (Settings > Time & language > Language, or `Add-WindowsCapability -Online -Name Language.OCR~~~ja-JP~0.0.1.0`).
-# Returns one region per text line; the frontend groups lines into paragraphs (TextRecognizer.tsx).
+"""OCR with Windows' own engine (Windows.Media.Ocr), for Decky Loader on Windows.
+On-device, no download: Windows ships the engine, and each language needs its OCR language pack
+(Settings > Time & language > Language, or `Add-WindowsCapability -Online -Name Language.OCR~~~ja-JP~0.0.1.0`).
+Returns one region per text line; the frontend groups lines into paragraphs (TextRecognizer.tsx).
+winrt is compiled for one Python version, so it is imported where it's used: the plugin still loads without it."""
 
 import asyncio
 import io
 import logging
-import sys
-from typing import List, Optional
+from typing import List
 
-from .base import OCRProvider, TextRegion
+from .base import OCRError, OCRProvider, TextRegion
 
 logger = logging.getLogger(__name__)
 
@@ -29,14 +28,6 @@ def plugin_code(tag: str) -> str:
     return t.split("-")[0]
 
 
-def _winrt():
-    from winrt.windows.globalization import Language
-    from winrt.windows.graphics.imaging import BitmapAlphaMode, BitmapPixelFormat, SoftwareBitmap
-    from winrt.windows.media.ocr import OcrEngine
-    from winrt.windows.storage.streams import DataWriter
-    return Language, BitmapAlphaMode, BitmapPixelFormat, SoftwareBitmap, OcrEngine, DataWriter
-
-
 class WindowsOCRProvider(OCRProvider):
     def __init__(self):
         self._engines = {}
@@ -48,18 +39,19 @@ class WindowsOCRProvider(OCRProvider):
     @staticmethod
     def installed_languages() -> List[str]:
         try:
-            _, _, _, _, OcrEngine, _ = _winrt()
+            from winrt.windows.media.ocr import OcrEngine
             return [lang.language_tag for lang in OcrEngine.available_recognizer_languages]
         except Exception as e:
             logger.warning(f"Windows OCR unavailable: {e}")
             return []
 
     def _engine(self, language: str):
-        Language, _, _, _, OcrEngine, _ = _winrt()
+        from winrt.windows.globalization import Language
+        from winrt.windows.media.ocr import OcrEngine
         want = "" if not language or language == "auto" else plugin_code(language)
         if want in self._engines:
             return self._engines[want]
-        engine: Optional[object] = None
+        engine = None
         if want:
             # the installed pack for the language ("en" -> "en-US"; "zh-TW" -> "zh-Hant-TW", not a Simplified pack)
             for lang in OcrEngine.available_recognizer_languages:
@@ -71,20 +63,22 @@ class WindowsOCRProvider(OCRProvider):
         self._engines[want] = engine
         return engine
 
-    def is_available(self, language: str = "auto") -> bool:
-        return sys.platform == "win32" and bool(self.installed_languages())
+    def is_available(self) -> bool:
+        return bool(self.installed_languages())
 
     def get_supported_languages(self) -> List[str]:
-        """The installed OCR packs as plugin codes ("en-US" -> "en", "zh-Hans-CN" -> "zh-CN")."""
+        """The installed OCR packs as plugin codes."""
         return sorted({plugin_code(t) for t in self.installed_languages()})
 
     async def recognize(self, image_data: bytes, language: str = "auto") -> List[TextRegion]:
         from PIL import Image
-        _, BitmapAlphaMode, BitmapPixelFormat, SoftwareBitmap, OcrEngine, DataWriter = _winrt()
+        from winrt.windows.graphics.imaging import BitmapAlphaMode, BitmapPixelFormat, SoftwareBitmap
+        from winrt.windows.media.ocr import OcrEngine
+        from winrt.windows.storage.streams import DataWriter
 
         engine = self._engine(language)
         if engine is None:
-            raise RuntimeError(f"No Windows OCR language pack for '{language}'. Installed: {self.installed_languages()}")
+            raise OCRError(f"No Windows OCR language pack for '{language}'. Installed: {self.installed_languages()}")
 
         limit = OcrEngine.max_image_dimension
 
@@ -116,7 +110,6 @@ class WindowsOCRProvider(OCRProvider):
                 text=line.text,
                 rect={"left": int(left / scale), "top": int(top / scale),
                       "right": int(right / scale), "bottom": int(bottom / scale)},
-                confidence=1.0,  # Windows OCR reports no confidence
             ))
         logger.info(f"Windows OCR ({engine.recognizer_language.language_tag}): {len(regions)} lines")
         return regions

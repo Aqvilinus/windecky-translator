@@ -1,8 +1,7 @@
-# providers/llm_translate.py
-# AI translation: Gemini (Google AI Studio key) or an OpenAI-compatible API (Groq, or any custom endpoint such as
-# OpenRouter or a local llama-server). The whole screen goes in one request, so every line is translated with the
-# rest of the screen as context. Whatever the AI doesn't return (rate limit, network, a malformed reply) goes to the
-# free Google -> Bing chain.
+"""AI translation: Gemini (Google AI Studio key) or an OpenAI-compatible API (Groq, or any custom endpoint such as
+OpenRouter or a local llama-server). The whole screen goes in one request, so every line is translated with the
+rest of the screen as context. Whatever the AI doesn't return (rate limit, network, a malformed reply) goes to the
+free Google -> Bing chain."""
 
 import json
 import logging
@@ -10,11 +9,10 @@ import re
 import time
 from typing import Dict, List, Optional
 
-from .base import (TranslationProvider, NetworkError, ApiKeyError, RateLimitError, Response,
-                   chunk_indices, error_message, fetch, probe, raise_for_api_error)
-from . import gemini_api
-from .free_translate import FreeTranslateProvider
-from .gemini_vision import LANG_NAMES
+from .base import (LANGUAGE_NAMES, TranslationProvider, NetworkError, ApiKeyError, RateLimitError, Response,
+                   api_error, chunk_indices, error_message, fetch, probe)
+from . import gemini_client
+from .google_web_translate import GoogleWebTranslateProvider
 
 logger = logging.getLogger(__name__)
 
@@ -22,16 +20,16 @@ GROQ_URL = "https://api.groq.com/openai/v1"
 
 BACKENDS = ("gemini", "groq", "custom")
 DEFAULT_MODELS = {
-    "gemini": gemini_api.FALLBACK_MODEL,  # Google's alias for the current Flash-Lite; fixed names get retired
+    "gemini": gemini_client.FALLBACK_MODEL,  # Google's alias for the current Flash-Lite; fixed names get retired
     "groq": "openai/gpt-oss-120b",
     "custom": "",
 }
 
-REQUEST_TIMEOUT = 20
-BATCH_ITEMS = 80          # lines per request
-BATCH_CHARS = 8000        # characters per request
-RATE_LIMIT_PAUSE = 60     # seconds without the AI after a 429 that names no retry time
-MAX_RATE_LIMIT_PAUSE = 15 * 60
+REQUEST_TIMEOUT_SECONDS = 20
+MAX_TEXTS_PER_REQUEST = 80
+MAX_CHARS_PER_REQUEST = 8000
+RATE_LIMIT_PAUSE_SECONDS = 60  # without the AI, after a 429 that names no retry time
+MAX_RATE_LIMIT_PAUSE_SECONDS = 15 * 60
 
 # Gemini's reply: {"translations": [one string per text sent]}
 TRANSLATIONS_SCHEMA = {
@@ -42,7 +40,7 @@ TRANSLATIONS_SCHEMA = {
 
 # Which engine produced each result of the last batch (main.py caches AI and fallback results under their own tier)
 SOURCE_LLM = "llm"
-SOURCE_FALLBACK = "freegoogle"
+SOURCE_FALLBACK = "google_web"
 
 
 class Translations(list):
@@ -52,13 +50,9 @@ class Translations(list):
     sources: List[Optional[str]] = []
 
 
-def _lang_name(code: str) -> str:
-    return LANG_NAMES.get(code, code)
-
-
 def _system_prompt(source_lang: str, target_lang: str) -> str:
-    src = "" if not source_lang or source_lang == "auto" else f" from {_lang_name(source_lang)}"
-    tgt = _lang_name(target_lang)
+    src = "" if not source_lang or source_lang == "auto" else f" from {LANGUAGE_NAMES.get(source_lang, source_lang)}"
+    tgt = LANGUAGE_NAMES.get(target_lang, target_lang)
     return (
         f"You translate text that OCR read from one video game screen{src} into {tgt}.\n"
         "The input is a JSON object {\"texts\": [...]}: the screen's text blocks in reading order. Use the whole "
@@ -100,25 +94,24 @@ def _parse_translations(text: str, expected: int) -> Optional[List[str]]:
 
 def _retry_after(resp: Response) -> float:
     try:
-        return min(MAX_RATE_LIMIT_PAUSE, float(resp.headers.get("retry-after", "")))
+        return min(MAX_RATE_LIMIT_PAUSE_SECONDS, float(resp.headers.get("retry-after", "")))
     except ValueError:
         pass
     # Gemini: {"error": {"details": [{"retryDelay": "31s"}]}}
     match = re.search(r'"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"', resp.text or "")
-    return min(MAX_RATE_LIMIT_PAUSE, float(match.group(1))) if match else RATE_LIMIT_PAUSE
+    return min(MAX_RATE_LIMIT_PAUSE_SECONDS, float(match.group(1))) if match else RATE_LIMIT_PAUSE_SECONDS
 
 
 class LLMTranslateProvider(TranslationProvider):
     """Translation with Gemini / Groq / an OpenAI-compatible API, the free Google -> Bing chain as fallback."""
 
-    def __init__(self, fallback: Optional[FreeTranslateProvider] = None):
-        self._fallback = fallback or FreeTranslateProvider()
+    def __init__(self, fallback: Optional[GoogleWebTranslateProvider] = None):
+        self._fallback = fallback or GoogleWebTranslateProvider()
         self._backend = "gemini"
         self._keys: Dict[str, str] = {"gemini": "", "groq": "", "custom": ""}
         self._models: Dict[str, str] = dict(DEFAULT_MODELS)
         self._custom_url = ""
         self._paused_until = 0.0
-        self.last_error = ""
 
     # -- configuration --
 
@@ -135,10 +128,6 @@ class LLMTranslateProvider(TranslationProvider):
                 self._models[name] = value or DEFAULT_MODELS[name]
         if custom_url is not None:
             self._custom_url = custom_url.strip().rstrip("/")
-
-    @property
-    def backend(self) -> str:
-        return self._backend
 
     @property
     def model(self) -> str:
@@ -169,14 +158,15 @@ class LLMTranslateProvider(TranslationProvider):
         return headers
 
     async def _post(self, url: str, payload: dict, headers: dict) -> Response:
-        return await fetch("POST", url, json=payload, headers=headers, timeout=REQUEST_TIMEOUT)
+        return await fetch("POST", url, json=payload, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
 
     def _check(self, resp: Response) -> None:
         if resp.status_code == 429:  # Google/Bing translate while the AI service is paused
             pause = _retry_after(resp)
             self._paused_until = time.time() + pause
             raise RateLimitError(f"AI rate limit, using Google/Bing for {int(pause)} s: {error_message(resp)}")
-        raise_for_api_error(resp, self.name)
+        if resp.status_code != 200:
+            raise api_error(resp, self.name)
 
     async def _gemini_request(self, system: str, user: str) -> str:
         payload = {
@@ -188,10 +178,10 @@ class LLMTranslateProvider(TranslationProvider):
                 "responseSchema": TRANSLATIONS_SCHEMA,
             },
         }
-        # retired model -> current alias, thinking setting the model rejects -> less (gemini_api.generate)
-        resp, _ = await gemini_api.generate(self._keys["gemini"], self.model, payload, REQUEST_TIMEOUT)
+        # retired model -> current alias, thinking setting the model rejects -> less (gemini_client.generate)
+        resp = await gemini_client.generate(self._keys["gemini"], self.model, payload, REQUEST_TIMEOUT_SECONDS)
         self._check(resp)
-        return gemini_api.reply_text(resp)
+        return gemini_client.reply_text(resp)
 
     async def _openai_request(self, system: str, user: str) -> str:
         payload = {
@@ -219,16 +209,16 @@ class LLMTranslateProvider(TranslationProvider):
         reply = await (self._gemini_request if self._backend == "gemini" else self._openai_request)(system, user)
         result = _parse_translations(reply, len(texts))
         logger.info(f"{self.name} [{self.model}]: {len(texts)} texts in {time.time() - start:.2f}s"
-                    + ("" if result else f", unusable reply: {reply[:200]!r}"))
+                    + ("" if result else ", unusable reply"))
+        if not result:
+            logger.debug(f"{self.name} reply: {reply[:200]!r}")  # screen text: only with debug logging on
         return result
 
-    async def _translate_lines(self, texts: List[str], source_lang: str, target_lang: str) -> List[Optional[str]]:
+    async def translate_batch(self, texts: List[str], source_lang: str, target_lang: str) -> List[Optional[str]]:
         results: List[Optional[str]] = [None] * len(texts)
         sources: List[Optional[str]] = [None] * len(texts)
-        order = [i for i, t in enumerate(texts) if t and t.strip()]
-        chunks = chunk_indices(texts, BATCH_CHARS, max_items=BATCH_ITEMS)
+        chunks = chunk_indices(texts, MAX_CHARS_PER_REQUEST, max_items=MAX_TEXTS_PER_REQUEST)
 
-        self.last_error = ""
         for chunk in chunks:
             if not self.is_configured() or time.time() < self._paused_until:
                 break
@@ -237,11 +227,9 @@ class LLMTranslateProvider(TranslationProvider):
             except ApiKeyError:
                 raise
             except (RateLimitError, NetworkError) as e:
-                self.last_error = str(e)
                 logger.warning(f"{self.name}: {e}; Google/Bing translates the rest")
                 break
             except Exception as e:
-                self.last_error = str(e)
                 logger.warning(f"{self.name} failed: {e}")
                 break
             if out is None:
@@ -250,24 +238,16 @@ class LLMTranslateProvider(TranslationProvider):
                 if t.strip():
                     results[i], sources[i] = t.strip(), SOURCE_LLM
 
-        missing = [i for i in order if results[i] is None]
+        missing = [i for i, r in enumerate(results) if r is None]
         if missing:
-            fallback = await self._fallback._translate_lines([texts[i] for i in missing], source_lang, target_lang)
+            fallback = await self._fallback.translate_batch([texts[i] for i in missing], source_lang, target_lang)
             for i, t in zip(missing, fallback):
                 results[i] = t
                 if t is not None:
                     sources[i] = SOURCE_FALLBACK
-        for i, t in enumerate(texts):
-            if not t or not t.strip():
-                results[i] = t
         out = Translations(results)
         out.sources = sources
         return out
-
-    async def translate_batch(self, texts: List[str], source_lang: str, target_lang: str) -> List[Optional[str]]:
-        if not texts:
-            return texts
-        return await self._translate_lines(list(texts), source_lang, target_lang)
 
     # -- settings UI helpers --
 
@@ -275,7 +255,7 @@ class LLMTranslateProvider(TranslationProvider):
         """Models the key can use, for the model picker (text models only)."""
         try:
             if backend == "gemini":
-                return await gemini_api.list_models(self._keys["gemini"])
+                return await gemini_client.list_models(self._keys["gemini"])
             base = GROQ_URL if backend == "groq" else self._custom_url
             if not base:
                 return []
@@ -286,9 +266,9 @@ class LLMTranslateProvider(TranslationProvider):
             resp = await fetch("GET", f"{base}/models", headers=headers)
             if resp.status_code != 200:
                 return []
-            skip = ("whisper", "tts", "guard", "embed", "orpheus", "playai", "compound")
+            not_text_model_markers = ("whisper", "tts", "guard", "embed", "orpheus", "playai", "compound")
             names = [m.get("id", "") for m in resp.json().get("data", []) if m.get("active", True)]
-            return sorted(n for n in names if n and not any(s in n.lower() for s in skip))
+            return sorted(n for n in names if n and not any(s in n.lower() for s in not_text_model_markers))
         except Exception as e:
             logger.warning(f"Listing {backend} models failed: {e}")
             return []
@@ -299,8 +279,8 @@ class LLMTranslateProvider(TranslationProvider):
 
         # Reads the model's info (Gemini) or the model list: checks address and key without using request quota
         if self._backend == "gemini":
-            resp, error = await probe("GET", f"{gemini_api.API_URL}/{self.model}",
-                                      headers=gemini_api.headers(self._keys["gemini"]))
+            resp, error = await probe("GET", f"{gemini_client.API_URL}/{self.model}",
+                                      headers=gemini_client.headers(self._keys["gemini"]))
         else:
             resp, error = await probe("GET", f"{self._openai_base()}/models", headers=self._openai_headers())
         if resp is None:

@@ -1,10 +1,15 @@
-# providers/base.py
-# Abstract base classes for OCR and Translation providers
+"""What the providers share: their interfaces, errors, HTTP requests and the background download of a model's files."""
 
 import asyncio
+import hashlib
 import io
 import json
 import logging
+import os
+import shutil
+import threading
+import urllib.error
+import urllib.request
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import List, Dict, Optional
@@ -13,19 +18,30 @@ import aiohttp  # Decky Loader's own: its server runs on it, so the plugin doesn
 
 logger = logging.getLogger(__name__)
 
+# The plugin's language codes in English: for the AI engines' prompts and the plugin's messages
+LANGUAGE_NAMES = {
+    "en": "English", "ja": "Japanese", "ko": "Korean",
+    "zh-CN": "Simplified Chinese", "zh-TW": "Traditional Chinese",
+    "de": "German", "fr": "French", "es": "Spanish",
+    "it": "Italian", "pt": "Portuguese", "nl": "Dutch",
+    "pl": "Polish", "tr": "Turkish", "ro": "Romanian",
+    "vi": "Vietnamese", "fi": "Finnish", "ru": "Russian",
+    "uk": "Ukrainian", "el": "Greek", "th": "Thai",
+    "bg": "Bulgarian", "ar": "Arabic", "hi": "Hindi",
+    "sv": "Swedish", "da": "Danish", "no": "Norwegian",
+    "cs": "Czech", "hu": "Hungarian", "hr": "Croatian",
+}
+
 
 class NetworkError(Exception):
-    """Raised when a network connection error occurs."""
     pass
 
 
 class ApiKeyError(Exception):
-    """Raised when the API key is invalid or missing."""
-    pass
+    """The API key is invalid or missing."""
 
 
 class RateLimitError(Exception):
-    """Raised when API rate limit is exceeded."""
     pass
 
 
@@ -47,35 +63,6 @@ class TranslationError(Exception):
     """The translation engine failed; the message is shown to the user."""
 
 
-def classify_google_error(status_code: int, body: str) -> str:
-    """Logging for a non-200 Google API response."""
-    body = body or ""
-    if 'API_KEY_INVALID' in body or 'API key not valid' in body:
-        return "Invalid API key"
-    if 'SERVICE_DISABLED' in body or 'has not been used' in body or 'it is disabled' in body:
-        return "API not enabled in Cloud project"
-    if 'BILLING_DISABLED' in body or 'billing' in body:
-        return "Billing not enabled"
-    if status_code == 401:
-        return "Invalid API key"
-    if status_code == 403:
-        return "Access blocked (key restriction)"
-    if status_code == 429:
-        return "Rate limited"
-    return f"API error ({status_code})"
-
-
-def raise_for_google_error(resp: "Response") -> None:
-    """A Google Cloud error the user has to act on (key, project, billing, quota) as ApiKeyError or RateLimitError;
-    any other is only logged."""
-    reason = classify_google_error(resp.status_code, resp.text)
-    logger.error(f"Google API error {resp.status_code} ({reason}): {resp.text[:500]}")
-    if reason == "Rate limited":
-        raise RateLimitError(reason)
-    if not reason.startswith("API error"):
-        raise ApiKeyError(reason)
-
-
 # -- HTTP for the web engines
 
 @dataclass
@@ -95,7 +82,7 @@ async def fetch(method: str, url: str, timeout: float = 10, **kwargs) -> Respons
     """One HTTP request through the engines' shared session (connections stay open between requests; a new TLS
     handshake per request doubled the time of short ones). Connection failures and timeouts raise NetworkError."""
     global _session
-    if _session is None or _session.closed:
+    if _session is None:
         _session = aiohttp.ClientSession()
     try:
         async with _session.request(method, url, timeout=aiohttp.ClientTimeout(total=timeout), **kwargs) as resp:
@@ -121,22 +108,16 @@ def error_message(resp: Response) -> str:
     return (resp.text or "")[:200]
 
 
-def raise_for_api_error(resp: Response, service: str) -> None:
-    """A non-200 answer of an AI API (Gemini, OpenAI-compatible) as the plugin's errors: a bad key -> ApiKeyError,
-    a rate limit -> RateLimitError, anything else -> NetworkError."""
-    if resp.status_code == 200:
-        return
+def api_error(resp: Response, service: str) -> Exception:
+    """A non-200 answer of a keyed API (Google Cloud, Gemini, OpenAI-compatible) as the plugin's error, with the
+    service's own message: the key, project or billing refused (401/403; Google says a bad key with 400) ->
+    ApiKeyError, a rate limit -> RateLimitError, anything else -> NetworkError."""
     message = error_message(resp)
     if resp.status_code in (401, 403) or "API_KEY_INVALID" in message or "API key not valid" in message:
-        raise ApiKeyError(f"{service}: invalid API key ({message})")
+        return ApiKeyError(f"{service}: {message}")
     if resp.status_code == 429:
-        raise RateLimitError(f"{service}: rate limit ({message})")
-    raise NetworkError(f"{service} error {resp.status_code}: {message}")
-
-
-async def close_session() -> None:
-    if _session is not None:
-        await _session.close()
+        return RateLimitError(f"{service}: rate limit ({message})")
+    return NetworkError(f"{service} error {resp.status_code}: {message}")
 
 
 async def probe(method: str, url: str, **kwargs) -> tuple:
@@ -151,20 +132,16 @@ async def probe(method: str, url: str, **kwargs) -> tuple:
 
 @dataclass
 class TextRegion:
-    """Represents a detected text region from OCR."""
     text: str
     rect: Dict[str, int]  # left, top, right, bottom
-    confidence: float = 0.0
-    is_dialog: bool = False
-    translated_text: Optional[str] = None  # Pre-translated text
+    confidence: Optional[float] = None  # None: the engine reports none
+    translated_text: Optional[str] = None  # from an engine that translates while it reads (Gemini Vision)
 
     def to_dict(self) -> Dict:
-        """Convert to dictionary for JSON serialization."""
+        """The region as the frontend reads it."""
         d = {
             "text": self.text,
             "rect": self.rect,
-            "confidence": self.confidence,
-            "isDialog": self.is_dialog
         }
         if self.translated_text is not None:
             d["translatedText"] = self.translated_text
@@ -172,79 +149,33 @@ class TextRegion:
 
 
 class OCRProvider(ABC):
-    """Abstract base class for OCR providers."""
-
     @property
     @abstractmethod
     def name(self) -> str:
-        """Return the provider name."""
-        pass
+        """Shown to the user, e.g. in error messages."""
 
     @abstractmethod
     async def recognize(self, image_data: bytes, language: str = "auto") -> List[TextRegion]:
-        """
-        Perform OCR on image data and return text regions.
-
-        Args:
-            image_data: Raw image bytes (PNG/JPEG)
-            language: Language code or "auto" for auto-detection
-
-        Returns:
-            List of TextRegion objects with detected text and positions
-        """
-        pass
+        """The text regions of a PNG or JPEG image; language is a code or "auto"."""
 
     @abstractmethod
-    def is_available(self, language: str = "auto") -> bool:
-        """
-        Check if OCR is available for the given language.
-
-        Args:
-            language: Language code to check
-
-        Returns:
-            True if the provider can handle this language
-        """
-        pass
+    def is_available(self) -> bool:
+        """Configured and installed: a key set, a model downloaded."""
 
 
 class TranslationProvider(ABC):
-    """Abstract base class for translation providers."""
-
     @property
     @abstractmethod
     def name(self) -> str:
-        """Return the provider name."""
-        pass
+        """Shown to the user, e.g. in error messages."""
 
     @abstractmethod
     async def translate_batch(self, texts: List[str], source_lang: str, target_lang: str) -> List[str]:
-        """
-        Translate multiple texts efficiently.
-
-        Args:
-            texts: List of texts to translate
-            source_lang: Source language code
-            target_lang: Target language code
-
-        Returns:
-            List of translated texts
-        """
-        pass
+        """The translations, in the order of texts."""
 
     @abstractmethod
     def is_available(self, source_lang: str, target_lang: str) -> bool:
-        """
-        Check if translation is available for the language pair.
-
-        Args:
-            source_lang: Source language code
-            target_lang: Target language code
-
-        Returns:
-            True if the provider can handle this language pair
-        """
-        pass
+        """Whether the provider can handle this language pair."""
 
 
 def chunk_indices(texts: List[str], max_chars: int, max_items: Optional[int] = None,
@@ -267,3 +198,139 @@ def chunk_indices(texts: List[str], max_chars: int, max_items: Optional[int] = N
     if cur:
         chunks.append(cur)
     return chunks
+
+
+# -- the background download of a model's files
+
+_DOWNLOAD_CHUNK_BYTES = 256 * 1024
+
+
+class DownloadError(Exception):
+    """Why a model download stopped; the message is shown in the settings."""
+
+
+class Downloader:
+    """A model's files, downloaded in a background thread (progress, cancel, the reason it failed) into
+    <models_dir>/<name>: staged next to it and moved into place only when complete. urllib in that thread (the
+    plugin's aiohttp lives on the event loop). A subclass sets name, approx_size_mb and required_files and fills
+    the staging folder in _install()."""
+
+    name = ""                 # the model's folder in models_dir
+    approx_size_mb = 0        # shown before the model is installed
+    required_files = ()       # paths inside the folder that make it complete
+
+    def __init__(self, models_dir: str):
+        self.target_dir = os.path.join(models_dir, self.name)
+        self._staging_dir = self.target_dir + ".downloading"
+        self._lock = threading.Lock()
+        self._downloading = False
+        self._progress = 0.0
+        self._error: Optional[str] = None
+        self._cancel = False
+        os.makedirs(models_dir, exist_ok=True)
+        shutil.rmtree(self._staging_dir, ignore_errors=True)  # an interrupted download
+
+    # ---- state, for the settings
+    def is_installed(self) -> bool:
+        return all(os.path.exists(os.path.join(self.target_dir, f)) for f in self.required_files)
+
+    def status(self) -> dict:
+        size = sum(os.path.getsize(os.path.join(root, f)) for root, _, files in os.walk(self.target_dir)
+                   for f in files) if self.is_installed() else 0
+        with self._lock:
+            return {"downloaded": self.is_installed(), "size": size, "approx_size_mb": self.approx_size_mb,
+                    "downloading": self._downloading, "progress": self._progress, "error": self._error}
+
+    def start(self) -> bool:
+        """Start the download in a thread; False if one is running."""
+        with self._lock:
+            if self._downloading:
+                return False
+            self._downloading, self._progress, self._error, self._cancel = True, 0.0, None, False
+        threading.Thread(target=self._run, name=f"download-{self.name}", daemon=True).start()
+        return True
+
+    def cancel(self):
+        with self._lock:
+            self._cancel = True
+
+    def clear_error(self):
+        with self._lock:
+            self._error = None
+
+    def delete(self) -> bool:
+        try:
+            shutil.rmtree(self.target_dir)
+        except FileNotFoundError:
+            pass
+        except OSError as e:
+            logger.error(f"Could not delete {self.name}: {e}")
+            return False
+        logger.info(f"Deleted {self.name}")
+        return True
+
+    # ---- for subclasses
+    def _install(self, staging_dir: str) -> None:
+        """Download the model into staging_dir (raise DownloadError to stop)."""
+        raise NotImplementedError
+
+    def _set_progress(self, fraction: float) -> None:
+        with self._lock:
+            self._progress = fraction
+
+    def _check_cancel(self) -> None:
+        if self._cancel:
+            raise DownloadError("Download cancelled")
+
+    def _fetch(self, url: str, dest: str, hash_name: str = "sha256", max_mb: Optional[int] = None,
+               progress=None, timeout: int = 60) -> str:
+        """url -> dest, streamed; returns the file's hex digest. progress(fraction) follows the download when the
+        server gives its size. max_mb guards the disk against an unexpected answer (the hash is only known at the
+        end)."""
+        hasher = hashlib.new(hash_name)
+        limit = (max_mb or self.approx_size_mb * 2) * 1024 * 1024
+        try:
+            with urllib.request.urlopen(url, timeout=timeout) as resp, open(dest, "wb") as f:
+                total = int(resp.headers.get("Content-Length") or 0)
+                if total > limit:
+                    raise DownloadError(f"The server offers {total // 2**20} MB, more than expected: not downloaded")
+                done = 0
+                while chunk := resp.read(_DOWNLOAD_CHUNK_BYTES):
+                    self._check_cancel()
+                    done += len(chunk)
+                    if done > limit:
+                        raise DownloadError("The download is bigger than expected: stopped")
+                    f.write(chunk)
+                    hasher.update(chunk)
+                    if progress and total:
+                        progress(done / total)
+        except urllib.error.HTTPError as e:
+            if e.code == 429:
+                raise DownloadError("Too many requests. Try again later.") from e
+            raise DownloadError(f"HTTP {e.code} downloading {os.path.basename(dest)}") from e
+        except (urllib.error.URLError, TimeoutError) as e:
+            raise DownloadError("Cannot reach the download server. Check the internet connection.") from e
+        return hasher.hexdigest()
+
+    # ---- the download thread
+    def _run(self):
+        try:
+            shutil.rmtree(self._staging_dir, ignore_errors=True)
+            os.makedirs(self._staging_dir)
+            self._install(self._staging_dir)
+            self._check_cancel()
+            missing = [f for f in self.required_files if not os.path.exists(os.path.join(self._staging_dir, f))]
+            if missing:
+                raise DownloadError(f"Missing after download: {', '.join(missing)}")
+            shutil.rmtree(self.target_dir, ignore_errors=True)
+            os.rename(self._staging_dir, self.target_dir)
+            with self._lock:
+                self._progress, self._downloading = 1.0, False
+            logger.info(f"{self.name} downloaded")
+        except Exception as e:  # noqa: BLE001 - any failure ends the download with its reason shown
+            shutil.rmtree(self._staging_dir, ignore_errors=True)
+            if not isinstance(e, DownloadError):
+                logger.exception(f"{self.name} download failed")
+            with self._lock:
+                self._error, self._downloading = str(e), False
+            logger.error(f"{self.name} download failed: {e}")

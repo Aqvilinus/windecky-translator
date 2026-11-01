@@ -1,9 +1,8 @@
-// Model choice for Gemini Vision and AI translation
 import { PanelSectionRow, Dropdown, DialogButton, Field, Focusable, type SingleDropdownOption } from "@decky/ui";
 import { VFC, useState, useEffect, useRef } from "react";
 import { BsArrowRepeat } from "react-icons/bs";
 
-export const llmBackendOptions = [
+export const llmServiceOptions = [
     { label: <span>Gemini</span>, data: "gemini" },
     { label: <span>Groq</span>, data: "groq" },
     { label: <span>Custom server</span>, data: "custom" },

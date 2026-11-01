@@ -3,9 +3,9 @@
 - Decky's module (decky) is a stand-in with the directories in a temporary folder, a logger, and
   emit() recording the events sent to the frontend.
 - The Windows parts behind main.py's own names are replaced: the capture returns a test image of a game screen, the
-  overlay window records what it is told and draws it with the real winport.overlay.render (Pillow) into an image,
+  overlay window records what it is told and draws it with the real overlay.render (Pillow) into an image,
   the hotkey and the process pause record their calls.
-- HTTP: the engines' session is replaced (Network): Google Translate, Bing and OCR.space answer from the stubs below;
+- HTTP: the engines' session is replaced (Network): Google Translate, Bing and Google Cloud Vision answer from the stubs below;
   any other request fails like a dead network, so no test can reach a real service.
 """
 import asyncio
@@ -29,7 +29,6 @@ SCREEN = [("Willkommen, Reisender", (40, 40)), ("Neues Spiel", (40, 120))]
 DICTIONARY = {"Willkommen, Reisender": "Welcome, traveller", "Neues Spiel": "New game"}
 
 
-# ---------------------------------------------------------------- Decky
 def install_decky(base_dir):
     """Decky's module as main.py sees it (typings/decky.pyi); returns the list emit() appends (event, args) to."""
     dirs = {name: os.path.join(base_dir, name) for name in ("settings", "runtime", "logs", "plugin", "home")}
@@ -54,9 +53,28 @@ def install_decky(base_dir):
     mod.logger = logging.getLogger("decky-translator-test")
     mod.emit = emit
     sys.modules["decky"] = mod
-    os.environ.update(DECKY_PLUGIN_SETTINGS_DIR=dirs["settings"], DECKY_PLUGIN_LOG_DIR=dirs["logs"],
-                      DECKY_PLUGIN_DIR=ROOT, DECKY_HOME=dirs["home"], TEMP=dirs["runtime"])
+    sys.modules["settings"] = decky_settings_module()
     return mod, events
+
+
+def decky_settings_module():
+    """Decky's settings module (from settings import SettingsManager): a JSON file of key/value pairs."""
+    class SettingsManager:
+        def __init__(self, name, settings_directory):
+            self.path = os.path.join(settings_directory, name + ".json")
+            self.settings = json.load(open(self.path, encoding="utf-8")) if os.path.exists(self.path) else {}
+
+        def getSetting(self, key, default=None):  # noqa: N802 - Decky's name
+            return self.settings.get(key, default)
+
+        def setSetting(self, key, value):  # noqa: N802 - Decky's name
+            self.settings[key] = value
+            with open(self.path, "w", encoding="utf-8") as f:
+                json.dump(self.settings, f)
+
+    mod = types.ModuleType("settings")
+    mod.SettingsManager = SettingsManager
+    return mod
 
 
 def import_main():
@@ -66,24 +84,22 @@ def import_main():
     return importlib.import_module("main")
 
 
-# ---------------------------------------------------------------- the game screen
 def font(size=28):
-    from winport.overlay import font_for
+    from overlay import font_for
     return font_for("Willkommen", size)
 
 
-def word_boxes():
-    """OCR.space-style words with pixel boxes of SCREEN as drawn by screen_image()."""
+def vision_paragraphs():
+    """Google Cloud Vision paragraphs (one per SCREEN line) with pixel boxes as drawn by screen_image()."""
     f = font()
-    lines = []
+    paragraphs = []
     for text, (x, y) in SCREEN:
-        words, cx = [], x
-        for w in text.split(" "):
-            left, top, right, bottom = f.getbbox(w)
-            words.append({"WordText": w, "Left": cx + left, "Top": y + top, "Width": right - left, "Height": bottom - top})
-            cx += f.getlength(w + " ")
-        lines.append({"LineText": text, "Words": words})
-    return lines
+        left, top, right, bottom = f.getbbox(text)
+        box = [{"x": x + left, "y": y + top}, {"x": x + right, "y": y + top},
+               {"x": x + right, "y": y + bottom}, {"x": x + left, "y": y + bottom}]
+        words = [{"symbols": [{"text": w}]} for w in text.split(" ")]
+        paragraphs.append({"boundingBox": {"vertices": box}, "confidence": 0.98, "words": words})
+    return paragraphs
 
 
 def screen_image(width=640, height=360):
@@ -96,24 +112,18 @@ def screen_image(width=640, height=360):
 
 
 def capture_of(img, left=100, top=50):
-    import io
-    from winport.capture import Capture
-    buf = io.BytesIO()
-    img.save(buf, "PNG")
-    return Capture(png=buf.getvalue(), image=img, width=img.width, height=img.height, left=left, top=top, hwnd=GAME_HWND)
+    from windows.capture import Capture
+    return Capture(image=img, width=img.width, height=img.height, left=left, top=top, hwnd=GAME_HWND)
 
 
-# ---------------------------------------------------------------- Windows parts
 class FakeOverlay:
-    """winport.overlay.Overlay: records show/hide and draws each shown state with the real render()."""
+    """windows.overlay_window.OverlayWindow: records show/hide and draws each shown state with the real render()."""
     instances = []
 
-    def __init__(self, on_error=None):
-        self.on_error = on_error
+    def __init__(self):
         self.shown = []        # (state, target) per show()
         self.hides = 0
         self.visible = False
-        self.hwnd = None
         type(self).instances.append(self)
 
     def show(self, state, target):
@@ -124,12 +134,9 @@ class FakeOverlay:
         self.hides += 1
         self.visible = False
 
-    def stop(self):
-        self.visible = False
-
     def image(self, index=-1, scale=1.0):
         """What the overlay window would show for the index'th show(), on a monitor the size of the capture."""
-        from winport.overlay import render
+        from overlay import render
         state, target = self.shown[index]
         tgt = dict(target)
         mon = (tgt["left"], tgt["top"], tgt["width"], tgt["height"])
@@ -140,7 +147,6 @@ class FakeHotkey:
     def __init__(self, on_press):
         self.on_press = on_press
         self.enabled = None
-        self.closed = False
         self.error = None  # 1409: another program owns the combo
 
     def set_enabled(self, on):
@@ -149,30 +155,27 @@ class FakeHotkey:
     def status(self):
         return {"registered": bool(self.enabled) and not self.error, "hotkey": "Ctrl+Alt+T", "error": self.error}
 
-    def close(self):
-        self.closed = True
-
 
 class FakeProcesses:
-    """winport.pause: the game's pause (NtSuspendProcess) recorded instead of done."""
+    """game_process: the game's pause recorded instead of done."""
 
     def __init__(self):
         self.suspended = set()
         self.log = []
 
-    def resume_leftovers(self):
-        self.log.append("resume_leftovers")
+    class SuspendError(Exception):
+        pass
 
-    def game_pid(self, hwnd):
-        return GAME_PID if hwnd == GAME_HWND else 0
+    def resume_after_restart(self):
+        self.log.append("resume_after_restart")
 
-    def suspend(self, pid):
-        self.log.append(("suspend", pid))
-        self.suspended.add(pid)
-        return True
-
-    def any_suspended(self):
-        return bool(self.suspended)
+    def suspend(self, hwnd):
+        if self.suspended:
+            return
+        if hwnd != GAME_HWND:
+            raise self.SuspendError("this window isn't a game Steam started, so it keeps running")
+        self.log.append(("suspend", GAME_PID))
+        self.suspended.add(GAME_PID)
 
     def resume_all(self):
         self.log.append("resume_all")
@@ -185,7 +188,7 @@ class FakeWindows:
     def __init__(self):
         self.capture_image = screen_image()
         self.captures = 0
-        self.overlay_cls = type("Overlay", (FakeOverlay,), {"instances": []})
+        self.overlay_cls = type("OverlayWindow", (FakeOverlay,), {"instances": []})
         self.processes = FakeProcesses()
         self.hotkeys = []
         self._saved = {}
@@ -198,7 +201,7 @@ class FakeWindows:
     def hotkey(self):
         return self.hotkeys[-1] if self.hotkeys else None
 
-    async def capture_foreground(self, exclude=()):
+    async def capture_foreground(self):
         self.captures += 1
         return capture_of(self.capture_image) if self.capture_image is not None else None
 
@@ -208,8 +211,8 @@ class FakeWindows:
         return hk
 
     def install(self, main):
-        seams = {"capture_foreground": self.capture_foreground, "Overlay": self.overlay_cls,
-                 "Hotkey": self._make_hotkey, "game_pause": self.processes}
+        seams = {"capture_foreground": self.capture_foreground, "OverlayWindow": self.overlay_cls,
+                 "Hotkey": self._make_hotkey, "game_process": self.processes}
         for name, value in seams.items():
             self._saved[name] = getattr(main, name)
             setattr(main, name, value)
@@ -220,11 +223,10 @@ class FakeWindows:
             setattr(main, name, value)
 
 
-# ---------------------------------------------------------------- the network
 GOOGLE_URL = "https://translate.googleapis.com/translate_a/single"
 BING_PAGE = "https://www.bing.com/translator"
 BING_URL = "https://www.bing.com/ttranslatev3"
-OCRSPACE_URL = "https://api.ocr.space/parse/image"
+VISION_URL = "https://vision.googleapis.com/v1/images:annotate"
 BING_PAGE_HTML = ('<html><script>_G={IG:"0123456789ABCDEF"};params_AbusePreventionHelper = [1700000000000,"tok123",3600000];'
                   '</script><div data-iid="translator.5023"></div></html>')
 
@@ -238,18 +240,16 @@ class Network:
     services' stubs; records the calls. A request no stub answers, or to a service in `down`, fails like a dead
     network."""
 
-    closed = False
-
     def __init__(self):
         self.dictionary = dict(DICTIONARY)
         self.google_status = 200
-        self.ocr_lines = word_boxes()
+        self.ocr_paragraphs = vision_paragraphs()
         self.languages = ("auto", "en")  # (source, target) the translators expect; others are refused
         self.down = set()
-        self.log = []  # (method, url, params, data)
+        self.log = []  # (method, url, params, data or json body)
         self.routes = {("POST", GOOGLE_URL): self._google, ("GET", GOOGLE_URL): lambda p, d: (200, '[[["ok","ok"]]]'),
                        ("GET", BING_PAGE): lambda p, d: (200, BING_PAGE_HTML), ("POST", BING_URL): self._bing,
-                       ("POST", OCRSPACE_URL): self._ocrspace, ("HEAD", OCRSPACE_URL): lambda p, d: (200, "")}
+                       ("POST", VISION_URL): self._vision}
 
     def __enter__(self):
         from providers import base
@@ -265,11 +265,12 @@ class Network:
 
     @contextlib.asynccontextmanager
     async def request(self, method, url, params=None, data=None, json=None, headers=None, timeout=None):
-        self.log.append((method, url, params or {}, data or {}))
+        body = data or json or {}
+        self.log.append((method, url, params or {}, body))
         handler = self.routes.get((method, url))
         if url in self.down or handler is None:
             raise aiohttp.ClientConnectionError(f"no network in the tests ({method} {url})")
-        status, body = handler(params or {}, data or {})
+        status, body = handler(params or {}, body)
         yield types.SimpleNamespace(status=status, headers={}, text=lambda: _text(body))
 
     async def close(self):
@@ -291,10 +292,11 @@ class Network:
         out = translate_lines(form["text"], self.dictionary)
         return 200, json.dumps([{"detectedLanguage": {"language": "de"}, "translations": [{"text": out, "to": "en"}]}])
 
-    def _ocrspace(self, params, data):
-        return 200, json.dumps({"ParsedResults": [{"FileParseExitCode": 1, "TextOverlay": {"Lines": self.ocr_lines},
-                                                   "ParsedText": "\n".join(l["LineText"] for l in self.ocr_lines)}],
-                                "OCRExitCode": 1, "IsErroredOnProcessing": False})
+    def _vision(self, params, body):
+        if not body["requests"]:
+            return 400, "empty request"  # the reachability probe
+        page = {"blocks": [{"paragraphs": self.ocr_paragraphs}]}
+        return 200, json.dumps({"responses": [{"fullTextAnnotation": {"pages": [page]}}]})
 
 
 async def _text(body):
@@ -315,24 +317,26 @@ def block_sockets():
     return lambda: setattr(socket.socket, "connect", real_connect)
 
 
-# ---------------------------------------------------------------- a running plugin
 class Backend:
     """A started Plugin on an event loop of its own; call() runs a frontend call to completion."""
 
-    def __init__(self, main, settings_dir, settings=None):
+    def __init__(self, main, data_dir, settings=None):
+        """data_dir holds this backend's settings and runtime folders (Decky's DECKY_PLUGIN_SETTINGS/RUNTIME_DIR)."""
         self.main = main
-        self.settings_dir = settings_dir
-        os.makedirs(settings_dir, exist_ok=True)
+        self.settings_dir = os.path.join(data_dir, "settings")
+        self.runtime_dir = os.path.join(data_dir, "runtime")
+        os.makedirs(self.settings_dir, exist_ok=True)
+        os.makedirs(self.runtime_dir, exist_ok=True)
         if settings:
-            with open(os.path.join(settings_dir, "decky-translator-settings.json"), "w", encoding="utf-8") as f:
+            with open(os.path.join(self.settings_dir, "decky-translator-settings.json"), "w", encoding="utf-8") as f:
                 json.dump(settings, f)
         self.loop = asyncio.new_event_loop()
         self.plugin = None
 
     def start(self):
-        self.main.settingsDir = self.settings_dir
+        self.main.SETTINGS_DIR = self.settings_dir
+        self.main.RUNTIME_DIR = self.runtime_dir
         self.plugin = self.main.Plugin()
-        self.plugin._screenshotPath = os.path.join(self.settings_dir, "screenshots")
         self.loop.run_until_complete(self.plugin._main())
         return self
 
@@ -343,14 +347,7 @@ class Backend:
         return self.loop.run_until_complete(coro)
 
     def stop(self):
-        """_unload without closing main.py's log files (they belong to the module, which stays imported)."""
-        p = self.plugin
-        if p:
-            self.main.game_pause.resume_all()
-            if p._provider_manager:
-                p._provider_manager.shutdown()
-            if p._translation_cache:
-                p._translation_cache.close()
-            if p._overlay:
-                p._overlay.stop()
+        """What the plugin process's end would release: the cache's database file (tmp_path stays deletable)."""
+        if self.plugin and self.plugin._translation_cache:
+            self.plugin._translation_cache.close()
         self.loop.close()

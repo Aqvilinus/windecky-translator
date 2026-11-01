@@ -30,8 +30,10 @@ user32.SetForegroundWindow.argtypes = [wintypes.HWND]
 user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
 user32.IsIconic.argtypes = [wintypes.HWND]
 WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+SW_RESTORE = 9
+PROCESS_PER_MONITOR_DPI_AWARE = 2
 
-OVERLAY_CLASS = "DeckyTranslatorOverlay"  # py_modules/winport/overlay.py CLASS_NAME
+OVERLAY_CLASS = "DeckyTranslatorOverlay"  # py_modules/windows/overlay_window.py CLASS_NAME
 
 
 def title(hwnd):
@@ -72,7 +74,6 @@ def state(pattern=None):
     return {"foreground": describe(fg), "overlay": describe(overlay), "target": describe(find(pattern)) if pattern else None}
 
 
-# SendInput
 INPUT_KEYBOARD, KEYEVENTF_KEYUP = 1, 0x2
 VK = {"ctrl": 0x11, "alt": 0x12, "shift": 0x10, "win": 0x5B, "tab": 0x09, "esc": 0x1B, "enter": 0x0D}
 
@@ -112,7 +113,7 @@ def focus(pattern):
     if not hwnd:
         return {"ok": False, "error": f"no visible window matching {pattern!r}"}
     if user32.IsIconic(hwnd):
-        user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+        user32.ShowWindow(hwnd, SW_RESTORE)
     # Windows only lets the process that got the last input change the foreground: a lone Alt press gives us that
     for _ in range(5):
         keys("alt")
@@ -140,7 +141,7 @@ def diff(a, b):
 
 
 def main():
-    ctypes.windll.shcore.SetProcessDpiAwareness(2)  # real pixels, like the overlay window
+    ctypes.windll.shcore.SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE)  # real pixels, like the overlay window
     cmd, args = sys.argv[1], sys.argv[2:]
     result = {"state": state, "focus": focus, "keys": keys, "grab": grab, "diff": diff}[cmd](*args)
     print(json.dumps(result, ensure_ascii=False))

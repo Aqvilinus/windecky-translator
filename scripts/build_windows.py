@@ -78,8 +78,6 @@ def fetch_python(target, work):
 
 
 def license_of(meta):
-    """A package's license as its metadata states it: the SPDX expression, else a short License field, else the
-    trove classifiers."""
     if meta.get("License-Expression"):
         return meta["License-Expression"]
     text = (meta.get("License") or "").strip()

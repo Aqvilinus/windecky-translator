@@ -1,23 +1,22 @@
-// The translation cache: its entries in a dialog
 import { ModalRoot, DialogButton, Focusable } from "@decky/ui";
-import { VFC, useState, useEffect, useRef } from "react";
-import { OCR_ENGINE_LABELS, TRANSLATION_ENGINE_LABELS } from "../../providers";
+import { VFC, useState, useEffect } from "react";
+import { OCR_PROVIDER_LABELS, TRANSLATION_PROVIDER_LABELS } from "../../providers";
 import { backend } from "../../backend";
 import { HiTrash, HiXCircle, HiExclamationTriangle } from "react-icons/hi2";
 import { languageOptions } from "./languages";
 
 // who translated a cached line: a translation engine, or Gemini Vision (OCR and translation in one)
-export const cacheProviderLabel = (p: string) =>
-    ({ ...TRANSLATION_ENGINE_LABELS, gemini_vision: OCR_ENGINE_LABELS.gemini_vision } as Record<string, string>)[p] || p || "?";
+export const providerLabel = (p: string) =>
+    ({ ...TRANSLATION_PROVIDER_LABELS, gemini_vision: OCR_PROVIDER_LABELS.gemini_vision } as Record<string, string>)[p] || p || "?";
 
-export const cacheLangFlag = (code: string) => {
+export const languageFlag = (code: string) => {
     const opt = languageOptions.find(o => o.data === code);
     return opt ? opt.label.split(" ")[0] : code;
 };
 
 // compare by word content only, ignoring spacing, punctuation and case
-export const cacheWordContent = (s: string) => (s || "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
-export const cacheSameText = (a: string, b: string) => cacheWordContent(a) === cacheWordContent(b);
+export const normalizeText = (s: string) => (s || "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+export const sameText = (a: string, b: string) => normalizeText(a) === normalizeText(b);
 
 // matches the backend MAX_ROWS eviction cap, so we load every cached entry
 export const CACHE_ENTRY_LIMIT = 50000;
@@ -28,9 +27,6 @@ export const CacheEntriesModal: VFC<{ closeModal?: () => void; onCleared?: () =>
     const [filter, setFilter] = useState<"all" | "unique" | "identical">("all");
     const [page, setPage] = useState(0);
     const [confirmClear, setConfirmClear] = useState(false);
-    const wrapRef = useRef<HTMLDivElement>(null);
-    const trackRef = useRef<HTMLDivElement>(null);
-    const thumbRef = useRef<HTMLDivElement>(null);
 
     const cycleFilter = () => {
         const order = ["unique", "identical", "all"] as const;
@@ -48,36 +44,13 @@ export const CacheEntriesModal: VFC<{ closeModal?: () => void; onCleared?: () =>
     const all = entries || [];
     const shown = filter === "all"
         ? all
-        : all.filter(e => cacheSameText(e.source, e.translation) === (filter === "identical"));
+        : all.filter(e => sameText(e.source, e.translation) === (filter === "identical"));
     const totalPages = Math.max(1, Math.ceil(shown.length / CACHE_PAGE_SIZE));
     const pageItems = shown.slice(page * CACHE_PAGE_SIZE, (page + 1) * CACHE_PAGE_SIZE);
 
     useEffect(() => {
         if (page >= totalPages) setPage(totalPages - 1);
     }, [totalPages, page]);
-
-    useEffect(() => {
-        const sc = wrapRef.current?.querySelector(".dt-cache-scroll") as HTMLElement | null;
-        const track = trackRef.current;
-        const thumbEl = thumbRef.current;
-        if (!sc || !track || !thumbEl) return;
-        const update = () => {
-            const h = sc.clientHeight;
-            if (!sc.scrollHeight || sc.scrollHeight <= h) {
-                track.style.display = "none";
-                return;
-            }
-            track.style.display = "block";
-            const height = Math.max(24, h * h / sc.scrollHeight);
-            const range = sc.scrollHeight - h;
-            const top = range > 0 ? (sc.scrollTop / range) * (h - height) : 0;
-            thumbEl.style.height = `${height}px`;
-            thumbEl.style.transform = `translateY(${top}px)`;
-        };
-        update();
-        sc.addEventListener("scroll", update);
-        return () => sc.removeEventListener("scroll", update);
-    }, [entries, filter, page]);
 
     const removeEntry = async (e: any) => {
         await backend.deleteTranslationCacheEntry(e.sourceLang, e.targetLang, e.source);
@@ -94,27 +67,6 @@ export const CacheEntriesModal: VFC<{ closeModal?: () => void; onCleared?: () =>
         await backend.clearTranslationCache();
         setEntries([]);
         onCleared?.();
-    };
-
-    const onThumbDown = (e: any) => {
-        e.preventDefault();
-        const sc = wrapRef.current?.querySelector(".dt-cache-scroll") as HTMLElement | null;
-        if (!sc) return;
-        const startY = e.clientY;
-        const startScroll = sc.scrollTop;
-        const track = sc.clientHeight;
-        const thumbH = Math.max(24, track * track / sc.scrollHeight);
-        const travel = track - thumbH;
-        const scrollRange = sc.scrollHeight - track;
-        const onMove = (ev: MouseEvent) => {
-            if (travel > 0) sc.scrollTop = startScroll + (ev.clientY - startY) * (scrollRange / travel);
-        };
-        const onUp = () => {
-            document.removeEventListener("mousemove", onMove);
-            document.removeEventListener("mouseup", onUp);
-        };
-        document.addEventListener("mousemove", onMove);
-        document.addEventListener("mouseup", onUp);
     };
 
     const pagerButton = (label: string, enabled: boolean, onClick: () => void) => {
@@ -149,13 +101,20 @@ export const CacheEntriesModal: VFC<{ closeModal?: () => void; onCleared?: () =>
                         </Focusable>
                     )}
                 </div>
-                <style>{`.dt-rowfocus { background: rgba(103,160,255,0.22) !important; }`}</style>
+                {/* Steam's UI hides every scrollbar (::-webkit-scrollbar display: none): this one is turned back on, as
+                    Decky Loader's own error page does */}
+                <style>{`
+                    .dt-rowfocus { background: rgba(103,160,255,0.22) !important; }
+                    .dt-cache-scroll::-webkit-scrollbar { display: initial !important; width: 8px; }
+                    .dt-cache-scroll::-webkit-scrollbar-track { background: rgba(255,255,255,0.08); border-radius: 4px; }
+                    .dt-cache-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.4); border-radius: 4px; }
+                `}</style>
                 {entries === null && <p style={{ color: "#aaa" }}>Loading...</p>}
                 {entries !== null && shown.length === 0 && (
                     <p style={{ color: "#aaa" }}>{all.length === 0 ? "Nothing cached yet." : "Nothing to show."}</p>
                 )}
                 {shown.length > 0 && (
-                    <div ref={wrapRef} style={{ position: "relative", flex: "1 1 auto", minHeight: 0, display: "flex" }}>
+                    <div style={{ flex: "1 1 auto", minHeight: 0, display: "flex" }}>
                         <Focusable key={`${filter}-${page}`} className="dt-cache-scroll" style={{ flex: 1, overflowY: "scroll", display: "flex", flexDirection: "column", gap: "6px", paddingRight: "12px", paddingTop: "8px", paddingBottom: "8px" }}>
                             {pageItems.map((e) => (
                                 <Focusable
@@ -169,16 +128,16 @@ export const CacheEntriesModal: VFC<{ closeModal?: () => void; onCleared?: () =>
                                         style={{ flex: "1 1 auto", minWidth: 0, display: "flex", flexDirection: "column", gap: "2px", padding: "8px 0 8px 10px", scrollMargin: "8px" }}
                                     >
                                         <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", color: "rgba(255,255,255,0.28)", fontSize: "9px" }}>
-                                            <span><span style={{ fontWeight: "bold" }}>Translated with:</span> {cacheProviderLabel(e.provider)}</span>
+                                            <span><span style={{ fontWeight: "bold" }}>Translated with:</span> {providerLabel(e.provider)}</span>
                                             <span><span style={{ fontWeight: "bold" }}>Date:</span> {e.createdAt ? new Date(e.createdAt * 1000).toLocaleString([], { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : ""}</span>
                                             <span><span style={{ fontWeight: "bold" }}>Reused:</span> {e.hits} {e.hits === 1 ? "time" : "times"}</span>
                                         </div>
                                         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                                            <span style={{ fontSize: "14px", flexShrink: 0, width: "20px", textAlign: "center" }}>{cacheLangFlag(e.sourceLang)}</span>
+                                            <span style={{ fontSize: "14px", flexShrink: 0, width: "20px", textAlign: "center" }}>{languageFlag(e.sourceLang)}</span>
                                             <span style={{ color: "#dcdedf", fontSize: "11px", flex: "1 1 auto", minWidth: 0 }}>{e.source}</span>
                                         </div>
                                         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                                            <span style={{ fontSize: "14px", flexShrink: 0, width: "20px", textAlign: "center" }}>{cacheLangFlag(e.targetLang)}</span>
+                                            <span style={{ fontSize: "14px", flexShrink: 0, width: "20px", textAlign: "center" }}>{languageFlag(e.targetLang)}</span>
                                             <span style={{ color: "#6fcf97", fontStyle: "italic", fontSize: "11px", flex: "1 1 auto", minWidth: 0 }}>{e.translation}</span>
                                         </div>
                                     </Focusable>
@@ -191,9 +150,6 @@ export const CacheEntriesModal: VFC<{ closeModal?: () => void; onCleared?: () =>
                                 </Focusable>
                             ))}
                         </Focusable>
-                        <div ref={trackRef} style={{ position: "absolute", top: 0, right: "2px", width: "8px", height: "100%", borderRadius: "4px", background: "rgba(255,255,255,0.08)", display: "none" }}>
-                            <div ref={thumbRef} onMouseDown={onThumbDown} style={{ position: "absolute", left: 0, width: "100%", height: 0, background: "rgba(255,255,255,0.4)", borderRadius: "4px", cursor: "pointer" }} />
-                        </div>
                     </div>
                 )}
                 {totalPages > 1 && (

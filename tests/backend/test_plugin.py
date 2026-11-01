@@ -1,12 +1,13 @@
 """main.py's Plugin driven through the calls the frontend makes, end to end inside the backend: settings, capture,
 OCR, translation (Google, the Bing fallback, the cache), the overlay window's drawing, the game pause and the
 hotkey. Only the Windows and network edges are emulated (harness.py)."""
+import base64
+import io
 import json
-import os
 import threading
 
 import pytest
-from PIL import ImageChops
+from PIL import Image, ImageChops
 
 import harness
 
@@ -14,8 +15,8 @@ import harness
 
 def overlay_state(regions, **kw):
     """What src/windows.ts sends for a shown translation."""
-    return {"visible": True, "regions": regions, "loading": False, "processingStep": "", "processingDetail": "",
-            "processingIsError": False, "fontScale": 1.0, **kw}
+    return {"visible": True, "regions": regions, "loading": False, "status": "", "statusDetail": "",
+            "isError": False, "fontScale": 1.0, **kw}
 
 
 def pixels(img):
@@ -23,19 +24,16 @@ def pixels(img):
 
 
 def translate_screen(backend):
-    shot = backend.call("take_screenshot", "The Banner Saga")
-    regions = backend.call("recognize_text_file", shot["path"])
+    shot = backend.call("capture_screen")
+    regions = backend.call("recognize_capture", shot["id"])
     return shot, regions, backend.call("translate_text", regions, "en", "auto")
 
 
-# ---------------------------------------------------------------- start and settings
 def test_start_on_windows(backend, windows):
-    assert windows.processes.log[0] == "resume_leftovers"  # a game an earlier run paused is resumed first
+    assert windows.processes.log[0] == "resume_after_restart"  # a game an earlier run paused is resumed first
     assert windows.hotkey.enabled is True
     s = backend.call("get_all_settings")
-    assert s["ocr_provider"] == "ocrspace" and s["translation_provider"] == "freegoogle" and s["enabled"] is True
-    status = backend.call("get_provider_status")
-    assert status["ocr_provider"] == "OCR.space" and status["translation_available"] is True
+    assert s["ocr_provider"] == "google_cloud" and s["translation_provider"] == "google_web" and s["enabled"] is True
 
 
 def test_settings_persist_across_a_restart(start, windows):
@@ -58,7 +56,7 @@ def test_api_keys_never_reach_the_frontend(backend):
     assert key not in json.dumps(backend.call("get_all_settings")) and shown == "AIz…cdef"
     # saving the masked key back (a dialog closed unchanged) keeps the real one
     assert backend.call("set_setting", "google_api_key", shown) is True
-    with open(backend.plugin._settings.settings_path, encoding="utf-8") as f:
+    with open(backend.plugin._settings.path, encoding="utf-8") as f:
         assert json.load(f)["google_api_key"] == key
 
 
@@ -69,65 +67,55 @@ def test_unknown_settings_are_refused(backend):
 
 def test_every_setting_has_a_value_from_the_start(backend):
     s = backend.call("get_all_settings")
-    assert s["input_language"] == "auto" and s["confidence_threshold"] == 0.6 and s["llm_backend"] == "gemini"
+    assert s["source_language"] == "auto" and s["confidence_threshold"] == 0.6 and s["llm_service"] == "gemini"
 
 
 def test_the_saved_gemini_model_is_used_after_a_restart(start):
     b = start({"gemini_model": "gemini-9-pro"})
-    assert b.plugin._provider_manager._gemini_model == "gemini-9-pro"
+    assert b.plugin._providers._gemini_model == "gemini-9-pro"
 
 
 def test_a_worker_stays_up_only_for_the_chosen_engine_while_the_plugin_is_on(start):
-    b = start({"translation_provider": "ct2", "ct2_persistent_mode": True})  # no model: nothing really starts
-    pm = b.plugin._provider_manager
-    assert pm._ct2_persistent_mode is True
+    b = start({"translation_provider": "nllb", "nllb_keep_alive": True})  # no model: nothing really starts
+    pm = b.plugin._providers
+    assert pm._nllb_keep_alive is True
     b.call("set_setting", "enabled", False)
-    assert pm._ct2_persistent_mode is False
+    assert pm._nllb_keep_alive is False
     b.call("set_setting", "enabled", True)
-    assert pm._ct2_persistent_mode is True
-    b.call("set_setting", "translation_provider", "freegoogle")
-    assert pm._ct2_persistent_mode is False
-    assert pm._chromescreenai_persistent_mode is False  # "Faster Recognition" is off
+    assert pm._nllb_keep_alive is True
+    b.call("set_setting", "translation_provider", "google_web")
+    assert pm._nllb_keep_alive is False
+    assert pm._chrome_screen_ai_keep_alive is False  # "Faster Recognition" is off
 
 
-def test_a_damaged_settings_file_is_kept_aside(start, tmp_path):
-    settings = tmp_path / "settings"
-    settings.mkdir()
-    (settings / "decky-translator-settings.json").write_text('{"target_language": "de", "ena', encoding="utf-8")
-    b = start(write_settings=False)
-    assert (settings / "decky-translator-settings.json.damaged").exists()
-    assert b.call("get_all_settings")["target_language"] == "en"
-
-
-# ---------------------------------------------------------------- the translation pipeline
 def test_capture_ocr_translate_overlay(backend, windows, net):
     shot, regions, translated = translate_screen(backend)
 
-    # the capture stays in memory: the frontend gets only a name
-    assert shot == {"path": shot["path"]} and shot["path"].endswith(".png") and "The Banner Saga" in shot["path"]
-    assert windows.captures == 1 and not os.path.exists(shot["path"])
+    assert shot == {"id": 1}  # the pixels stay in the backend
+    assert windows.captures == 1
     assert [r["text"] for r in regions] == [t for t, _ in harness.SCREEN]
     for r, (_, (x, y)) in zip(regions, harness.SCREEN):
         assert abs(r["rect"]["left"] - x) <= 4 and abs(r["rect"]["top"] - y) <= 12
-    sent = net.calls(harness.OCRSPACE_URL)[0][3]
-    assert sent["base64Image"].startswith("data:image/png;base64,")  # the captured PNG went to OCR
+    sent = net.calls(harness.VISION_URL)[0][3]
+    image = base64.b64decode(sent["requests"][0]["image"]["content"])
+    assert Image.open(io.BytesIO(image)).size == (640, 360)  # the whole capture went to OCR
 
     assert [r["translatedText"] for r in translated] == ["Welcome, traveller", "New game"]
     assert len(net.calls(harness.GOOGLE_URL)) == 1  # one request for all lines
     assert net.calls(harness.BING_URL) == []
 
-    assert backend.call("native_overlay_update", overlay_state(translated)) is True
+    assert backend.call("update_overlay", overlay_state(translated)) is True
     overlay = windows.overlay
     state, target = overlay.shown[-1]
     assert overlay.visible and target["hwnd"] == harness.GAME_HWND and state["regions"] == translated
 
-    assert backend.call("native_overlay_update", {"visible": False}) is True
+    assert backend.call("update_overlay", {"visible": False}) is True
     assert not overlay.visible
 
 
 def test_overlay_draws_the_labels_over_the_text(backend, windows, net):
     _, _, translated = translate_screen(backend)
-    backend.call("native_overlay_update", overlay_state(translated))
+    backend.call("update_overlay", overlay_state(translated))
     shot = windows.capture_image.convert("RGBA")
     drawn = windows.overlay.image()
     assert drawn.size == shot.size
@@ -157,22 +145,22 @@ def test_google_rate_limit_falls_back_to_bing(backend, net):
 def test_a_translation_that_gives_nothing_back_is_an_error(backend, net, monkeypatch):
     """Google refuses and Bing's answer is unusable: say so instead of showing the originals as if translated."""
     net.google_status = 429
-    free = backend.plugin._provider_manager.get_translation_provider()
+    free = backend.plugin._providers.get_translation_provider()
 
     async def unusable(texts, src, tgt):
         return [None] * len(texts)
     monkeypatch.setattr(free._bing, "translate_lines", unusable)
-    shot = backend.call("take_screenshot", "Game")
-    regions = backend.call("recognize_text_file", shot["path"])
+    shot = backend.call("capture_screen")
+    regions = backend.call("recognize_capture", shot["id"])
     reply = backend.call("translate_text", regions, "en", "auto")
     assert reply["error"] == "translation_failed" and "did not answer" in reply["message"]
-    assert backend.call("get_translation_cache_stats")["entries"] == 0
+    assert backend.call("count_translation_cache_entries") == 0
 
 
 def test_offline_translation_failures_are_errors(backend, monkeypatch):
     from providers import TranslationError
-    from providers.ct2_translate import CT2TranslateProvider
-    provider = CT2TranslateProvider.__new__(CT2TranslateProvider)  # no worker, no model folder
+    from providers.nllb_translate import NLLBTranslateProvider
+    provider = NLLBTranslateProvider.__new__(NLLBTranslateProvider)  # no worker, no model folder
     with pytest.raises(TranslationError, match="source language"):
         provider._translate_batch_sync(["Hallo"], "auto", "en")
 
@@ -193,8 +181,8 @@ def test_translation_cache(start, net):
     _, regions, first = translate_screen(b)
     assert b.call("translate_text", regions, "en", "auto") == first
     assert len(net.calls(harness.GOOGLE_URL)) == 1  # the second came from the cache
-    assert b.call("get_translation_cache_stats")["entries"] == 2
-    assert b.call("clear_translation_cache") is not None
+    assert b.call("count_translation_cache_entries") == 2
+    b.call("clear_translation_cache")
     b.call("translate_text", regions, "en", "auto")
     assert len(net.calls(harness.GOOGLE_URL)) == 2
 
@@ -204,93 +192,122 @@ def test_translation_cache(start, net):
     assert len(net.calls(harness.GOOGLE_URL)) == 4
 
 
+def test_lines_below_the_confidence_setting_are_dropped(start, net):
+    b = start({"confidence_threshold": 0.99})  # the stub's lines come with 0.98
+    assert b.call("recognize_capture", b.call("capture_screen")["id"]) == []
+    b.call("set_setting", "confidence_threshold", 0.9)
+    assert len(b.call("recognize_capture", b.call("capture_screen")["id"])) == len(harness.SCREEN)
+
+
+def test_a_google_vision_failure_is_shown_not_taken_for_no_text(backend, net):
+    net.routes[("POST", harness.VISION_URL)] = lambda params, body: (500, "backend error")
+    shot = backend.call("capture_screen")
+    assert backend.call("recognize_capture", shot["id"]) == {
+        "error": "network_error", "message": "Google Cloud Vision error 500: backend error"}
+
+
+def test_a_refused_google_cloud_project_is_shown_in_googles_words(backend, net):
+    disabled = "Cloud Vision API has not been used in project 1 before or it is disabled."
+    net.routes[("POST", harness.VISION_URL)] = lambda params, body: (
+        403, json.dumps({"error": {"code": 403, "message": disabled, "status": "PERMISSION_DENIED"}}))
+    shot = backend.call("capture_screen")
+    assert backend.call("recognize_capture", shot["id"]) == {
+        "error": "api_key_error", "message": f"Google Cloud Vision: {disabled}"}
+
+
 def test_no_network(backend, net):
-    net.down |= {harness.GOOGLE_URL, harness.OCRSPACE_URL}
-    shot = backend.call("take_screenshot", "Game")
-    assert backend.call("recognize_text_file", shot["path"]) == {"error": "network_error", "message": "No internet connection"}
-    regions = [{"text": "Hallo Welt", "rect": {"left": 0, "top": 0, "right": 10, "bottom": 10}, "confidence": 1, "isDialog": False}]
+    net.down |= {harness.GOOGLE_URL, harness.VISION_URL}
+    shot = backend.call("capture_screen")
+    assert backend.call("recognize_capture", shot["id"]) == {"error": "network_error", "message": "No internet connection"}
+    regions = [{"text": "Hallo Welt", "rect": {"left": 0, "top": 0, "right": 10, "bottom": 10}}]
     assert backend.call("translate_text", regions, "en", "auto") == {"error": "network_error", "message": "No internet connection"}
 
 
 def test_ocr_engine_failures_reach_the_frontend(backend, monkeypatch):
     """A failing engine is reported with its reason, not as an empty result ("No text found")."""
     from providers import OCRError
-    provider = backend.plugin._provider_manager.get_ocr_provider()
+    provider = backend.plugin._providers.get_ocr_provider()
 
     async def times_out(image, language="auto"):
         raise OCRError("On-device OCR timed out after 120 s")
     monkeypatch.setattr(provider, "recognize", times_out)
-    shot = backend.call("take_screenshot", "Game")
-    assert backend.call("recognize_text_file", shot["path"]) == {
+    shot = backend.call("capture_screen")
+    assert backend.call("recognize_capture", shot["id"]) == {
         "error": "ocr_failed", "message": "On-device OCR timed out after 120 s"}
 
     async def crashes(image, language="auto"):
         raise ValueError("bug")
     monkeypatch.setattr(provider, "recognize", crashes)
-    shot = backend.call("take_screenshot", "Game")
-    assert backend.call("recognize_text_file", shot["path"])["error"] == "ocr_failed"
+    shot = backend.call("capture_screen")
+    assert backend.call("recognize_capture", shot["id"])["error"] == "ocr_failed"
 
 
-def test_chrome_screen_ai_failures_raise(monkeypatch, tmp_path):
-    """The engine's own failures (crash, timeout, unreadable output) become OCRError with a reason."""
-    import subprocess
+def test_chrome_screen_ai_failures_raise(tmp_path):
+    """The engine's own failures (no answer, an error, a failed start) become OCRError with a reason; without
+    Faster Recognition the worker is stopped after each request."""
     from providers import OCRError
-    from providers.chromescreenai_provider import ChromeScreenAIProvider
+    from providers.chrome_screen_ai import ChromeScreenAIProvider
+
+    class FakeWorker:
+        def __init__(self, replies):
+            self.replies, self.alive, self.stops = list(replies), False, 0
+
+        def start(self):
+            self.alive = True
+            return True
+
+        def request(self, message, timeout):
+            return self.replies.pop(0)
+
+        def stop(self, shutdown_message=None):
+            self.alive, self.stops = False, self.stops + 1
+
     provider = ChromeScreenAIProvider(model_dir=str(tmp_path))
-    provider._python_path = "python.exe"
-
-    def run(result=None, error=None):
-        def fake(*args, **kwargs):
-            if error:
-                raise error
-            return result
-        monkeypatch.setattr(subprocess, "run", fake)
-
-    for result, error, reason in (
-        (subprocess.CompletedProcess([], 3, "", "access violation"), None, "exit code 3"),
-        (subprocess.CompletedProcess([], 0, "not json", ""), None, "unreadable"),
-        (subprocess.CompletedProcess([], 0, '{"error": "model failed to load"}', ""), None, "model failed to load"),
-        (None, subprocess.TimeoutExpired("python.exe", 120), "timed out"),
+    for replies, reason in (
+        ([{"type": "ready"}, None], "didn't answer"),
+        ([{"type": "ready"}, {"error": "PerformOCR null"}], "PerformOCR null"),
+        ([{"type": "ready", "error": "the DLL didn't load"}], "could not load"),
     ):
-        run(result, error)
+        provider._worker = FakeWorker(replies)
         with pytest.raises(OCRError, match=reason):
-            provider._recognize_oneshot(b"png")
+            provider._recognize(b"png")
+        assert not provider._worker.alive
 
 
 def test_nothing_captured(backend, windows):
     windows.capture_image = None  # no foreground window
-    assert backend.call("take_screenshot", "Game") == {"path": ""}
+    assert backend.call("capture_screen") == {"error": "No game window in front to capture"}
 
 
-def test_screenshot_files_outside_the_plugin_are_refused(backend, tmp_path):
-    other = tmp_path / "secret.png"
-    other.write_bytes(b"not mine")
-    assert backend.call("recognize_text_file", str(other)) == []
-    assert backend.call("discard_screenshot", str(other)) is False
-    assert other.exists()
+def test_an_old_capture_id_is_refused(backend):
+    shot = backend.call("capture_screen")
+    backend.call("capture_screen")
+    assert backend.call("recognize_capture", shot["id"]) == []
+    assert backend.call("discard_capture", shot["id"]) is False
 
 
-# ---------------------------------------------------------------- Windows: pause, hotkey, Steam apps
 def test_pause_game_while_translating(start, windows, net):
     b = start({"pause_game_on_overlay": True})
     _, _, translated = translate_screen(b)
-    b.call("native_overlay_update", overlay_state(translated))
+    b.call("update_overlay", overlay_state(translated))
     assert windows.processes.suspended == {harness.GAME_PID}
-    b.call("native_overlay_update", overlay_state(translated, fontScale=1.2))  # an update: no second pause
+    b.call("update_overlay", overlay_state(translated, fontScale=1.2))  # an update: no second pause
     assert windows.processes.log.count(("suspend", harness.GAME_PID)) == 1
-    b.call("native_overlay_update", {"visible": False})
+    b.call("update_overlay", {"visible": False})
     assert windows.processes.suspended == set()
 
 
 def test_a_game_that_cannot_be_paused_is_reported_once(start, windows, net, main):
     b = start({"pause_game_on_overlay": True})
     _, _, translated = translate_screen(b)
-    windows.processes.suspend = lambda pid: False  # e.g. access denied
+    def refused(hwnd):
+        raise windows.processes.SuspendError("Windows didn't let the plugin pause this game (details in the plugin log)")
+    windows.processes.suspend = refused
 
     async def show_twice():
         for _ in range(2):
             b.plugin._overlay_visible = False
-            await b.plugin.native_overlay_update(overlay_state(translated))
+            await b.plugin.update_overlay(overlay_state(translated))
         await harness.asyncio.sleep(0.05)
     b.run(show_twice())
     assert [e for e in main.test_events if e[0] == "translator_problem"] == [
@@ -301,35 +318,22 @@ def test_a_game_that_cannot_be_paused_is_reported_once(start, windows, net, main
 def test_switching_the_plugin_off_resumes_a_paused_game(start, windows, net):
     b = start({"pause_game_on_overlay": True})
     _, _, translated = translate_screen(b)
-    b.call("native_overlay_update", overlay_state(translated))
+    b.call("update_overlay", overlay_state(translated))
     b.call("set_setting", "enabled", False)
     assert windows.processes.suspended == set()
 
 
 def test_a_taken_hotkey_is_reported(backend):
-    assert backend.call("get_boot_status") == []
+    assert backend.call("get_startup_errors") == []
     backend.plugin._hotkey.error = 1409
-    [problem] = backend.call("get_boot_status")
+    [problem] = backend.call("get_startup_errors")
     assert "Ctrl+Alt+T is taken by another program" in problem
-
-
-def test_overlay_failures_reach_the_frontend(backend, windows, main):
-    backend.call("native_overlay_update", {"visible": False})  # creates the overlay
-    windows.overlay.on_error("draw failed: MemoryError()")
-
-    async def wait():
-        for _ in range(50):
-            if main.test_events:
-                return
-            await harness.asyncio.sleep(0.01)
-    backend.run(wait())
-    assert main.test_events == [("translator_problem", ("The translation overlay doesn't work: draw failed: MemoryError()",))]
 
 
 def test_hotkey_resumes_a_paused_game_even_without_the_frontend(start, windows, net):
     b = start({"pause_game_on_overlay": True})
     _, _, translated = translate_screen(b)
-    b.call("native_overlay_update", overlay_state(translated))
+    b.call("update_overlay", overlay_state(translated))
     assert windows.processes.suspended == {harness.GAME_PID}
 
     async def press():  # no frontend answers the event
@@ -356,7 +360,6 @@ def test_hotkey_reaches_the_frontend(backend, main):
     assert main.test_events == [("translator_hotkey", ())]
 
 
-# ---------------------------------------------------------------- the real Windows OCR, where the runner has it
 def test_windows_ocr_reads_the_screen(start, windows):
     from providers.windows_ocr import WindowsOCRProvider
     try:
@@ -366,6 +369,6 @@ def test_windows_ocr_reads_the_screen(start, windows):
     if not {"en", "de"} & set(languages):
         pytest.skip(f"no English or German Windows OCR language pack ({languages})")
     b = start({"ocr_provider": "windows_ocr"})
-    shot = b.call("take_screenshot", "Game")
-    texts = " ".join(r["text"] for r in b.call("recognize_text_file", shot["path"]))
+    shot = b.call("capture_screen")
+    texts = " ".join(r["text"] for r in b.call("recognize_capture", shot["id"]))
     assert "Willkommen" in texts and "Spiel" in texts

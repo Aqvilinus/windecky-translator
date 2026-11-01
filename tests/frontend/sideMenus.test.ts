@@ -1,4 +1,4 @@
-// src/windows.ts closeAllSideMenus: closes the side menu in every Steam window; Steam internals that changed only
+// src/steam.ts closeAllSideMenus: closes the side menu in every Steam window; Steam internals that changed only
 // turn parts of it off, they never stop a translation from starting.
 import { describe, expect, it, vi } from 'vitest';
 
@@ -16,7 +16,7 @@ vi.mock('@decky/ui', () => ({
     },
 }));
 
-const { closeAllSideMenus } = await import('../../src/windows');
+const { closeAllSideMenus } = await import('../../src/steam');
 
 describe('closeAllSideMenus', () => {
     it('closes the menus through the window stores even when Router.CloseSideMenus fails', async () => {

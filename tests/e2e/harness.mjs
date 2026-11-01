@@ -5,7 +5,7 @@
 // while it is attached wait for it, and a test that hangs or is killed leaves them frozen (it froze the in-game Steam
 // overlay once). This one attaches only to the windows it uses, one call at a time, each with a timeout.
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -15,7 +15,12 @@ export const ARTIFACTS = join(ROOT, 'tests', 'e2e', 'artifacts');
 const CDP = 'http://127.0.0.1:8080/json';
 const PYTHON = join(ROOT, 'bin', 'python314', 'python', 'python.exe');
 const WIN32 = join(ROOT, 'tests', 'e2e', 'win32.py');
-const LOG = join(process.env.USERPROFILE || '', 'homebrew', 'logs', 'decky-translator', 'decky-translator.log');
+const LOG_DIR = join(process.env.USERPROFILE || '', 'homebrew', 'logs', 'decky-translator');
+// Decky starts a new log file on every plugin start: the newest one is this run's
+const latestLog = () => existsSync(LOG_DIR)
+    ? readdirSync(LOG_DIR).filter(f => f.endsWith('.log')).map(f => join(LOG_DIR, f))
+        .sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)[0]
+    : undefined;
 const QUICK_ACCESS_DECKY_TAB = 999;  // @decky/ui QuickAccessTab.Decky
 
 export const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -30,7 +35,6 @@ export async function waitFor(what, fn, timeoutMs = 10000, everyMs = 150) {
     }
 }
 
-// -- screen and keyboard (win32.py)
 export function win32(...args) {
     if (!existsSync(PYTHON)) throw new Error(`${PYTHON} missing: the plugin's dependencies are not unpacked in bin/`);
     const r = spawnSync(PYTHON, ['-I', WIN32, ...args.map(String)], { encoding: 'utf8', timeout: 30000 });
@@ -43,14 +47,17 @@ export function artifact(name) {
     return join(ARTIFACTS, name);
 }
 
-// -- the plugin's log
 export class Log {
-    mark() { this.offset = existsSync(LOG) ? statSync(LOG).size : 0; }
+    mark() {
+        this.file = latestLog();
+        this.offset = this.file ? statSync(this.file).size : 0;
+    }
     lines() {
-        if (!existsSync(LOG)) return [];
-        const buf = readFileSync(LOG);
-        // after a rotation the file starts over: read it from the start then
-        return buf.subarray(buf.length >= this.offset ? this.offset : 0).toString('utf8').split(/\r?\n/).filter(Boolean);
+        const file = latestLog();
+        if (!file) return [];
+        // a reloaded plugin writes a new file: read that one from the start
+        const buf = readFileSync(file);
+        return buf.subarray(file === this.file ? this.offset : 0).toString('utf8').split(/\r?\n/).filter(Boolean);
     }
     find(rx) { return this.lines().find(l => rx.test(l)); }
 }
@@ -117,7 +124,6 @@ async function withTarget(info, use) {
     try { return await use(t); } finally { t.close(); }
 }
 
-// -- Steam
 export class Steam {
     async connect() {
         const info = await Target.open('SharedJSContext');
@@ -129,25 +135,18 @@ export class Steam {
 
     js(fn, arg, timeoutMs) { return this.shared.eval(fn, arg, timeoutMs); }
 
-    // the plugin instance Decky has registered, and the one its side menu shows
+    // the plugin instance Decky has registered: loaded, and whether its translation is up
     pluginState() {
         return this.js(name => {
-            const ds = DeckyPluginLoader.deckyState;
-            const reg = ds._plugins.find(p => p.name === name);
-            const logic = reg?.content?.props?.logic;
-            return {
-                loaded: !!reg,
-                visible: !!logic?.imageState?.isVisible(),
-                loading: !!logic?.imageState?.isLoading(),
-                activeName: ds._activePlugin?.name ?? null,
-                activeIsRegistered: ds._activePlugin === reg,
-            };
+            const reg = DeckyPluginLoader.deckyState._plugins.find(p => p.name === name);
+            const translator = reg?.content?.props?.translator;
+            return { loaded: !!reg, visible: !!translator?.overlay?.isVisible() };
         }, NAME);
     }
 
     dismiss() {
         return this.js(name => {
-            DeckyPluginLoader.deckyState._plugins.find(p => p.name === name)?.content?.props?.logic?.dismiss();
+            DeckyPluginLoader.deckyState._plugins.find(p => p.name === name)?.content?.props?.translator?.dismiss();
             return true;
         }, NAME);
     }
@@ -179,9 +178,8 @@ export class Steam {
         });
     }
 
-    // the backend has Ctrl+Alt+T registered
     async hotkeyRegistered() {
-        const s = await this.js(name => DeckyBackend.call('loader/call_plugin_method', name, 'get_windows_status'), NAME);
+        const s = await this.js(name => DeckyBackend.call('loader/call_plugin_method', name, 'get_diagnostics'), NAME);
         return !!s?.hotkey?.registered;
     }
 
@@ -200,12 +198,6 @@ export class Steam {
             if (found) return { ...found, window: info.title, click: () => withTarget(info, t => t.click(found.x, found.y)) };
         }
         return null;
-    }
-
-    async reloadPlugin() {
-        await this.js(name => DeckyBackend.call('utilities/disable_plugin', name).then(() => true), NAME, 30000);
-        await sleep(2000);
-        await this.js(name => DeckyBackend.call('utilities/enable_plugin', name).then(() => true), NAME, 30000);
     }
 
     runningApp(appid) {

@@ -1,4 +1,5 @@
-import os
+"""The SQLite cache of translations, by language pair and source text, each with the tier of the engine that made it."""
+
 import re
 import time
 import sqlite3
@@ -9,9 +10,9 @@ logger = logging.getLogger(__name__)
 
 # A request reuses a cached entry only if its tier is >= the selected provider's tier, so quality only flows downward
 PROVIDER_TIERS = {
-    "ct2": 1,
-    "freegoogle": 2,
-    "googlecloud": 3,
+    "nllb": 1,
+    "google_web": 2,
+    "google_cloud": 3,
     "gemini_vision": 3,
     "llm": 3,
 }
@@ -31,7 +32,6 @@ def normalize(text):
 
 class TranslationCache:
     def __init__(self, db_path):
-        self._db_path = db_path
         self._lock = threading.Lock()
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.execute("PRAGMA journal_mode=WAL")
@@ -146,26 +146,22 @@ class TranslationCache:
 
     def clear(self):
         with self._lock:
-            count = self._conn.execute("SELECT COUNT(*) FROM translations").fetchone()[0]
             self._conn.execute("DELETE FROM translations")
             self._conn.commit()
             self._conn.execute("VACUUM")
-        return count
+            # the write-ahead log still holds the deleted lines until it is checkpointed: empty it too
+            self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
 
-    def stats(self):
+    def count(self):
         with self._lock:
-            row = self._conn.execute(
-                "SELECT COUNT(*), COALESCE(SUM(hit_count), 0) FROM translations"
-            ).fetchone()
-        size_bytes = os.path.getsize(self._db_path) if os.path.exists(self._db_path) else 0
-        return {"entries": row[0], "hits": row[1], "size_bytes": size_bytes}
+            return self._conn.execute("SELECT COUNT(*) FROM translations").fetchone()[0]
 
-    def list_entries(self, limit=300):
+    def list_entries(self, limit):
         with self._lock:
             rows = self._conn.execute(
                 """
                 SELECT COALESCE(source_text, norm_text), translation,
-                       source_lang, target_lang, tier, hit_count, created_at, provider
+                       source_lang, target_lang, hit_count, created_at, provider
                 FROM translations
                 ORDER BY created_at DESC
                 LIMIT ?
@@ -174,18 +170,17 @@ class TranslationCache:
             ).fetchall()
         return [
             {"source": r[0], "translation": r[1], "sourceLang": r[2],
-             "targetLang": r[3], "tier": r[4], "hits": r[5], "createdAt": r[6], "provider": r[7]}
+             "targetLang": r[3], "hits": r[4], "createdAt": r[5], "provider": r[6]}
             for r in rows
         ]
 
     def delete_entry(self, source_lang, target_lang, source_text):
         with self._lock:
-            cur = self._conn.execute(
+            self._conn.execute(
                 "DELETE FROM translations WHERE source_lang=? AND target_lang=? AND norm_text=?",
                 [source_lang, target_lang, normalize(source_text)],
             )
             self._conn.commit()
-        return cur.rowcount
 
     def close(self):
         with self._lock:
