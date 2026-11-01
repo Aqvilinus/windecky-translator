@@ -154,7 +154,7 @@ def test_a_translation_that_gives_nothing_back_is_an_error(backend, net, monkeyp
     regions = backend.call("recognize_capture", shot["id"])
     reply = backend.call("translate_text", regions, "en", "auto")
     assert reply["error"] == "translation_failed" and "did not answer" in reply["message"]
-    assert backend.call("get_translation_cache_stats")["entries"] == 0
+    assert backend.call("count_translation_cache_entries") == 0
 
 
 def test_offline_translation_failures_are_errors(backend, monkeypatch):
@@ -181,8 +181,8 @@ def test_translation_cache(start, net):
     _, regions, first = translate_screen(b)
     assert b.call("translate_text", regions, "en", "auto") == first
     assert len(net.calls(harness.GOOGLE_URL)) == 1  # the second came from the cache
-    assert b.call("get_translation_cache_stats")["entries"] == 2
-    assert b.call("clear_translation_cache") is not None
+    assert b.call("count_translation_cache_entries") == 2
+    b.call("clear_translation_cache")
     b.call("translate_text", regions, "en", "auto")
     assert len(net.calls(harness.GOOGLE_URL)) == 2
 

@@ -554,45 +554,17 @@ class Plugin:
             logger.error(f"Translation cache unavailable: {e}")
             return None
 
-    async def clear_translation_cache(self):
-        try:
-            if not self._translation_cache:
-                return {"success": False, "cleared": 0}
-            cleared = await asyncio.to_thread(self._translation_cache.clear)
-            return {"success": True, "cleared": cleared}
-        except Exception as e:
-            logger.error(f"Error clearing translation cache: {e}")
-            return {"success": False, "error": str(e)}
+    async def count_translation_cache_entries(self) -> int:
+        return await asyncio.to_thread(self._translation_cache.count)
 
-    async def get_translation_cache_stats(self):
-        try:
-            if not self._translation_cache:
-                return {"entries": 0, "hits": 0, "size_bytes": 0}
-            return await asyncio.to_thread(self._translation_cache.stats)
-        except Exception as e:
-            logger.error(f"Error getting translation cache stats: {e}")
-            return {"entries": 0, "hits": 0, "size_bytes": 0}
-
-    async def get_translation_cache_entries(self, limit: int = 300):
-        try:
-            if not self._translation_cache:
-                return []
-            return await asyncio.to_thread(self._translation_cache.list_entries, limit)
-        except Exception as e:
-            logger.error(f"Error getting translation cache entries: {e}")
-            return []
+    async def get_translation_cache_entries(self, limit: int):
+        return await asyncio.to_thread(self._translation_cache.list_entries, limit)
 
     async def delete_translation_cache_entry(self, source_lang, target_lang, source_text):
-        try:
-            if not self._translation_cache:
-                return {"success": False}
-            removed = await asyncio.to_thread(
-                self._translation_cache.delete_entry, source_lang, target_lang, source_text
-            )
-            return {"success": True, "removed": removed}
-        except Exception as e:
-            logger.error(f"Error deleting translation cache entry: {e}")
-            return {"success": False, "error": str(e)}
+        await asyncio.to_thread(self._translation_cache.delete_entry, source_lang, target_lang, source_text)
+
+    async def clear_translation_cache(self):
+        await asyncio.to_thread(self._translation_cache.clear)
 
     # -- the downloadable models, by kind: "nllb" (offline translation) or "chromescreenai" (on-device OCR) --
 

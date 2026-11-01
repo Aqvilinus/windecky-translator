@@ -41,8 +41,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
 
     const refreshCacheStats = useCallback(async () => {
         try {
-            const stats = await backend.getTranslationCacheStats();
-            setCacheEntries(stats?.entries ?? 0);
+            setCacheEntries(await backend.countTranslationCacheEntries());
         } catch {
             setCacheEntries(null);
         }

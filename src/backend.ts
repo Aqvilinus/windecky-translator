@@ -43,10 +43,9 @@ export const backend = {
     cancelModelDownload: callable<[kind: ModelKind], void>('cancel_model_download'),
     clearModelError: callable<[kind: ModelKind], void>('clear_model_error'),
     deleteModel: callable<[kind: ModelKind], boolean>('delete_model'),
-    getTranslationCacheStats: callable<[], { entries: number; hits: number; size_bytes: number }>(
-        'get_translation_cache_stats'),
+    countTranslationCacheEntries: callable<[], number>('count_translation_cache_entries'),
     getTranslationCacheEntries: callable<[limit: number], any[]>('get_translation_cache_entries'),
     deleteTranslationCacheEntry: callable<[sourceLang: string, targetLang: string, source: string],
-        { success: boolean }>('delete_translation_cache_entry'),
-    clearTranslationCache: callable<[], { success: boolean; cleared?: number }>('clear_translation_cache'),
+        void>('delete_translation_cache_entry'),
+    clearTranslationCache: callable<[], void>('clear_translation_cache'),
 };
