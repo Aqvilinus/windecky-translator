@@ -7,7 +7,7 @@ let reply: () => Promise<unknown> = () => Promise.resolve([]);
 const listeners: Record<string, (...args: unknown[]) => void> = {};
 
 vi.mock('@decky/api', () => ({
-    call: vi.fn(() => reply()),
+    callable: () => vi.fn(() => reply()),
     toaster: { toast: vi.fn((t: { title: string; body: string }) => { toasts.push(t); }) },
     addEventListener: vi.fn((event: string, listener: (...args: unknown[]) => void) => { listeners[event] = listener; }),
     removeEventListener: vi.fn((event: string) => { delete listeners[event]; }),

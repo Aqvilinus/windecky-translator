@@ -1,10 +1,7 @@
 // index.tsx - Main plugin entry point
 
-import {
-    definePlugin,
-    routerHook,
-    call
-} from "@decky/api";
+import { definePlugin } from "@decky/api";
+import { backend } from "./backend";
 
 import {
     PanelSection,
@@ -26,8 +23,9 @@ import { ImageState } from "./Overlay";
 import { GameTranslatorLogic } from "./Translator";
 import { forwardOverlayToBackend, listenForHotkey, listenForProblems, showBootProblems } from "./windows";
 import { adoptActivePlugin } from "./deckyState";
-import { SettingsProvider, useSettings } from "./SettingsContext";
+import { SettingsProvider, useSettings, loadSettingsIntoLogic } from "./SettingsContext";
 import { logger } from "./Logger";
+import { WEB_OCR_ENGINES, WEB_TRANSLATION_ENGINES } from "./providers";
 
 // Import tab components
 import { TabMain, TabTranslation, TabControls } from "./tabs";
@@ -106,14 +104,12 @@ const GameTranslator: VFC<{ logic: GameTranslatorLogic }> = ({ logic }) => {
     const probeReachability = useCallback(async () => {
         const s = settingsRef.current;
         if (currentTabRouteRef.current !== 'main' || !s?.enabled) return;
-        const webOcr = new Set(['gemini_vision', 'googlecloud', 'ocrspace']);
-        const webTrans = new Set(['freegoogle', 'googlecloud', 'llm']);
-        const probeOcr = webOcr.has(s.ocrProvider);
-        const probeTrans = s.ocrProvider !== 'gemini_vision' && webTrans.has(s.translationProvider);
+        const probeOcr = WEB_OCR_ENGINES.has(s.ocrProvider);
+        const probeTrans = s.ocrProvider !== 'gemini_vision' && WEB_TRANSLATION_ENGINES.has(s.translationProvider);
         if (!probeOcr && !probeTrans) return;
 
         try {
-            const reach = await call<[], any>('check_web_reachability');
+            const reach = await backend.checkWebReachability();
             if (reach && !reach.error) {
                 setWebReachability({ ocr: reach.ocr ?? null, translation: reach.translation ?? null });
             }
@@ -124,7 +120,7 @@ const GameTranslator: VFC<{ logic: GameTranslatorLogic }> = ({ logic }) => {
 
     const fetchProviderStatus = useCallback(async () => {
         try {
-            const result = await call<[], any>('get_provider_status');
+            const result = await backend.getProviderStatus();
             if (result) {
                 setProviderStatus(result);
             }
@@ -220,14 +216,6 @@ const TranslatorApp: VFC<{ logic: GameTranslatorLogic }> = ({ logic }) => {
     );
 };
 
-// Decky renders the plugin's panel (TranslatorApp) only while it is open in the side menu, but Ctrl+Alt+T needs the
-// languages, providers and keys in the logic from the start: this always-mounted component loads them (its
-// SettingsProvider reads the backend's settings into the logic) and draws nothing. Upstream got this as a side effect
-// of the controller hold indicator.
-const SettingsLoader: VFC<{ logic: GameTranslatorLogic }> = ({ logic }) => (
-    <SettingsProvider logic={logic}>{null}</SettingsProvider>
-);
-
 // plugin.json name
 const PLUGIN_NAME = "WinDecky Translator";
 
@@ -270,10 +258,10 @@ export default definePlugin(() => {
         p => (p.content as { props?: { logic?: unknown } } | undefined)?.props?.logic === logic);
     // a Steam UI reload leaves the backend running: hide a translation the old UI left on screen (and resume a game
     // it paused), since this UI starts with none
-    call('native_overlay_update', { visible: false }).catch(() => { /* logged by the backend */ });
+    backend.nativeOverlayUpdate({ visible: false }).catch(() => { /* logged by the backend */ });
     showBootProblems(PLUGIN_NAME);
 
-    routerHook.addGlobalComponent("TranslatorSettingsLoader", () => <SettingsLoader logic={logic}/>);
+    loadSettingsIntoLogic(logic);  // Ctrl+Alt+T needs them before the panel is ever opened
 
     return {
         name: PLUGIN_NAME,
@@ -286,7 +274,6 @@ export default definePlugin(() => {
             stopHotkey();
             stopProblems();
             stopAdopting();
-            routerHook.removeGlobalComponent("TranslatorSettingsLoader");
         },
         // no alwaysRender: Decky then unmounts the panel when the side menu closes, which stops its status polling
         // (a web request every 10 s) during the game

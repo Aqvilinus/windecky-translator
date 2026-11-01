@@ -29,7 +29,7 @@ PLUGIN_FOLDER = "decky-translator"
 
 # What Decky's CLI puts in a plugin zip (no source maps, no frontend sources)
 PLUGIN_FILES = ["main.py", "plugin.json", "LICENSE", "README.md"]  # + THIRD_PARTY_LICENSES, completed by the build
-PLUGIN_DIRS = ["py_modules/providers", "py_modules/winport"]
+PLUGIN_DIRS = ["py_modules"]  # the plugin's own Python packages, whatever their names
 
 # Not needed at runtime (as upstream strips them)
 STRIP_DIRS = {"tests", "test", "testing", "__pycache__"}

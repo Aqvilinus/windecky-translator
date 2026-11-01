@@ -1,17 +1,14 @@
 // Translator.tsx - Handles translator logic and API interactions
 
-import { call, toaster } from "@decky/api";
+import { toaster } from "@decky/api";
+import { backend } from "./backend";
 import { Router } from "@decky/ui";
-import { TextRecognizer, BackendError, NetworkError, ApiKeyError } from "./TextRecognizer";
+import { TextRecognizer } from "./TextRecognizer";
+import { BackendError, NetworkError, ApiKeyError } from "./errors";
 import { TextTranslator } from "./TextTranslator";
 import { ImageState } from "./Overlay";
 import { logger } from "./Logger";
-
-// main.py take_screenshot: the capture's name for recognize_text_file ("" when nothing was captured); the pixels
-// stay in the backend, which draws the overlay
-interface ScreenshotResponse {
-    path: string;
-}
+import { OCR_ENGINE_LABELS, TRANSLATION_ENGINE_LABELS } from "./providers";
 
 // Main app logic
 export class GameTranslatorLogic {
@@ -85,11 +82,11 @@ export class GameTranslatorLogic {
             // Take screenshot FIRST while screen is clean (no overlay visible)
             const appName = Router.MainRunningApp?.display_name || "";
             logger.info('Translator', `Taking new screenshot for: ${appName}`);
-            const result = await call<[string], ScreenshotResponse>('take_screenshot', appName);
+            const result = await backend.takeScreenshot(appName);
 
             if (isCancelled()) {
                 logger.debug('Translator', 'Translation cancelled before screenshot processed');
-                if (result?.path) call('discard_screenshot', result.path).catch(() => { /* best effort */ });
+                if (result?.path) backend.discardScreenshot(result.path).catch(() => { /* best effort */ });
                 return;
             }
 
@@ -204,24 +201,11 @@ export class GameTranslatorLogic {
     }
 
     private translationMethodHint(): string {
-        const labels: Record<string, string> = {
-            ct2: "On-Device",
-            freegoogle: "Google Translate",
-            googlecloud: "Google Cloud",
-            llm: "AI",
-        };
-        return labels[this.translationProvider] || this.translationProvider;
+        return (TRANSLATION_ENGINE_LABELS as Record<string, string>)[this.translationProvider] || this.translationProvider;
     }
 
     private ocrMethodHint(): string {
-        const labels: Record<string, string> = {
-            chromescreenai: "On-Device",
-            windows_ocr: "On-Device",
-            ocrspace: "OCR.space",
-            googlecloud: "Google Cloud",
-            gemini_vision: "Gemini Vision",
-        };
-        return labels[this.ocrProvider] || this.ocrProvider;
+        return (OCR_ENGINE_LABELS as Record<string, string>)[this.ocrProvider] || this.ocrProvider;
     }
 
     setHasGoogleApiKey = (hasKey: boolean): void => {

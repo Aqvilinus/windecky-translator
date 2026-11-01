@@ -4,7 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 let replies: Record<string, unknown> = {};
 
 vi.mock('@decky/api', () => ({
-    call: vi.fn((method: string) => Promise.resolve(replies[method])),
+    // each backend method answers from replies, by its name in main.py
+    callable: (method: string) => vi.fn(() => Promise.resolve(replies[method])),
     toaster: { toast: vi.fn() },
 }));
 vi.mock('@decky/ui', () => ({ Router: { MainRunningApp: { display_name: 'Game' } } }));

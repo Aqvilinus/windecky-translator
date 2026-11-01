@@ -1,14 +1,10 @@
 # providers/nllb_downloader.py
-# Manages NLLB-200 model download, storage, and lifecycle
+# The offline translation model (NLLB-200 1.3B, CTranslate2 int8), downloaded from Hugging Face
 
-import hashlib
 import logging
 import os
-import shutil
-import threading
-import urllib.error
-import urllib.request
-from typing import Dict, Optional
+
+from .model_download import DownloadError, ModelDownload
 
 logger = logging.getLogger(__name__)
 
@@ -61,173 +57,24 @@ FILE_SHA256 = {
     "tokenizer_config.json": "d1aa8c3697d3e35674f97b5b7e9c99d22b010f528e80140257d97316be90d044",
     "special_tokens_map.json": "992bd4ed610d644d6823081937bcc91bb8878dd556cea4ae5327f2480361330e",
 }
-MODEL_DIR_NAME = "nllb-200-distilled-1.3B"
-MODEL_APPROX_MB = 1410
 
 
-class NLLBDownloader:
-    """Manages the single NLLB model download and storage."""
+class NLLBDownload(ModelDownload):
+    name = "nllb-200-distilled-1.3B"
+    approx_size_mb = 1410
+    required_files = tuple(REQUIRED_MODEL_FILES)
 
-    def __init__(self, models_dir: str):
-        self._models_dir = models_dir
-        self._downloading = False
-        self._download_progress = 0.0
-        self._download_error = None
-        self._download_cancel = False
-        self._download_thread = None
-        self._lock = threading.Lock()
-
-        os.makedirs(models_dir, exist_ok=True)
-        self._cleanup_partial_downloads()
-
-    def _cleanup_partial_downloads(self):
-        """Remove any leftover .downloading directories from interrupted downloads."""
-        try:
-            for item in os.listdir(self._models_dir):
-                if item.endswith(".downloading"):
-                    path = os.path.join(self._models_dir, item)
-                    if os.path.isdir(path):
-                        shutil.rmtree(path, ignore_errors=True)
-                        logger.info(f"Cleaned up partial download: {item}")
-        except Exception as e:
-            logger.error(f"Error cleaning up partial downloads: {e}")
-
-    def get_model_dir(self) -> str:
-        return os.path.join(self._models_dir, MODEL_DIR_NAME)
-
-    def is_model_downloaded(self) -> bool:
-        model_dir = self.get_model_dir()
-        if not os.path.isdir(model_dir):
-            return False
-        return all(
-            os.path.exists(os.path.join(model_dir, f))
-            for f in REQUIRED_MODEL_FILES
-        )
-
-    def get_model_size(self) -> int:
-        model_dir = self.get_model_dir()
-        if not os.path.isdir(model_dir):
-            return 0
-        total = 0
-        for f in os.listdir(model_dir):
-            fp = os.path.join(model_dir, f)
-            if os.path.isfile(fp):
-                total += os.path.getsize(fp)
-        return total
-
-    def get_approx_size_mb(self) -> int:
-        return MODEL_APPROX_MB
-
-    def get_nllb_lang_code(self, plugin_code: str) -> Optional[str]:
-        return NLLB_LANG_MAP.get(plugin_code)
-
-    def start_download(self) -> bool:
-        with self._lock:
-            if self._downloading:
-                return False
-            self._downloading = True
-            self._download_progress = 0.0
-            self._download_error = None
-            self._download_cancel = False
-
-        self._download_thread = threading.Thread(
-            target=self._download_model, daemon=True
-        )
-        self._download_thread.start()
-        return True
-
-    def _download_model(self):
-        """Download model files from HuggingFace. Runs in background thread."""
-        temp_dir = os.path.join(self._models_dir, f"{MODEL_DIR_NAME}.downloading")
-        final_dir = self.get_model_dir()
-
-        try:
-            os.makedirs(temp_dir, exist_ok=True)
-
-            all_files = REQUIRED_MODEL_FILES + OPTIONAL_MODEL_FILES
-
-            for filename in all_files:
-                if self._download_cancel:
-                    raise Exception("Download cancelled")
-
-                url = HF_BASE_URL.format(filename=filename)
-                dest = os.path.join(temp_dir, filename)
-                is_required = filename in REQUIRED_MODEL_FILES
-
-                try:
-                    with urllib.request.urlopen(url, timeout=30) as resp, open(dest, 'wb') as f:
-                        total_size = int(resp.headers.get('Content-Length') or 0)
-                        downloaded = 0
-                        hasher = hashlib.sha256()
-                        while chunk := resp.read(1024 * 256):
-                            if self._download_cancel:
-                                raise Exception("Download cancelled")
-                            f.write(chunk)
-                            hasher.update(chunk)
-                            downloaded += len(chunk)
-                            if filename == "model.bin" and total_size > 0:
-                                with self._lock:
-                                    self._download_progress = downloaded / total_size
-                except urllib.error.HTTPError as e:
-                    if e.code == 429:
-                        raise Exception("Too many requests. Try again later.")
-                    if is_required:
-                        raise Exception(f"HTTP {e.code} downloading {filename}")
-                    continue  # an optional file the repo doesn't have
-                except (urllib.error.URLError, TimeoutError):
-                    raise Exception("Cannot reach model server. Check internet connection.")
-                expected = FILE_SHA256.get(filename)
-                if expected and hasher.hexdigest() != expected:
-                    raise Exception(f"{filename} is damaged or changed upstream (hash mismatch)")
-
-            for req_file in REQUIRED_MODEL_FILES:
-                if not os.path.exists(os.path.join(temp_dir, req_file)):
-                    raise Exception(f"Missing required file after download: {req_file}")
-
-            if os.path.exists(final_dir):
-                shutil.rmtree(final_dir)
-            os.rename(temp_dir, final_dir)
-
-            with self._lock:
-                self._download_progress = 1.0
-                self._downloading = False
-
-            logger.info("NLLB model downloaded successfully")
-
-        except Exception as e:
-            if os.path.exists(temp_dir):
-                shutil.rmtree(temp_dir, ignore_errors=True)
-
-            with self._lock:
-                self._download_error = str(e)
-                self._downloading = False
-
-            logger.error(f"NLLB model download failed: {e}")
-
-    def cancel_download(self):
-        with self._lock:
-            self._download_cancel = True
-
-    def get_download_status(self) -> Dict:
-        with self._lock:
-            return {
-                "downloading": self._downloading,
-                "progress": self._download_progress,
-                "error": self._download_error,
-            }
-
-    def clear_download_error(self):
-        with self._lock:
-            self._download_error = None
-
-    def delete_model(self) -> bool:
-        model_dir = self.get_model_dir()
-        if os.path.isdir(model_dir):
+    def _install(self, staging_dir: str) -> None:
+        for filename in REQUIRED_MODEL_FILES + OPTIONAL_MODEL_FILES:
+            self._check_cancel()
+            # model.bin is nearly all of the download: the bar follows it
+            progress = self._set_progress if filename == "model.bin" else None
             try:
-                shutil.rmtree(model_dir)
-                logger.info("Deleted NLLB model")
-                return True
-            except Exception as e:
-                logger.error(f"Error deleting NLLB model: {e}")
-                return False
-        return True
+                digest = self._fetch(HF_BASE_URL.format(filename=filename), os.path.join(staging_dir, filename),
+                                     progress=progress, timeout=30)
+            except DownloadError as e:
+                if filename in OPTIONAL_MODEL_FILES and "HTTP 404" in str(e):
+                    continue  # an optional file the repo doesn't have
+                raise
+            if digest != FILE_SHA256[filename]:
+                raise DownloadError(f"{filename} is damaged or changed upstream (hash mismatch)")

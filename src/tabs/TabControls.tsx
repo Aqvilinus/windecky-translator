@@ -9,7 +9,7 @@ import {
 } from "@decky/ui";
 
 import { VFC, useEffect, useState } from "react";
-import { call } from "@decky/api";
+import { backend } from "../backend";
 import { useSettings } from "../SettingsContext";
 import { WINDOWS_HOTKEY } from "../windows";
 
@@ -17,7 +17,7 @@ import { WINDOWS_HOTKEY } from "../windows";
 const WindowsStatus: VFC = () => {
     const [status, setStatus] = useState<any>(null);
     useEffect(() => {
-        const refresh = () => call<[], any>('get_windows_status').then(setStatus).catch(() => setStatus(null));
+        const refresh = () => backend.getWindowsStatus().then(setStatus).catch(() => setStatus(null));
         refresh();
         const id = setInterval(refresh, 1000);
         return () => clearInterval(id);

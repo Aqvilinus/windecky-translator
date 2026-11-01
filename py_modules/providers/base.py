@@ -8,7 +8,6 @@ import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import List, Dict, Optional
-from enum import Enum
 
 import aiohttp  # Decky Loader's own: its server runs on it, so the plugin doesn't ship one
 
@@ -148,18 +147,6 @@ async def probe(method: str, url: str, **kwargs) -> tuple:
         return None, "Network unreachable"
     except Exception as e:  # noqa: BLE001
         return None, f"Probe failed: {type(e).__name__}"
-
-
-class ProviderType(Enum):
-    """Enum for available provider types."""
-    GOOGLE = "google"           # Google Cloud (requires API key)
-    OCR_SPACE = "ocrspace"      # OCR.space (free, no key needed)
-    FREE_GOOGLE = "freegoogle"  # Free Google Translate via deep-translator
-    GEMINI_VISION = "gemini_vision"  # Gemini Vision (OCR + translation in one step)
-    CT2 = "ct2"                 # CTranslate2 translation
-    CHROME_SCREEN_AI = "chromescreenai"  # Chrome Screen AI
-    WINDOWS_OCR = "windows_ocr"  # Windows.Media.Ocr (Windows only)
-    LLM = "llm"                 # AI translation (Gemini / Groq / OpenAI-compatible), Google -> Bing fallback
 
 
 @dataclass
