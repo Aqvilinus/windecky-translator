@@ -135,25 +135,18 @@ export class Steam {
 
     js(fn, arg, timeoutMs) { return this.shared.eval(fn, arg, timeoutMs); }
 
-    // the plugin instance Decky has registered, and the one its side menu shows
+    // the plugin instance Decky has registered: loaded, and whether its translation is up
     pluginState() {
         return this.js(name => {
-            const ds = DeckyPluginLoader.deckyState;
-            const reg = ds._plugins.find(p => p.name === name);
-            const logic = reg?.content?.props?.logic;
-            return {
-                loaded: !!reg,
-                visible: !!logic?.imageState?.isVisible(),
-                loading: !!logic?.imageState?.isLoading(),
-                activeName: ds._activePlugin?.name ?? null,
-                activeIsRegistered: ds._activePlugin === reg,
-            };
+            const reg = DeckyPluginLoader.deckyState._plugins.find(p => p.name === name);
+            const translator = reg?.content?.props?.translator;
+            return { loaded: !!reg, visible: !!translator?.overlay?.isVisible() };
         }, NAME);
     }
 
     dismiss() {
         return this.js(name => {
-            DeckyPluginLoader.deckyState._plugins.find(p => p.name === name)?.content?.props?.logic?.dismiss();
+            DeckyPluginLoader.deckyState._plugins.find(p => p.name === name)?.content?.props?.translator?.dismiss();
             return true;
         }, NAME);
     }
@@ -205,12 +198,6 @@ export class Steam {
             if (found) return { ...found, window: info.title, click: () => withTarget(info, t => t.click(found.x, found.y)) };
         }
         return null;
-    }
-
-    async reloadPlugin() {
-        await this.js(name => DeckyBackend.call('utilities/disable_plugin', name).then(() => true), NAME, 30000);
-        await sleep(2000);
-        await this.js(name => DeckyBackend.call('utilities/enable_plugin', name).then(() => true), NAME, 30000);
     }
 
     runningApp(appid) {

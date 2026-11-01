@@ -14,7 +14,7 @@ import {
 import { BsTranslate } from "react-icons/bs";
 import { OverlayStore, forwardOverlayToBackend } from "./overlay";
 import { Translator } from "./translator";
-import { adoptActivePlugin, closeAllSideMenus } from "./steam";
+import { closeAllSideMenus } from "./steam";
 import { SettingsProvider, useSettings, loadSettings } from "./settings";
 import { logger } from "./log";
 import { WEB_OCR_PROVIDERS, WEB_TRANSLATION_PROVIDERS } from "./providers";
@@ -245,9 +245,6 @@ export default definePlugin(() => {
     const stopForwarding = forwardOverlayToBackend(overlay, translator.dismiss);
     const stopHotkey = listenForHotkey(translator);
     const stopProblems = listenForProblems(PLUGIN_NAME);
-    // after a reload the side menu would keep showing the unloaded instance (steam.ts adoptActivePlugin)
-    const stopAdopting = adoptActivePlugin(PLUGIN_NAME,
-        p => (p.content as { props?: { translator?: unknown } } | undefined)?.props?.translator === translator);
     // a Steam UI reload leaves the backend running: hide a translation the old UI left on screen (and resume a game
     // it paused), since this UI starts with none
     backend.updateOverlay({ visible: false }).catch(() => { /* logged by the backend */ });
@@ -265,7 +262,6 @@ export default definePlugin(() => {
             stopForwarding();
             stopHotkey();
             stopProblems();
-            stopAdopting();
         },
         // no alwaysRender: Decky then unmounts the panel when the side menu closes, which stops its status polling
         // (a web request every 10 s) during the game

@@ -1,6 +1,5 @@
-// Where the plugin reaches into Steam's and Decky Loader's internals, which have no public API for these: the side
-// menus, the window a dialog opens in, and the side menu's active plugin. Each is guarded, so a Steam or Decky update
-// that renames something only turns that part off.
+// Where the plugin reaches into Steam's internals, which have no public API for these: the side menus and the window
+// a dialog opens in. Each is guarded, so a Steam update that renames something only turns that part off.
 import { Router, getGamepadNavigationTrees, showModal as deckyShowModal } from '@decky/ui';
 
 const SIDE_MENU_CLOSE_ANIMATION_MS = 300;
@@ -54,48 +53,3 @@ function activeRootWindow(): Window | undefined {
 
 export const showModal = (modal: ShowModalArgs[0], parent?: ShowModalArgs[1], props?: ShowModalArgs[2]) =>
     deckyShowModal(modal, parent ?? activeRootWindow(), props);
-
-// Decky Loader remembers the plugin open in the side menu as an object (deckyState._activePlugin) and keeps that
-// object when the plugin is reloaded (a store update, a disable/enable): the side menu then goes on showing the
-// unloaded instance. Its Translate still translated, but onDismount had cut its overlay off, so nothing appeared and
-// its button stayed on "Close Overlay" until the menu was navigated away from the plugin. Once this instance is
-// registered, point Decky at it.
-
-export interface DeckyPluginEntry {
-    name: string;
-    content?: unknown;
-}
-
-interface DeckyStateLike {
-    _activePlugin?: DeckyPluginEntry | null;
-    _plugins?: DeckyPluginEntry[];
-    setActivePlugin?(name: string): void;
-}
-
-const ADOPT_CHECK_MS = 100;
-const ADOPT_GIVE_UP_MS = 10000;
-
-function deckyState(): DeckyStateLike | undefined {
-    try {
-        return (window as unknown as { DeckyPluginLoader?: { deckyState?: DeckyStateLike } }).DeckyPluginLoader?.deckyState;
-    } catch {
-        return undefined;
-    }
-}
-
-// Returns a function that stops waiting (for onDismount).
-export function adoptActivePlugin(name: string, isThisInstance: (plugin: DeckyPluginEntry) => boolean): () => void {
-    const started = Date.now();
-    const timer = setInterval(() => {
-        const state = deckyState();
-        const current = state?._plugins?.find(p => p.name === name);
-        if (current && isThisInstance(current)) {
-            clearInterval(timer);
-            const active = state?._activePlugin;
-            if (active && active.name === name && active !== current) state?.setActivePlugin?.(name);
-        } else if (Date.now() - started > ADOPT_GIVE_UP_MS) {
-            clearInterval(timer);
-        }
-    }, ADOPT_CHECK_MS);
-    return () => clearInterval(timer);
-}
