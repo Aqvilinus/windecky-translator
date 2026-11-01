@@ -1,7 +1,10 @@
-// src/deckyState.ts edge cases (timers, a missing Decky). The reload itself is tested on the device in
+// src/steam.ts adoptActivePlugin edge cases (timers, a missing Decky). The reload itself is tested on the device in
 // tests/e2e/translate.e2e.mjs.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { adoptActivePlugin, type DeckyPluginEntry } from '../../src/deckyState';
+import type { DeckyPluginEntry } from '../../src/steam';
+
+vi.mock('@decky/ui', () => ({ Router: {}, getGamepadNavigationTrees: vi.fn(), showModal: vi.fn() }));
+const { adoptActivePlugin } = await import('../../src/steam');
 
 const NAME = 'WinDecky Translator';
 

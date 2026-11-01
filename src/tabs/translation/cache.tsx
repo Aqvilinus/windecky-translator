@@ -1,13 +1,13 @@
 import { ModalRoot, DialogButton, Focusable } from "@decky/ui";
 import { VFC, useState, useEffect, useRef } from "react";
-import { OCR_ENGINE_LABELS, TRANSLATION_ENGINE_LABELS } from "../../providers";
+import { OCR_PROVIDER_LABELS, TRANSLATION_PROVIDER_LABELS } from "../../providers";
 import { backend } from "../../backend";
 import { HiTrash, HiXCircle, HiExclamationTriangle } from "react-icons/hi2";
 import { languageOptions } from "./languages";
 
 // who translated a cached line: a translation engine, or Gemini Vision (OCR and translation in one)
 export const cacheProviderLabel = (p: string) =>
-    ({ ...TRANSLATION_ENGINE_LABELS, gemini_vision: OCR_ENGINE_LABELS.gemini_vision } as Record<string, string>)[p] || p || "?";
+    ({ ...TRANSLATION_PROVIDER_LABELS, gemini_vision: OCR_PROVIDER_LABELS.gemini_vision } as Record<string, string>)[p] || p || "?";
 
 export const cacheLangFlag = (code: string) => {
     const opt = languageOptions.find(o => o.data === code);

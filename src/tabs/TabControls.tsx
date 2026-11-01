@@ -9,7 +9,7 @@ import {
 import { VFC, useEffect, useState } from "react";
 import { backend } from "../backend";
 import { useSettings } from "../settings";
-import { WINDOWS_HOTKEY } from "../windows";
+import { HOTKEY } from "../translator";
 
 // The Windows parts' state (main.py get_diagnostics), shown in debug mode
 const WindowsStatus: VFC = () => {
@@ -50,7 +50,7 @@ export const TabControls: VFC = () => {
                         description="Press in a game to translate, again to close. To use a controller, map it to a button in your handheld's app (e.g. OneXConsole) or in Steam Input"
                         focusable={true}
                     >
-                        <span style={{ fontWeight: "bold", whiteSpace: "nowrap" }}>{WINDOWS_HOTKEY}</span>
+                        <span style={{ fontWeight: "bold", whiteSpace: "nowrap" }}>{HOTKEY}</span>
                     </Field>
                 </PanelSectionRow>
             </PanelSection>

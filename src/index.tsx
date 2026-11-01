@@ -1,5 +1,5 @@
-import { definePlugin } from "@decky/api";
-import { backend } from "./backend";
+import { addEventListener, definePlugin, removeEventListener } from "@decky/api";
+import { backend, listenForProblems, showStartupErrors } from "./backend";
 
 import { staticClasses, Tabs } from "@decky/ui";
 
@@ -12,13 +12,12 @@ import {
 } from "react";
 
 import { BsTranslate } from "react-icons/bs";
-import { OverlayStore } from "./overlay";
+import { OverlayStore, forwardOverlayToBackend } from "./overlay";
 import { Translator } from "./translator";
-import { forwardOverlayToBackend, listenForHotkey, listenForProblems, showStartupErrors } from "./windows";
-import { adoptActivePlugin } from "./deckyState";
+import { adoptActivePlugin, closeAllSideMenus } from "./steam";
 import { SettingsProvider, useSettings, loadSettings } from "./settings";
 import { logger } from "./log";
-import { WEB_OCR_ENGINES, WEB_TRANSLATION_ENGINES } from "./providers";
+import { WEB_OCR_PROVIDERS, WEB_TRANSLATION_PROVIDERS } from "./providers";
 
 import { TabMain, TabTranslation, TabControls } from "./tabs";
 import type { InstalledModels } from "./tabs/TabMain";
@@ -100,8 +99,8 @@ const GameTranslator: VFC<{ translator: Translator }> = ({ translator }) => {
     const probeReachability = useCallback(async () => {
         const s = settingsRef.current;
         if (currentTabRouteRef.current !== 'main' || !s?.enabled) return;
-        const probeOcr = WEB_OCR_ENGINES.has(s.ocrProvider);
-        const probeTrans = s.ocrProvider !== 'gemini_vision' && WEB_TRANSLATION_ENGINES.has(s.translationProvider);
+        const probeOcr = WEB_OCR_PROVIDERS.has(s.ocrProvider);
+        const probeTrans = s.ocrProvider !== 'gemini_vision' && WEB_TRANSLATION_PROVIDERS.has(s.translationProvider);
         if (!probeOcr && !probeTrans) return;
 
         try {
@@ -224,6 +223,20 @@ const FitTitle: VFC<{ text: string }> = ({ text }) => {
     );
 };
 
+// Ctrl+Alt+T (py_modules/windows/hotkey.py): translate the screen, or dismiss the translation (or the
+// translation in progress) when it is up. Windows only gives XInput to the foreground app, so on most setups this
+// is the shortcut; a controller button can be mapped to it (OneXConsole, Steam Input).
+function listenForHotkey(translator: Translator): () => void {
+    const onHotkey = () => {
+        if (translator.overlay.isVisible()) translator.dismiss();
+        else closeAllSideMenus()
+            .then(() => translator.translateScreen())
+            .catch(err => logger.error('Hotkey', 'Translation failed', err));
+    };
+    addEventListener('translator_hotkey', onHotkey);
+    return () => removeEventListener('translator_hotkey', onHotkey);
+}
+
 export default definePlugin(() => {
     const overlay = new OverlayStore();
     const translator = new Translator(overlay);
@@ -231,7 +244,7 @@ export default definePlugin(() => {
     const stopForwarding = forwardOverlayToBackend(overlay, translator.dismiss);
     const stopHotkey = listenForHotkey(translator);
     const stopProblems = listenForProblems(PLUGIN_NAME);
-    // after a reload the side menu would keep showing the unloaded instance (deckyState.ts)
+    // after a reload the side menu would keep showing the unloaded instance (steam.ts adoptActivePlugin)
     const stopAdopting = adoptActivePlugin(PLUGIN_NAME,
         p => (p.content as { props?: { translator?: unknown } } | undefined)?.props?.translator === translator);
     // a Steam UI reload leaves the backend running: hide a translation the old UI left on screen (and resume a game

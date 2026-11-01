@@ -1,10 +1,10 @@
 import { PanelSection, PanelSectionRow, Dropdown, DropdownItem, SliderField, ToggleField, ButtonItem, DialogButton, Field, Focusable } from "@decky/ui";
-import { showModal } from "../modal";
+import { showModal } from "../steam";
 import { VFC, useState, useEffect, useRef, useCallback } from "react";
 import { backend } from "../backend";
 import { useSettings } from "../settings";
-import { CONFIDENCE_OCR_ENGINES } from "../providers";
-import { LLM_DEFAULT_MODELS, LLM_KEY_SETTING, LLM_MODEL_SETTING, llmConfigured, llmModel } from "../llm";
+import { CONFIDENCE_OCR_PROVIDERS } from "../providers";
+import { LLM_DEFAULT_MODELS, LLM_KEY_SETTING, LLM_MODEL_SETTING, llmConfigured, llmModel } from "../providers";
 import { HiKey, HiLockClosed, HiInformationCircle } from "react-icons/hi2";
 import { BsStars, BsWindows } from "react-icons/bs";
 import googlecloudLogo from "../../assets/googlecloud-logo.png";
@@ -306,7 +306,7 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                     </PanelSectionRow>
                 )}
 
-                {CONFIDENCE_OCR_ENGINES.has(settings.ocrProvider) && (
+                {CONFIDENCE_OCR_PROVIDERS.has(settings.ocrProvider) && (
                     <PanelSectionRow>
                         <SliderField
                             value={settings.confidenceThreshold}

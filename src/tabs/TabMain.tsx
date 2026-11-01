@@ -6,15 +6,15 @@ import {
 } from "@decky/ui";
 
 import { VFC } from "react";
-import { OCR_ENGINE_LABELS, TRANSLATION_ENGINE_LABELS } from "../providers";
+import { OCR_PROVIDER_LABELS, TRANSLATION_PROVIDER_LABELS } from "../providers";
 import { BsTranslate, BsXLg, BsEye, BsStars } from "react-icons/bs";
 import { HiInboxArrowDown } from "react-icons/hi2";
 import { useSettings } from "../settings";
 import type { ModelKind, ModelStatus } from "../backend";
 import { Translator } from "../translator";
-import { LLM_BACKEND_LABELS, llmModel } from "../llm";
+import { LLM_BACKEND_LABELS, llmModel } from "../providers";
 import { logger } from "../log";
-import { closeAllSideMenus } from "../windows";
+import { closeAllSideMenus } from "../steam";
 
 const StatusDot: VFC<{ ok: boolean }> = ({ ok }) => (
     <span style={{
@@ -161,7 +161,7 @@ export const TabMain: VFC<TabMainProps> = ({ translator, overlayVisible, models,
                                         <BsEye style={{ marginRight: '8px', color: '#aaa' }} />
                                         <span style={{ color: '#888' }}>Text Recognition:</span>
                                         <span style={{ marginLeft: '6px', fontWeight: 'bold' }}>
-                                            {OCR_ENGINE_LABELS[settings.ocrProvider]}
+                                            {OCR_PROVIDER_LABELS[settings.ocrProvider]}
                                         </span>
                                     </div>
                                 )}
@@ -195,7 +195,7 @@ export const TabMain: VFC<TabMainProps> = ({ translator, overlayVisible, models,
                                         <BsTranslate style={{ marginRight: '8px', color: '#aaa' }} />
                                         <span style={{ color: '#888' }}>Translation:</span>
                                         <span style={{ marginLeft: '6px', fontWeight: 'bold' }}>
-                                            {TRANSLATION_ENGINE_LABELS[settings.translationProvider]}
+                                            {TRANSLATION_PROVIDER_LABELS[settings.translationProvider]}
                                             {settings.translationProvider === 'llm' && ` (${LLM_BACKEND_LABELS[settings.llmBackend] || settings.llmBackend})`}
                                         </span>
                                     </div>

@@ -1,4 +1,4 @@
-// src/windows.ts showStartupErrors / listenForProblems: what the backend couldn't load or later finds broken is shown
+// src/backend.ts showStartupErrors / listenForProblems: what the backend couldn't load or later finds broken is shown
 // as toasts.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -14,7 +14,7 @@ vi.mock('@decky/api', () => ({
 }));
 vi.mock('@decky/ui', () => ({ Router: {} }));
 
-const { showStartupErrors, listenForProblems } = await import('../../src/windows');
+const { showStartupErrors, listenForProblems } = await import('../../src/backend');
 
 describe('showStartupErrors', () => {
     beforeEach(() => { toasts.length = 0; });

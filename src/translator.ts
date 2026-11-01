@@ -3,8 +3,11 @@ import { toaster } from "@decky/api";
 import { BackendError, backend, throwIfBackendError } from "./backend";
 import { OverlayStore } from "./overlay";
 import { logger } from "./log";
-import { OCR_ENGINE_LABELS, TRANSLATION_ENGINE_LABELS } from "./providers";
+import { OCR_PROVIDER_LABELS, TRANSLATION_PROVIDER_LABELS } from "./providers";
 import { TranslatedRegion, filterUntranslatable, mergeRegions } from "./regions";
+
+// The translate/close hotkey (py_modules/windows/hotkey.py HOTKEY)
+export const HOTKEY = 'Ctrl+Alt+T';
 
 const NO_TEXT_MESSAGE_MS = 2000;
 const ERROR_MESSAGE_MS = 3000;
@@ -77,7 +80,7 @@ export class Translator {
             }
 
             this.overlay.showLoading(s.ocrProvider === 'gemini_vision' ? "Recognizing and Translating" : "Recognizing",
-                                      OCR_ENGINE_LABELS[s.ocrProvider as keyof typeof OCR_ENGINE_LABELS] || s.ocrProvider);
+                                      OCR_PROVIDER_LABELS[s.ocrProvider as keyof typeof OCR_PROVIDER_LABELS] || s.ocrProvider);
             const recognized = throwIfBackendError(await backend.recognizeCapture(capture.id)) || [];
             const regions = filterUntranslatable(mergeRegions(recognized));
             logger.info('Translator', `${recognized.length} OCR regions, ${regions.length} to translate`);
@@ -93,7 +96,7 @@ export class Translator {
 
             if (!regions.every(r => r.translatedText)) {
                 this.overlay.setStatus("Translating text", false,
-                    TRANSLATION_ENGINE_LABELS[s.translationProvider as keyof typeof TRANSLATION_ENGINE_LABELS]
+                    TRANSLATION_PROVIDER_LABELS[s.translationProvider as keyof typeof TRANSLATION_PROVIDER_LABELS]
                     || s.translationProvider);
             }
             const translated: TranslatedRegion[] | null = throwIfBackendError(

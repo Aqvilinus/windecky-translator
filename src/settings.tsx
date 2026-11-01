@@ -6,7 +6,7 @@ import { toaster } from '@decky/api';
 import { backend, BackendSettings } from './backend';
 import { Translator } from './translator';
 import { logger } from './log';
-import type { OcrEngine, TranslationEngine } from './providers';
+import type { OcrProvider, TranslationProvider } from './providers';
 
 // API keys: the backend hands out only their first 3 and last 4 characters (main.py mask_key), and saving that
 // same text back changes nothing. A key typed in a dialog is kept here in the same shortened form.
@@ -26,8 +26,8 @@ export interface Settings {
     chromescreenaiPersistentMode: boolean; // its worker stays alive between requests
     ct2PersistentMode: boolean; // the CT2/NLLB worker stays alive between requests
     pauseGameOnOverlay: boolean;
-    ocrProvider: OcrEngine;
-    translationProvider: TranslationEngine;
+    ocrProvider: OcrProvider;
+    translationProvider: TranslationProvider;
     googleApiKey: string; // Google Cloud: OCR and translation
     geminiApiKey: string;
     geminiModel: string; // Gemini Vision's

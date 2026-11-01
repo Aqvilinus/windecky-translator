@@ -1,6 +1,6 @@
 // Every call into the backend (main.py, the Plugin class's async methods), typed in one place. A method the frontend
 // calls must exist in main.py: tests/frontend/backendContract.test.ts checks this list against it.
-import { callable } from "@decky/api";
+import { addEventListener, callable, removeEventListener, toaster } from "@decky/api";
 import type { OverlayState } from "./overlay";
 import type { TextRegion, TranslatedRegion } from "./regions";
 
@@ -59,3 +59,22 @@ export const backend = {
         void>('delete_translation_cache_entry'),
     clearTranslationCache: callable<[], void>('clear_translation_cache'),
 };
+
+// Problems the backend found while loading (main.py get_startup_errors), e.g. a Decky update that changed its Python so
+// the capture or overlay modules no longer load: a toast for each, instead of a shortcut that silently does nothing.
+export async function showStartupErrors(title: string): Promise<void> {
+    let problems: string[] = [];
+    try {
+        problems = await backend.getStartupErrors();
+    } catch {
+        return;  // the backend didn't load at all: Decky shows that itself
+    }
+    for (const body of problems || []) toaster.toast({ title, body, duration: 10000 });
+}
+
+// Problems the backend finds later (main.py emits translator_problem: the game couldn't be paused): a toast each
+export function listenForProblems(title: string): () => void {
+    const onProblem = (body: string) => toaster.toast({ title, body, duration: 10000 });
+    addEventListener('translator_problem', onProblem);
+    return () => removeEventListener('translator_problem', onProblem);
+}

@@ -8,6 +8,7 @@ vi.mock('@decky/api', () => ({
     callable: (method: string) => vi.fn(() => Promise.resolve(replies[method])),
     toaster: { toast: vi.fn() },
 }));
+vi.mock('@decky/ui', () => ({ Router: {} }));  // Steam's, which the overlay's side-menu check reads
 
 const { Translator } = await import('../../src/translator');
 const { OverlayStore } = await import('../../src/overlay');
