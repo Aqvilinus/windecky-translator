@@ -37,7 +37,7 @@ def test_gemini_vision_uploads_the_jpeg_and_maps_boxes_to_the_screenshot():
 
     async def call_api(image_data, prompt):
         sent.append(image_data)
-        return json.dumps({"regions": [{"text": "Hallo", "translated_text": "Hello", "box_2d": [500, 500, 600, 600]}]})
+        return json.dumps([{"text": "Hallo", "translated_text": "Hello", "box_2d": [500, 500, 600, 600]}])
     provider._call_api = call_api
 
     regions = asyncio.run(provider.recognize(screenshot_png()))

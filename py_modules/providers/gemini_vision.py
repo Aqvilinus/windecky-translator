@@ -6,7 +6,7 @@ import io
 import json
 import logging
 import re
-from typing import List, Optional
+from typing import List
 
 
 from . import gemini_client
@@ -61,72 +61,28 @@ LANG_NAMES = {
 _SEPARATOR = re.compile(r'\s*,?\s*')
 
 
-def _as_regions(value) -> Optional[list]:
-    if isinstance(value, list):
-        return value
-    if isinstance(value, dict) and isinstance(value.get("regions"), list):
-        return value["regions"]
-    return None
-
-
-def _parse_json_response(text: str) -> Optional[list]:
-    """The regions array from Gemini's reply text: the JSON itself, inside a markdown fence, embedded in prose, or a
-    reply cut off mid-array (then the complete region objects before the cut). json.JSONDecoder.raw_decode does the
-    scanning, so brackets inside the region texts don't confuse it."""
-    cleaned = re.sub(r'<think>.*?</think>', '', text.strip(), flags=re.DOTALL)
-    cleaned = re.sub(r'<reasoning>.*?</reasoning>', '', cleaned, flags=re.DOTALL).strip()
-    fence = re.search(r'```(?:json)?\s*\n?(.*?)\n?\s*```', cleaned, re.DOTALL)
-    candidates = [cleaned] + ([fence.group(1).strip()] if fence else [])
-    for candidate in candidates:
-        try:
-            regions = _as_regions(json.loads(candidate))
-        except json.JSONDecodeError:
-            continue
-        if regions is not None:
-            return regions
-
+def _parse_regions(text: str) -> list:
+    """The regions of Gemini's reply, a JSON array by REGIONS_SCHEMA. A reply cut off at the token limit gives the
+    complete region objects before the cut (json.JSONDecoder.raw_decode reads each, so brackets inside the region
+    texts don't confuse it)."""
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
     decoder = json.JSONDecoder()
-    # JSON embedded in other text: decode from the first bracket
-    starts = [i for i in (cleaned.find('['), cleaned.find('{')) if i != -1]
-    if starts:
+    regions, pos = [], text.find('[') + 1
+    while pos:
+        pos = _SEPARATOR.match(text, pos).end()
+        if pos >= len(text) or text[pos] != '{':
+            break
         try:
-            regions = _as_regions(decoder.raw_decode(cleaned, min(starts))[0])
-            if regions is not None:
-                return regions
+            obj, pos = decoder.raw_decode(text, pos)
         except json.JSONDecodeError:
-            pass
-
-    # A reply cut off mid-array: keep each complete top-level object of the array
-    array = cleaned.find('[')
-    if array != -1:
-        regions, pos = [], array + 1
-        while True:
-            pos = _SEPARATOR.match(cleaned, pos).end()
-            if pos >= len(cleaned) or cleaned[pos] != '{':
-                break
-            try:
-                obj, pos = decoder.raw_decode(cleaned, pos)
-            except json.JSONDecodeError:
-                break  # the object the reply was cut in
-            regions.append(obj)
-        if regions:
-            logger.warning(f"Recovered {len(regions)} regions from truncated response")
-            return regions
-
-    logger.warning("Failed to parse JSON from Gemini response")
-    logger.debug(f"Response text: {cleaned[:500]}")
-    return None
-
-
-def _has_required_fields(region: dict) -> bool:
-    if not isinstance(region, dict):
-        return False
-    if "text" not in region or "box_2d" not in region:
-        return False
-    box = region["box_2d"]
-    if not isinstance(box, list) or len(box) != 4:
-        return False
-    return all(isinstance(v, (int, float)) for v in box)
+            break  # the object the reply was cut in
+        regions.append(obj)
+    logger.warning(f"Gemini's reply was cut off: {len(regions)} complete regions kept")
+    logger.debug(f"Response text: {text[:500]}")
+    return regions
 
 
 class GeminiVisionProvider(OCRProvider):
@@ -210,17 +166,12 @@ class GeminiVisionProvider(OCRProvider):
 
         response_text = await self._call_api(await asyncio.to_thread(to_jpeg, image_data), prompt)
 
-        regions_data = _parse_json_response(response_text)
-        if regions_data is None:
-            return []
-
-        raw_region_count = len(regions_data)
+        regions_data = _parse_regions(response_text)
         text_regions = []
         for region in regions_data:
-            if not _has_required_fields(region):
-                continue
-
             box = region["box_2d"]
+            if len(box) != 4:  # the schema can't say how many numbers
+                continue
             y_min, x_min, y_max, x_max = box
 
             x_min = max(0, min(1000, x_min))
@@ -235,8 +186,8 @@ class GeminiVisionProvider(OCRProvider):
                 "bottom": int(y_max * img_height / 1000),
             }
 
-            text = region.get("text", "").strip()
-            translated = region.get("translated_text", "").strip()
+            text = region["text"].strip()
+            translated = region["translated_text"].strip()
             if not text:
                 continue
 
@@ -247,7 +198,7 @@ class GeminiVisionProvider(OCRProvider):
             ))
 
         logger.info(
-            f"Gemini Vision: {len(text_regions)}/{raw_region_count} valid regions"
+            f"Gemini Vision: {len(text_regions)}/{len(regions_data)} valid regions"
         )
         for i, r in enumerate(text_regions):
             logger.debug(f"  [{i}] '{r.text}' -> '{r.translated_text}' at {r.rect}")
