@@ -9,7 +9,7 @@ import { TranslatedRegion, filterUntranslatable, mergeRegions } from "./regions"
 const NO_TEXT_MESSAGE_MS = 2000;
 const ERROR_MESSAGE_MS = 3000;
 
-// The settings a translation needs (SettingsContext gives them all)
+// The settings a translation needs (settings.tsx gives them all)
 export interface TranslatorSettings {
     enabled: boolean;
     inputLanguage: string;

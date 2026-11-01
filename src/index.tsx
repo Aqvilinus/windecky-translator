@@ -1,12 +1,7 @@
 import { definePlugin } from "@decky/api";
 import { backend } from "./backend";
 
-import {
-    PanelSection,
-    PanelSectionRow,
-    staticClasses,
-    Tabs
-} from "@decky/ui";
+import { staticClasses, Tabs } from "@decky/ui";
 
 import {
     VFC,
@@ -21,7 +16,7 @@ import { OverlayStore } from "./overlay";
 import { Translator } from "./translator";
 import { forwardOverlayToBackend, listenForHotkey, listenForProblems, showStartupErrors } from "./windows";
 import { adoptActivePlugin } from "./deckyState";
-import { SettingsProvider, useSettings, loadSettings } from "./SettingsContext";
+import { SettingsProvider, useSettings, loadSettings } from "./settings";
 import { logger } from "./log";
 import { WEB_OCR_ENGINES, WEB_TRANSLATION_ENGINES } from "./providers";
 
@@ -80,7 +75,7 @@ const TabsBox: VFC<{ children: any }> = ({ children }) => {
 const STATUS_POLL_INTERVAL_MS = 10000;
 
 const GameTranslator: VFC<{ translator: Translator }> = ({ translator }) => {
-    const { settings, initialized } = useSettings();
+    const { settings } = useSettings();
     const [overlayVisible, setOverlayVisible] = useState<boolean>(translator.overlay.isVisible());
     const [models, setModels] = useState<InstalledModels | null>(null);
     const [currentTabRoute, setCurrentTabRoute] = useState<string>("main");
@@ -146,16 +141,6 @@ const GameTranslator: VFC<{ translator: Translator }> = ({ translator }) => {
     useEffect(() => {
         setWebReachability(null);
     }, [settings.ocrProvider, settings.translationProvider, settings.llmBackend]);
-
-    if (!initialized) {
-        return (
-            <PanelSection>
-                <PanelSectionRow>
-                    <div>Loading...</div>
-                </PanelSectionRow>
-            </PanelSection>
-        );
-    }
 
     return (
         <>

@@ -9,7 +9,7 @@ import { VFC } from "react";
 import { OCR_ENGINE_LABELS, TRANSLATION_ENGINE_LABELS } from "../providers";
 import { BsTranslate, BsXLg, BsEye, BsStars } from "react-icons/bs";
 import { HiInboxArrowDown } from "react-icons/hi2";
-import { useSettings } from "../SettingsContext";
+import { useSettings } from "../settings";
 import type { ModelKind, ModelStatus } from "../backend";
 import { Translator } from "../translator";
 import { LLM_BACKEND_LABELS, llmModel } from "../llm";

@@ -1,5 +1,5 @@
 // AI translation (translation provider "llm", py_modules/providers/llm_translate.py): which service, its key and model.
-import type { Settings } from './SettingsContext';
+import type { Settings } from './settings';
 
 export const LLM_BACKEND_LABELS: Record<string, string> = {
     gemini: 'Gemini',

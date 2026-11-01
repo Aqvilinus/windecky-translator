@@ -2,7 +2,7 @@ import { PanelSection, PanelSectionRow, Dropdown, DropdownItem, SliderField, Tog
 import { showModal } from "../modal";
 import { VFC, useState, useEffect, useRef, useCallback } from "react";
 import { backend } from "../backend";
-import { useSettings } from "../SettingsContext";
+import { useSettings } from "../settings";
 import { CONFIDENCE_OCR_ENGINES } from "../providers";
 import { LLM_DEFAULT_MODELS, LLM_KEY_SETTING, LLM_MODEL_SETTING, llmConfigured, llmModel } from "../llm";
 import { HiKey, HiLockClosed, HiInformationCircle } from "react-icons/hi2";
@@ -80,10 +80,10 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
 
     // CT2 can't detect the source language: the user picks one
     useEffect(() => {
-        if (settings.initialized && isCT2 && settings.inputLanguage === 'auto') {
+        if (isCT2 && settings.inputLanguage === 'auto') {
             updateSetting('inputLanguage', '', 'Input language');
         }
-    }, [settings.initialized, settings.translationProvider]);
+    }, [settings.translationProvider]);
 
     return (
         <div style={{ paddingBottom: "40px" }}>
@@ -298,9 +298,9 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                         <ToggleField
                             label="Faster Recognition"
                             description="Keeps the recognition engine loaded in memory between translations"
-                            checked={settings.chromeScreenAiPersistentMode}
+                            checked={settings.chromescreenaiPersistentMode}
                             onChange={(value) => {
-                                updateSetting('chromeScreenAiPersistentMode', value, 'Faster recognition');
+                                updateSetting('chromescreenaiPersistentMode', value, 'Faster recognition');
                             }}
                         />
                     </PanelSectionRow>

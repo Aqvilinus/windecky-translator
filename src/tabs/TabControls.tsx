@@ -8,7 +8,7 @@ import {
 
 import { VFC, useEffect, useState } from "react";
 import { backend } from "../backend";
-import { useSettings } from "../SettingsContext";
+import { useSettings } from "../settings";
 import { WINDOWS_HOTKEY } from "../windows";
 
 // The Windows parts' state (main.py get_diagnostics), shown in debug mode

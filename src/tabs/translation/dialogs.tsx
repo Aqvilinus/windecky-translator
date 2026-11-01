@@ -1,7 +1,7 @@
 import { ModalRoot, DialogButton, TextField, Focusable } from "@decky/ui";
 import { VFC, useState, useEffect, useRef } from "react";
 import { backend } from "../../backend";
-import { displayKey } from "../../SettingsContext";
+import { maskKey } from "../../settings";
 
 // Windows: Steam's text fields have no Paste in their right-click menu and a gamepad has no Ctrl+V, so the key
 // dialogs get a Paste button that reads the Windows clipboard through the backend.
@@ -54,7 +54,7 @@ export const ApiKeyModal: VFC<{
                 </p>
                 {currentKey && (
                     <p style={{ marginBottom: "10px", color: "#aaa", fontSize: "13px" }}>
-                        Current key: <span style={{ fontFamily: "monospace", color: "#fff" }}>{displayKey(currentKey)}</span>
+                        Current key: <span style={{ fontFamily: "monospace", color: "#fff" }}>{maskKey(currentKey)}</span>
                     </p>
                 )}
                 <WithPaste onPaste={setApiKey}>
@@ -109,7 +109,7 @@ export const CustomServerModal: VFC<{
                 <WithPaste onPaste={setK}><TextField label="API Key" value={k} bIsPassword={true} bShowClearAction={true} onChange={(e) => setK(e.target.value)} /></WithPaste>
                 {apiKey && (
                     <p style={{ margin: "4px 0 10px", color: "#aaa", fontSize: "13px" }}>
-                        Current key: <span style={{ fontFamily: "monospace", color: "#fff" }}>{displayKey(apiKey)}</span>
+                        Current key: <span style={{ fontFamily: "monospace", color: "#fff" }}>{maskKey(apiKey)}</span>
                     </p>
                 )}
                 <TextField label="Model" value={m} bShowClearAction={true} onChange={(e) => setM(e.target.value)} />
