@@ -4,7 +4,6 @@ hotkey. Only the Windows and network edges are emulated (harness.py)."""
 import base64
 import io
 import json
-import os
 import threading
 
 import pytest
@@ -25,8 +24,8 @@ def pixels(img):
 
 
 def translate_screen(backend):
-    shot = backend.call("take_screenshot", "The Banner Saga")
-    regions = backend.call("recognize_text_file", shot["path"])
+    shot = backend.call("capture_screen")
+    regions = backend.call("recognize_capture", shot["id"])
     return shot, regions, backend.call("translate_text", regions, "en", "auto")
 
 
@@ -92,9 +91,8 @@ def test_a_worker_stays_up_only_for_the_chosen_engine_while_the_plugin_is_on(sta
 def test_capture_ocr_translate_overlay(backend, windows, net):
     shot, regions, translated = translate_screen(backend)
 
-    # the capture stays in memory: the frontend gets only a name
-    assert shot == {"path": shot["path"]} and shot["path"].endswith(".png") and "The Banner Saga" in shot["path"]
-    assert windows.captures == 1 and not os.path.exists(shot["path"])
+    assert shot == {"id": 1}  # the pixels stay in the backend
+    assert windows.captures == 1
     assert [r["text"] for r in regions] == [t for t, _ in harness.SCREEN]
     for r, (_, (x, y)) in zip(regions, harness.SCREEN):
         assert abs(r["rect"]["left"] - x) <= 4 and abs(r["rect"]["top"] - y) <= 12
@@ -152,8 +150,8 @@ def test_a_translation_that_gives_nothing_back_is_an_error(backend, net, monkeyp
     async def unusable(texts, src, tgt):
         return [None] * len(texts)
     monkeypatch.setattr(free._bing, "translate_lines", unusable)
-    shot = backend.call("take_screenshot", "Game")
-    regions = backend.call("recognize_text_file", shot["path"])
+    shot = backend.call("capture_screen")
+    regions = backend.call("recognize_capture", shot["id"])
     reply = backend.call("translate_text", regions, "en", "auto")
     assert reply["error"] == "translation_failed" and "did not answer" in reply["message"]
     assert backend.call("get_translation_cache_stats")["entries"] == 0
@@ -196,15 +194,15 @@ def test_translation_cache(start, net):
 
 def test_a_google_vision_failure_is_shown_not_taken_for_no_text(backend, net):
     net.routes[("POST", harness.VISION_URL)] = lambda params, body: (500, "backend error")
-    shot = backend.call("take_screenshot", "Game")
-    assert backend.call("recognize_text_file", shot["path"]) == {
+    shot = backend.call("capture_screen")
+    assert backend.call("recognize_capture", shot["id"]) == {
         "error": "ocr_failed", "message": "Google Cloud Vision error 500 (details in the plugin log)"}
 
 
 def test_no_network(backend, net):
     net.down |= {harness.GOOGLE_URL, harness.VISION_URL}
-    shot = backend.call("take_screenshot", "Game")
-    assert backend.call("recognize_text_file", shot["path"]) == {"error": "network_error", "message": "No internet connection"}
+    shot = backend.call("capture_screen")
+    assert backend.call("recognize_capture", shot["id"]) == {"error": "network_error", "message": "No internet connection"}
     regions = [{"text": "Hallo Welt", "rect": {"left": 0, "top": 0, "right": 10, "bottom": 10}, "confidence": 1}]
     assert backend.call("translate_text", regions, "en", "auto") == {"error": "network_error", "message": "No internet connection"}
 
@@ -217,15 +215,15 @@ def test_ocr_engine_failures_reach_the_frontend(backend, monkeypatch):
     async def times_out(image, language="auto"):
         raise OCRError("On-device OCR timed out after 120 s")
     monkeypatch.setattr(provider, "recognize", times_out)
-    shot = backend.call("take_screenshot", "Game")
-    assert backend.call("recognize_text_file", shot["path"]) == {
+    shot = backend.call("capture_screen")
+    assert backend.call("recognize_capture", shot["id"]) == {
         "error": "ocr_failed", "message": "On-device OCR timed out after 120 s"}
 
     async def crashes(image, language="auto"):
         raise ValueError("bug")
     monkeypatch.setattr(provider, "recognize", crashes)
-    shot = backend.call("take_screenshot", "Game")
-    assert backend.call("recognize_text_file", shot["path"])["error"] == "ocr_failed"
+    shot = backend.call("capture_screen")
+    assert backend.call("recognize_capture", shot["id"])["error"] == "ocr_failed"
 
 
 def test_chrome_screen_ai_failures_raise(monkeypatch, tmp_path):
@@ -256,15 +254,14 @@ def test_chrome_screen_ai_failures_raise(monkeypatch, tmp_path):
 
 def test_nothing_captured(backend, windows):
     windows.capture_image = None  # no foreground window
-    assert backend.call("take_screenshot", "Game") == {"path": "", "error": "No game window in front to capture"}
+    assert backend.call("capture_screen") == {"error": "No game window in front to capture"}
 
 
-def test_screenshot_files_outside_the_plugin_are_refused(backend, tmp_path):
-    other = tmp_path / "secret.png"
-    other.write_bytes(b"not mine")
-    assert backend.call("recognize_text_file", str(other)) == []
-    assert backend.call("discard_screenshot", str(other)) is False
-    assert other.exists()
+def test_an_old_capture_id_is_refused(backend):
+    shot = backend.call("capture_screen")
+    backend.call("capture_screen")
+    assert backend.call("recognize_capture", shot["id"]) == []
+    assert backend.call("discard_capture", shot["id"]) is False
 
 
 def test_pause_game_while_translating(start, windows, net):
@@ -350,6 +347,6 @@ def test_windows_ocr_reads_the_screen(start, windows):
     if not {"en", "de"} & set(languages):
         pytest.skip(f"no English or German Windows OCR language pack ({languages})")
     b = start({"ocr_provider": "windows_ocr"})
-    shot = b.call("take_screenshot", "Game")
-    texts = " ".join(r["text"] for r in b.call("recognize_text_file", shot["path"]))
+    shot = b.call("capture_screen")
+    texts = " ".join(r["text"] for r in b.call("recognize_capture", shot["id"]))
     assert "Willkommen" in texts and "Spiel" in texts

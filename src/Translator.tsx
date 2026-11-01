@@ -1,6 +1,5 @@
 import { toaster } from "@decky/api";
 import { backend } from "./backend";
-import { Router } from "@decky/ui";
 import { TextRecognizer } from "./TextRecognizer";
 import { BackendError, NetworkError, ApiKeyError } from "./errors";
 import { TextTranslator } from "./TextTranslator";
@@ -77,30 +76,28 @@ export class GameTranslatorLogic {
             this.isProcessing = true;
 
             // before the overlay opens, so it isn't captured
-            const appName = Router.MainRunningApp?.display_name || "";
-            logger.info('Translator', `Taking new screenshot for: ${appName}`);
-            const result = await backend.takeScreenshot(appName);
+            logger.info('Translator', 'Capturing the screen');
+            const capture = await backend.captureScreen();
 
             if (isCancelled()) {
                 logger.debug('Translator', 'Translation cancelled before screenshot processed');
-                if (result?.path) backend.discardScreenshot(result.path).catch(() => { /* best effort */ });
+                if (capture.id) backend.discardCapture(capture.id).catch(() => { /* best effort */ });
                 return;
             }
 
-            if (!result?.path) {
+            if (!capture.id) {
                 logger.warn('Translator', 'Screenshot capture failed, not opening overlay');
-                this.notify('Screen capture failed', 4000, result?.error || 'Try pressing the shortcut again');
+                this.notify('Screen capture failed', 4000, capture.error || 'Try pressing the shortcut again');
                 return;
             }
 
-            logger.debug('Translator', `Screenshot captured: ${result.path}`);
 
             const recognizingStep = this.ocrProvider === 'gemini_vision'
                 ? "Recognizing and Translating"
                 : "Recognizing";
             this.imageState.startLoading(recognizingStep, this.ocrMethodHint());
 
-            const textRegions = await this.textRecognizer.recognizeTextFile(result.path);
+            const textRegions = await this.textRecognizer.recognizeCapture(capture.id);
             if (isCancelled()) {
                 logger.debug('Translator', 'Translation cancelled after OCR');
                 return;

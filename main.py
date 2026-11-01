@@ -2,15 +2,12 @@ import asyncio
 import functools
 import os
 import sys
-import tempfile
 import traceback
 import time
 from datetime import datetime
 from pathlib import Path
 import logging
-import re
 import json
-import base64
 import sqlite3
 import tarfile
 
@@ -105,8 +102,6 @@ except (OSError, ValueError):
 logger.info(f"WinDecky Translator v{_plugin_version} starting")
 
 
-# The capture's name for the frontend (no file is written; suspended.json of game_process.py lives here too)
-SCREENSHOT_DIR = os.path.join(tempfile.gettempdir(), "decky-translator")
 # What keeps parts of the plugin from working, for the frontend to show (get_boot_status). Capture and overlay load
 # compiled modules (winrt, Pillow) built for one Python version into Decky's own interpreter: after a Decky update
 # that changes its Python they fail to import, and the rest of the plugin should still load and say why.
@@ -166,7 +161,8 @@ class Plugin:
     _overlay = None
     _overlay_visible = False
     _capturing = False
-    _capture_target = None  # the window the last screenshot came from, and the screenshot
+    _capture = None  # the last capture: the window it came from (for the overlay) and its pixels until OCR
+    _capture_id = 0
     _hotkey = None
     _loop = None
 
@@ -279,32 +275,25 @@ class Plugin:
             logger.error(f"Error checking web reachability: {str(e)}")
             return {"error": str(e)}
 
-    async def take_screenshot(self, app_name: str = ""):
-        """Capture the foreground window (windows/capture.py) and remember where it is for the overlay.
-        {"path": name for recognize_text_file} or {"path": "", "error": why nothing was captured}."""
+    async def capture_screen(self):
+        """{"id": n} for recognize_capture, or {"error": why nothing was captured}. The pixels stay here: the
+        overlay window, not the frontend, shows them."""
         if self._capturing:
-            return {"path": "", "error": "A capture is already running"}
+            return {"error": "A capture is already running"}
         self._capturing = True
         try:
             if capture_foreground is None:
-                return {"path": "", "error": "Screen capture is unavailable: see the plugin's start-up message"}
+                return {"error": "Screen capture is unavailable: see the plugin's start-up message"}
             cap = await capture_foreground()
             if cap is None:
-                return {"path": "", "error": "No game window in front to capture"}
-            name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', " ", app_name or "").strip()
-            if not name or name.lower() == "null":
-                name = "Decky-Screenshot"
-            timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S_%f")
-            # The screenshot stays in memory: the frontend doesn't draw it (the overlay window does), so it only
-            # gets a name for recognize_text_file, and no file is written and read back
-            path = os.path.join(SCREENSHOT_DIR, f"{name}_{timestamp}.png")
-            self._capture_target = {"hwnd": cap.hwnd, "left": cap.left, "top": cap.top,
-                                    "width": cap.width, "height": cap.height, "image": cap.image, "ocr_pending": True,
-                                    "path": path}
-            return {"path": path}
+                return {"error": "No game window in front to capture"}
+            self._capture_id += 1
+            self._capture = {"id": self._capture_id, "hwnd": cap.hwnd, "left": cap.left, "top": cap.top,
+                             "width": cap.width, "height": cap.height, "image": cap.image, "ocr_pending": True}
+            return {"id": self._capture_id}
         except Exception as e:  # noqa: BLE001 - reported to the user, details in the log
             logger.exception("Screenshot error")
-            return {"path": "", "error": f"Screen capture failed: {e}"}
+            return {"error": f"Screen capture failed: {e}"}
         finally:
             self._capturing = False
 
@@ -320,7 +309,7 @@ class Plugin:
             appeared = visible and not self._overlay_visible
             self._overlay_visible = visible
             if visible:
-                self._overlay.show(state, self._capture_target)
+                self._overlay.show(state, self._capture)
                 if appeared and self._settings.get("pause_game_on_overlay"):
                     self._pause_captured_game()
             else:
@@ -335,9 +324,9 @@ class Plugin:
     def _release_capture(self):
         """Drop the capture's pixels (megabytes) once nothing needs them; the window position stays for
         get_windows_status."""
-        if self._capture_target:
-            self._capture_target.pop("image", None)
-            self._capture_target.pop("ocr_pending", None)
+        if self._capture:
+            self._capture.pop("image", None)
+            self._capture.pop("ocr_pending", None)
 
     # Windows: Pause Game While Translating. The game is paused when its translation appears (right after the capture,
     # so the screenshot shows it running) and everything paused is resumed when the translation is hidden, however
@@ -346,7 +335,7 @@ class Plugin:
         if not game_process:
             return  # reported at start (_BOOT_ERRORS)
         try:
-            game_process.suspend((self._capture_target or {}).get("hwnd"))
+            game_process.suspend((self._capture or {}).get("hwnd"))
         except game_process.SuspendError as e:
             self._report_pause_problem(f"Pause Game While Translating: {e}")
 
@@ -399,23 +388,10 @@ class Plugin:
         return {
             "hotkey": self._hotkey.status() if self._hotkey else None,
             "overlay_error": self._overlay.error if self._overlay else None,
-            "capture": {k: v for k, v in (self._capture_target or {}).items() if k != "image"},
+            "capture": {k: v for k, v in (self._capture or {}).items() if k != "image"},
         }
 
-    @answers_errors("ocr_failed", "Text recognition failed (details in the plugin log)")
-    async def recognize_text(self, image_data):
-        """image_data: base64 (data: URL or plain) from the frontend, or the image bytes from the backend itself."""
-        if not image_data:
-            logger.error("Empty image data for text recognition")
-            return []
-
-        if isinstance(image_data, (bytes, bytearray)):
-            image_bytes = bytes(image_data)
-        else:
-            if image_data.startswith('data:image'):
-                image_data = image_data.split(',', 1)[1]
-            image_bytes = base64.b64decode(image_data)
-
+    async def _recognize(self, png: bytes):
         if not self._providers:
             logger.error("Provider manager not initialized")
             return []
@@ -438,33 +414,33 @@ class Plugin:
 
         start_time = time.time()
         text_regions = await self._providers.recognize_text(
-            image_bytes,
+            png,
             language=self._settings.get("input_language")
         )
         logger.info(f"OCR completed in {time.time() - start_time:.2f}s, found {len(text_regions)} regions")
 
         return [region.to_dict() for region in text_regions]
 
-    def _is_capture(self, image_path) -> bool:
-        return bool(self._capture_target and image_path and image_path == self._capture_target.get("path"))
+    def _is_current_capture(self, capture_id) -> bool:
+        return bool(self._capture and capture_id and capture_id == self._capture.get("id"))
 
-    async def discard_screenshot(self, image_path: str) -> bool:
-        """Drop a capture the frontend won't recognize (the translation was cancelled after the capture)."""
-        if not self._is_capture(image_path):
+    async def discard_capture(self, capture_id: int) -> bool:
+        """The translation was cancelled after the capture: its pixels go."""
+        if not self._is_current_capture(capture_id):
             return False
         self._release_capture()
         return True
 
-    async def recognize_text_file(self, image_path: str):
-        """OCR of the capture take_screenshot named image_path (it is in memory, not a file)."""
-        if not self._is_capture(image_path):
-            logger.error(f"Not the current capture: {image_path}")
+    @answers_errors("ocr_failed", "Text recognition failed (details in the plugin log)")
+    async def recognize_capture(self, capture_id: int):
+        if not self._is_current_capture(capture_id):
+            logger.error(f"Not the current capture: {capture_id}")
             return []
-        image = self._capture_target.get("image")
-        if image is None or not self._capture_target.pop("ocr_pending", False):
+        image = self._capture.get("image")
+        if image is None or not self._capture.pop("ocr_pending", False):
             logger.error("The capture was already recognized or discarded")
             return []
-        return await self.recognize_text(await asyncio.to_thread(encode_png, image))
+        return await self._recognize(await asyncio.to_thread(encode_png, image))
 
     @answers_errors("translation_failed", "Translation failed (details in the plugin log)")
     async def translate_text(self, text_regions, target_language=None, input_language=None):

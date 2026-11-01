@@ -326,7 +326,6 @@ class Backend:
     def start(self):
         self.main.settingsDir = self.settings_dir
         self.plugin = self.main.Plugin()
-        self.plugin._screenshotPath = os.path.join(self.settings_dir, "screenshots")
         self.loop.run_until_complete(self.plugin._main())
         return self
 

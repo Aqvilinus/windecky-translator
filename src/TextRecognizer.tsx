@@ -533,10 +533,9 @@ export class TextRecognizer {
         });
     }
 
-    async recognizeTextFile(imagePath: string): Promise<TextRegion[]> {
-        const regions = throwIfBackendError(
-            await backend.recognizeTextFile(imagePath)) || [];
-        logger.info('TextRecognizer', `Got ${regions.length} regions from file-based OCR`);
+    async recognizeCapture(captureId: number): Promise<TextRegion[]> {
+        const regions = throwIfBackendError(await backend.recognizeCapture(captureId)) || [];
+        logger.info('TextRecognizer', `Got ${regions.length} regions from OCR`);
 
         const mergedRegions = this.applyAutoGlue(regions);
         const filteredRegions = this.filterUntranslatableText(mergedRegions);

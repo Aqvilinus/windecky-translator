@@ -24,10 +24,10 @@ export const backend = {
     getAllSettings: callable<[], BackendSettings>('get_all_settings'),
     setSetting: callable<[key: string, value: unknown], boolean>('set_setting'),
     getClipboardText: callable<[], string>('get_clipboard_text'),
-    // the capture's name for recognize_text_file ("" when nothing was captured); the pixels stay in the backend
-    takeScreenshot: callable<[appName: string], { path: string; error?: string }>('take_screenshot'),
-    discardScreenshot: callable<[path: string], boolean>('discard_screenshot'),
-    recognizeTextFile: callable<[path: string], TextRegion[] | ErrorResponse>('recognize_text_file'),
+    // the pixels stay in the backend; the frontend gets the capture's id, or why nothing was captured
+    captureScreen: callable<[], { id?: number; error?: string }>('capture_screen'),
+    discardCapture: callable<[id: number], boolean>('discard_capture'),
+    recognizeCapture: callable<[id: number], TextRegion[] | ErrorResponse>('recognize_capture'),
     translateText: callable<[regions: TextRegion[], target: string, input: string],
         TranslatedRegion[] | ErrorResponse | null>('translate_text'),
     nativeOverlayUpdate: callable<[state: Partial<OverlayState>], boolean>('native_overlay_update'),

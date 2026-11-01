@@ -8,7 +8,6 @@ vi.mock('@decky/api', () => ({
     callable: (method: string) => vi.fn(() => Promise.resolve(replies[method])),
     toaster: { toast: vi.fn() },
 }));
-vi.mock('@decky/ui', () => ({ Router: { MainRunningApp: { display_name: 'Game' } } }));
 
 const { GameTranslatorLogic } = await import('../../src/Translator');
 const { ImageState } = await import('../../src/Overlay');
@@ -28,19 +27,19 @@ function startTranslator() {
 describe('GameTranslatorLogic errors', () => {
     beforeEach(() => {
         replies = {
-            take_screenshot: { path: 'shot.png' },
+            capture_screen: { id: 1 },
         };
     });
 
     it('shows why OCR failed', async () => {
-        replies.recognize_text_file = { error: 'ocr_failed', message: 'On-device OCR timed out after 120 s' };
+        replies.recognize_capture = { error: 'ocr_failed', message: 'On-device OCR timed out after 120 s' };
         const { logic, steps } = startTranslator();
         await logic.takeScreenshotAndTranslate();
         expect(steps.at(-1)).toEqual({ step: 'On-device OCR timed out after 120 s', isError: true });
     });
 
     it('shows why translation failed', async () => {
-        replies.recognize_text_file = [{ text: 'Neues Spiel', rect: { left: 0, top: 0, right: 90, bottom: 20 }, confidence: 1 }];
+        replies.recognize_capture = [{ text: 'Neues Spiel', rect: { left: 0, top: 0, right: 90, bottom: 20 }, confidence: 1 }];
         replies.translate_text = { error: 'translation_failed', message: 'The translation service did not answer' };
         const { logic, steps } = startTranslator();
         await logic.takeScreenshotAndTranslate();
@@ -48,7 +47,7 @@ describe('GameTranslatorLogic errors', () => {
     });
 
     it('still says "No text found" when the screen has no text', async () => {
-        replies.recognize_text_file = [];
+        replies.recognize_capture = [];
         const { logic, steps } = startTranslator();
         await logic.takeScreenshotAndTranslate();
         expect(steps.at(-1)).toEqual({ step: 'No text found', isError: false });
