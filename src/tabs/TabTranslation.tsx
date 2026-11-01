@@ -8,7 +8,6 @@ import { useSettings } from "../SettingsContext";
 import { LLM_DEFAULT_MODELS, LLM_KEY_SETTING, LLM_MODEL_SETTING, llmConfigured, llmModel } from "../llm";
 import { HiKey, HiLockClosed, HiInformationCircle } from "react-icons/hi2";
 import { BsStars, BsWindows } from "react-icons/bs";
-import ocrspaceLogo from "../../assets/ocrspace-logo.png";
 import googlecloudLogo from "../../assets/googlecloud-logo.png";
 import googletranslateLogo from "../../assets/googletranslate-logo.png";
 import geminiLogo from "../../assets/gemini-logo.png";
@@ -130,7 +129,6 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                 rgOptions={[
                                     { label: <span style={{ display: "flex", alignItems: "center", height: "20px", lineHeight: "20px" }}><span>On-Device</span><span style={{ fontSize: "10px", opacity: 0.7, marginLeft: "4px", transform: "translateY(2px)" }}>(Windows OCR)</span></span>, data: "windows_ocr" },
                                     { label: <span style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", width: "100%", height: "20px", lineHeight: "20px" }}><span style={{ display: "flex", alignItems: "center" }}><span>On-Device</span><span style={{ fontSize: "10px", opacity: 0.7, marginLeft: "4px", transform: "translateY(2px)" }}>(Chrome)</span></span><span className="dt-recommended-tag" style={{ fontSize: "10px", color: "#9aa0a6", fontStyle: "italic" }}>★ recommended</span></span>, data: "chromescreenai" },
-                                    { label: <span>OCR.space</span>, data: "ocrspace" },
                                     { label: <span style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", width: "100%", height: "20px", lineHeight: "20px" }}><span>Google Cloud</span><span className="dt-recommended-tag" style={{ fontSize: "10px", color: "#9aa0a6", fontStyle: "italic" }}>★ recommended</span></span>, data: "googlecloud" },
                                     { label: <span style={{ display: "flex", alignItems: "center", gap: "6px", height: "20px", lineHeight: "20px" }}>Gemini Vision <BsStars style={{ fontSize: "12px" }} /></span>, data: "gemini_vision" }
                                 ]}
@@ -260,17 +258,6 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                             languages without packs
                                         </div>
                                     )}
-                                </>
-                            )}
-                            {settings.ocrProvider === 'ocrspace' && (
-                                <>
-                                    <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
-                                        <img src={ocrspaceLogo} alt="" style={{ height: "18px" }} />
-                                        <span style={{ fontWeight: "bold", color: "#dcdedf" }}>OCR.space</span>
-                                    </div>
-                                    <ProviderRating quality={2} speed={3} />
-                                    <div>- Free EU-based cloud OCR API</div>
-                                    <div>- Max usage limits: 500/day and 10/10min</div>
                                 </>
                             )}
                             {settings.ocrProvider === 'googlecloud' && (

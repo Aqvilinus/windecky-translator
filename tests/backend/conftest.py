@@ -29,8 +29,9 @@ def net():
         yield n
 
 
-# OCR.space for the screen text and the free Google translator: both answered by the stubs
-DEFAULT_SETTINGS = {"ocr_provider": "ocrspace", "translation_provider": "freegoogle", "target_language": "en"}
+# Google Cloud Vision for the screen text and the free Google translator: both answered by the stubs
+DEFAULT_SETTINGS = {"ocr_provider": "googlecloud", "google_api_key": "test-key-0123456789",
+                    "translation_provider": "freegoogle", "target_language": "en"}
 
 
 @pytest.fixture

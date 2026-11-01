@@ -18,7 +18,6 @@ from .base import (
 )
 from .google_ocr import GoogleVisionProvider
 from .google_translate import GoogleTranslateProvider
-from .ocrspace import OCRSpaceProvider
 from .free_translate import FreeTranslateProvider
 from .chromescreenai_provider import ChromeScreenAIProvider
 from .gemini_vision import GeminiVisionProvider
@@ -32,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 _REACHABILITY_TTL = 4.0
 
-_WEB_OCR_PROVIDERS = {"gemini_vision", "googlecloud", "ocrspace"}
+_WEB_OCR_PROVIDERS = {"gemini_vision", "googlecloud"}
 _WEB_TRANSLATION_PROVIDERS = {"googlecloud", "freegoogle", "llm"}
 
 # Export all public classes
@@ -47,7 +46,6 @@ __all__ = [
     'TranslationError',
     'GoogleVisionProvider',
     'GoogleTranslateProvider',
-    'OCRSpaceProvider',
     'FreeTranslateProvider',
     'ChromeScreenAIProvider',
     'GeminiVisionProvider',
@@ -103,7 +101,7 @@ class ProviderManager:
 
         Args:
             google_api_key: Google Cloud API key (only needed for googlecloud providers)
-            ocr_provider: OCR engine id - "chromescreenai", "windows_ocr", "ocrspace", "googlecloud", "gemini_vision"
+            ocr_provider: OCR engine id - "chromescreenai", "windows_ocr", "googlecloud", "gemini_vision"
             translation_provider: Translation provider preference - "freegoogle", "googlecloud", or "ct2"
             ct2_models_dir: Directory for CT2 translation model storage
         """
@@ -203,8 +201,6 @@ class ProviderManager:
         if engine == "windows_ocr":
             from .windows_ocr import WindowsOCRProvider  # winrt, loaded only when chosen
             return WindowsOCRProvider()
-        if engine == "ocrspace":
-            return OCRSpaceProvider()
         if engine == "googlecloud":
             return GoogleVisionProvider(self._google_api_key)
         if engine == "gemini_vision":
@@ -314,10 +310,6 @@ class ProviderManager:
             "ocr_available": ocr_provider.is_available() if ocr_provider else False,
             "translation_available": trans_provider.is_available("auto", "en") if trans_provider else False,
         }
-
-        # Add OCR.space usage stats if using ocrspace (OCR.space) provider
-        if self._ocr_provider_preference == "ocrspace" and ocr_provider:
-            status["ocr_usage"] = ocr_provider.get_usage_stats()
 
         llm = self._translation_providers.get("llm")
         if llm:

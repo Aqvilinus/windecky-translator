@@ -5,7 +5,7 @@
 - The Windows parts behind main.py's own names are replaced: the capture returns a test image of a game screen, the
   overlay window records what it is told and draws it with the real winport.overlay.render (Pillow) into an image,
   the hotkey and the process pause record their calls.
-- HTTP: the engines' session is replaced (Network): Google Translate, Bing and OCR.space answer from the stubs below;
+- HTTP: the engines' session is replaced (Network): Google Translate, Bing and Google Cloud Vision answer from the stubs below;
   any other request fails like a dead network, so no test can reach a real service.
 """
 import asyncio
@@ -72,18 +72,17 @@ def font(size=28):
     return font_for("Willkommen", size)
 
 
-def word_boxes():
-    """OCR.space-style words with pixel boxes of SCREEN as drawn by screen_image()."""
+def vision_paragraphs():
+    """Google Cloud Vision paragraphs (one per SCREEN line) with pixel boxes as drawn by screen_image()."""
     f = font()
-    lines = []
+    paragraphs = []
     for text, (x, y) in SCREEN:
-        words, cx = [], x
-        for w in text.split(" "):
-            left, top, right, bottom = f.getbbox(w)
-            words.append({"WordText": w, "Left": cx + left, "Top": y + top, "Width": right - left, "Height": bottom - top})
-            cx += f.getlength(w + " ")
-        lines.append({"LineText": text, "Words": words})
-    return lines
+        left, top, right, bottom = f.getbbox(text)
+        box = [{"x": x + left, "y": y + top}, {"x": x + right, "y": y + top},
+               {"x": x + right, "y": y + bottom}, {"x": x + left, "y": y + bottom}]
+        words = [{"symbols": [{"text": w}]} for w in text.split(" ")]
+        paragraphs.append({"boundingBox": {"vertices": box}, "confidence": 0.98, "words": words})
+    return paragraphs
 
 
 def screen_image(width=640, height=360):
@@ -221,7 +220,7 @@ class FakeWindows:
 GOOGLE_URL = "https://translate.googleapis.com/translate_a/single"
 BING_PAGE = "https://www.bing.com/translator"
 BING_URL = "https://www.bing.com/ttranslatev3"
-OCRSPACE_URL = "https://api.ocr.space/parse/image"
+VISION_URL = "https://vision.googleapis.com/v1/images:annotate"
 BING_PAGE_HTML = ('<html><script>_G={IG:"0123456789ABCDEF"};params_AbusePreventionHelper = [1700000000000,"tok123",3600000];'
                   '</script><div data-iid="translator.5023"></div></html>')
 
@@ -240,13 +239,13 @@ class Network:
     def __init__(self):
         self.dictionary = dict(DICTIONARY)
         self.google_status = 200
-        self.ocr_lines = word_boxes()
+        self.ocr_paragraphs = vision_paragraphs()
         self.languages = ("auto", "en")  # (source, target) the translators expect; others are refused
         self.down = set()
-        self.log = []  # (method, url, params, data)
+        self.log = []  # (method, url, params, data or json body)
         self.routes = {("POST", GOOGLE_URL): self._google, ("GET", GOOGLE_URL): lambda p, d: (200, '[[["ok","ok"]]]'),
                        ("GET", BING_PAGE): lambda p, d: (200, BING_PAGE_HTML), ("POST", BING_URL): self._bing,
-                       ("POST", OCRSPACE_URL): self._ocrspace, ("HEAD", OCRSPACE_URL): lambda p, d: (200, "")}
+                       ("POST", VISION_URL): self._vision}
 
     def __enter__(self):
         from providers import base
@@ -262,11 +261,12 @@ class Network:
 
     @contextlib.asynccontextmanager
     async def request(self, method, url, params=None, data=None, json=None, headers=None, timeout=None):
-        self.log.append((method, url, params or {}, data or {}))
+        body = data or json or {}
+        self.log.append((method, url, params or {}, body))
         handler = self.routes.get((method, url))
         if url in self.down or handler is None:
             raise aiohttp.ClientConnectionError(f"no network in the tests ({method} {url})")
-        status, body = handler(params or {}, data or {})
+        status, body = handler(params or {}, body)
         yield types.SimpleNamespace(status=status, headers={}, text=lambda: _text(body))
 
     async def close(self):
@@ -288,10 +288,11 @@ class Network:
         out = translate_lines(form["text"], self.dictionary)
         return 200, json.dumps([{"detectedLanguage": {"language": "de"}, "translations": [{"text": out, "to": "en"}]}])
 
-    def _ocrspace(self, params, data):
-        return 200, json.dumps({"ParsedResults": [{"FileParseExitCode": 1, "TextOverlay": {"Lines": self.ocr_lines},
-                                                   "ParsedText": "\n".join(l["LineText"] for l in self.ocr_lines)}],
-                                "OCRExitCode": 1, "IsErroredOnProcessing": False})
+    def _vision(self, params, body):
+        if not body["requests"]:
+            return 400, "empty request"  # the reachability probe
+        page = {"blocks": [{"paragraphs": self.ocr_paragraphs}]}
+        return 200, json.dumps({"responses": [{"fullTextAnnotation": {"pages": [page]}}]})
 
 
 async def _text(body):

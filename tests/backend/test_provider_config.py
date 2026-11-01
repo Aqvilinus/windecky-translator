@@ -14,7 +14,7 @@ class Configure(unittest.TestCase):
         self.assertEqual(self.prefs(), ("chromescreenai", "freegoogle"))
 
     def test_saved_choices_win(self):
-        self.assertEqual(self.prefs(ocr_provider="ocrspace", translation_provider="ct2"), ("ocrspace", "ct2"))
+        self.assertEqual(self.prefs(ocr_provider="windows_ocr", translation_provider="ct2"), ("windows_ocr", "ct2"))
 
 
 if __name__ == "__main__":

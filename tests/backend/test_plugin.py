@@ -1,12 +1,14 @@
 """main.py's Plugin driven through the calls the frontend makes, end to end inside the backend: settings, capture,
 OCR, translation (Google, the Bing fallback, the cache), the overlay window's drawing, the game pause and the
 hotkey. Only the Windows and network edges are emulated (harness.py)."""
+import base64
+import io
 import json
 import os
 import threading
 
 import pytest
-from PIL import ImageChops
+from PIL import Image, ImageChops
 
 import harness
 
@@ -33,9 +35,9 @@ def test_start_on_windows(backend, windows):
     assert windows.processes.log[0] == "resume_leftovers"  # a game an earlier run paused is resumed first
     assert windows.hotkey.enabled is True
     s = backend.call("get_all_settings")
-    assert s["ocr_provider"] == "ocrspace" and s["translation_provider"] == "freegoogle" and s["enabled"] is True
+    assert s["ocr_provider"] == "googlecloud" and s["translation_provider"] == "freegoogle" and s["enabled"] is True
     status = backend.call("get_provider_status")
-    assert status["ocr_provider"] == "OCR.space" and status["translation_available"] is True
+    assert status["ocr_provider"] == "Google Cloud Vision" and status["translation_available"] is True
 
 
 def test_settings_persist_across_a_restart(start, windows):
@@ -109,8 +111,9 @@ def test_capture_ocr_translate_overlay(backend, windows, net):
     assert [r["text"] for r in regions] == [t for t, _ in harness.SCREEN]
     for r, (_, (x, y)) in zip(regions, harness.SCREEN):
         assert abs(r["rect"]["left"] - x) <= 4 and abs(r["rect"]["top"] - y) <= 12
-    sent = net.calls(harness.OCRSPACE_URL)[0][3]
-    assert sent["base64Image"].startswith("data:image/png;base64,")  # the captured PNG went to OCR
+    sent = net.calls(harness.VISION_URL)[0][3]
+    image = base64.b64decode(sent["requests"][0]["image"]["content"])
+    assert Image.open(io.BytesIO(image)).size == (640, 360)  # the whole capture went to OCR
 
     assert [r["translatedText"] for r in translated] == ["Welcome, traveller", "New game"]
     assert len(net.calls(harness.GOOGLE_URL)) == 1  # one request for all lines
@@ -205,7 +208,7 @@ def test_translation_cache(start, net):
 
 
 def test_no_network(backend, net):
-    net.down |= {harness.GOOGLE_URL, harness.OCRSPACE_URL}
+    net.down |= {harness.GOOGLE_URL, harness.VISION_URL}
     shot = backend.call("take_screenshot", "Game")
     assert backend.call("recognize_text_file", shot["path"]) == {"error": "network_error", "message": "No internet connection"}
     regions = [{"text": "Hallo Welt", "rect": {"left": 0, "top": 0, "right": 10, "bottom": 10}, "confidence": 1, "isDialog": False}]

@@ -12,7 +12,7 @@ SETTING_DEFAULTS = {
     "enabled": True,
     "target_language": "en",
     "input_language": "auto",
-    "ocr_provider": "chromescreenai",       # "chromescreenai", "windows_ocr", "ocrspace", "googlecloud", "gemini_vision"
+    "ocr_provider": "chromescreenai",       # "chromescreenai", "windows_ocr", "googlecloud", "gemini_vision"
     "translation_provider": "freegoogle",   # "freegoogle", "googlecloud", "ct2" (offline NLLB) or "llm" (AI)
     "google_api_key": "",                   # one Google Cloud key for Vision and Translation
     "gemini_api_key": "",                   # Gemini Vision, and AI translation through Gemini
