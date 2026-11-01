@@ -6,8 +6,7 @@ import ctypes
 import json
 import os
 import sys
-
-
+import traceback
 
 _SK_COLOR_TYPE_RGBA_8888 = 4
 _SK_ALPHA_TYPE_OPAQUE = 1
@@ -86,13 +85,8 @@ class ScreenAIEngine:
         self._size_cb = get_size
         self._content_cb = get_content
 
-        lib_name = 'chrome_screen_ai.dll'
-        dll_path = os.path.join(self.model_dir, lib_name)
-        if not os.path.exists(dll_path):
-            raise FileNotFoundError(f"{lib_name} not found at {dll_path}")
         os.add_dll_directory(self.model_dir)  # its own dependencies sit next to it
-
-        self.lib = ctypes.CDLL(dll_path)
+        self.lib = ctypes.CDLL(os.path.join(self.model_dir, 'chrome_screen_ai.dll'))
 
         self.lib.SetFileContentFunctions.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
         self.lib.SetFileContentFunctions.restype = None
@@ -160,10 +154,7 @@ def _load_image_rgba(image_path, max_dim):
         img = img.convert('RGBA')
 
     w, h = img.size
-    scale_x = orig_w / w if w else 1.0
-    scale_y = orig_h / h if h else 1.0
-    return img.tobytes(), w, h, scale_x, scale_y
-
+    return img.tobytes(), w, h, orig_w / w, orig_h / h
 
 
 def _proto_to_regions(proto_bytes, scale_x, scale_y):
@@ -213,72 +204,33 @@ def main():
       >>> {"type":"shutdown"}
     """
     engine = None
-    cfg = {"model_dir": ""}
+    for line in sys.stdin:
+        msg = json.loads(line)
+        mtype = msg["type"]
 
-    try:
-        while True:
-            line = sys.stdin.readline()
-            if not line:
-                break
-            line = line.strip()
-            if not line:
-                continue
+        if mtype == "init":
             try:
-                msg = json.loads(line)
-            except json.JSONDecodeError as e:
-                _write_line({"type": "result", "error": f"bad json: {e}", "regions": []})
-                continue
+                engine = ScreenAIEngine(msg["model_dir"])
+                _write_line({"type": "ready", "error": None})
+            except Exception as e:
+                _write_line({"type": "ready", "error": f"{e}\n{traceback.format_exc()}"})
 
-            mtype = msg.get("type")
+        elif mtype == "recognize":
+            try:
+                rgba, w, h, sx, sy = _load_image_rgba(msg["image_path"], engine.max_dim)
+                proto = engine.perform(rgba, w, h)
+                if proto is None:
+                    _write_line({"type": "result", "error": "PerformOCR null", "regions": []})
+                else:
+                    _write_line({"type": "result", "error": None, "regions": _proto_to_regions(proto, sx, sy)})
+            except Exception as e:
+                _write_line({"type": "result", "error": str(e), "regions": []})
 
-            if mtype == "init":
-                try:
-                    for k in cfg.keys():
-                        if k in msg:
-                            cfg[k] = msg[k]
-                    engine = ScreenAIEngine(cfg["model_dir"])
-                    _write_line({"type": "ready", "error": None})
-                except Exception as e:
-                    import traceback
-                    _write_line({
-                        "type": "ready",
-                        "error": f"{e}\n{traceback.format_exc()}",
-                    })
+        elif mtype == "shutdown":
+            break
 
-            elif mtype == "recognize":
-                try:
-                    if engine is None:
-                        _write_line({"type": "result", "error": "not initialized", "regions": []})
-                        continue
-                    image_path = msg.get("image_path", "")
-                    if not image_path or not os.path.exists(image_path):
-                        _write_line({"type": "result", "error": "image not found", "regions": []})
-                        continue
-
-                    rgba, w, h, sx, sy = _load_image_rgba(image_path, engine.max_dim)
-                    proto = engine.perform(rgba, w, h)
-                    if proto is None:
-                        _write_line({"type": "result", "error": "PerformOCR null", "regions": []})
-                        continue
-                    regions = _proto_to_regions(proto, sx, sy)
-                    _write_line({"type": "result", "error": None, "regions": regions})
-                except Exception as e:
-                    import traceback
-                    _write_line({
-                        "type": "result",
-                        "error": str(e),
-                        "regions": [],
-                        "trace": traceback.format_exc(),
-                    })
-
-            elif mtype == "shutdown":
-                break
-
-            else:
-                _write_line({"type": "result", "error": f"unknown type: {mtype}", "regions": []})
-
-    except KeyboardInterrupt:
-        pass
+        else:
+            _write_line({"type": "result", "error": f"unknown type: {mtype}", "regions": []})
 
 
 if __name__ == '__main__':
