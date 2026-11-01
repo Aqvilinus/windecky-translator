@@ -114,13 +114,6 @@ def _output_script_mismatch(src, out, tgt_lang):
             return False
     return True
 
-# Redirect stderr to avoid blocking on pipe buffer
-try:
-    devnull = open(os.devnull, 'w')
-    sys.stderr = devnull
-except Exception:
-    pass
-
 
 def main():
     translator = None
