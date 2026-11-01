@@ -11,20 +11,20 @@ const { settingsFromBackend, loadSettings } = await import('../../src/settings')
 
 describe('settingsFromBackend', () => {
     it('names each setting as the frontend does, values as stored', () => {
-        expect(settingsFromBackend({ target_language: 'ru', confidence_threshold: 0, ct2_persistent_mode: true,
+        expect(settingsFromBackend({ target_language: 'ru', confidence_threshold: 0, nllb_keep_alive: true,
                                      llm_custom_api_key: 'sk-…k3Fz' })).toEqual({
-            targetLanguage: 'ru', confidenceThreshold: 0, ct2PersistentMode: true, llmCustomApiKey: 'sk-…k3Fz' });
+            targetLanguage: 'ru', confidenceThreshold: 0, nllbKeepAlive: true, llmCustomApiKey: 'sk-…k3Fz' });
     });
 });
 
 describe('loadSettings', () => {
     it('gives the translator what Ctrl+Alt+T needs', async () => {
-        reply = { input_language: 'de', target_language: 'ru', ocr_provider: 'windows_ocr', gemini_api_key: 'AIz…k3Fz',
+        reply = { source_language: 'de', target_language: 'ru', ocr_provider: 'windows_ocr', gemini_api_key: 'AIz…k3Fz',
                   google_api_key: '', enabled: true };
         const applied: unknown[] = [];
         await loadSettings({ applySettings: (s: unknown) => applied.push(s) } as never);
         expect(applied).toEqual([expect.objectContaining({
-            inputLanguage: 'de', targetLanguage: 'ru', ocrProvider: 'windows_ocr', geminiApiKey: 'AIz…k3Fz',
+            sourceLanguage: 'de', targetLanguage: 'ru', ocrProvider: 'windows_ocr', geminiApiKey: 'AIz…k3Fz',
             googleApiKey: '', enabled: true,
         })]);
     });

@@ -40,7 +40,7 @@ TRANSLATIONS_SCHEMA = {
 
 # Which engine produced each result of the last batch (main.py caches AI and fallback results under their own tier)
 SOURCE_LLM = "llm"
-SOURCE_FALLBACK = "freegoogle"
+SOURCE_FALLBACK = "google_web"
 
 
 class Translations(list):

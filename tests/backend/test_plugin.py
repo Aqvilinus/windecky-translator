@@ -33,7 +33,7 @@ def test_start_on_windows(backend, windows):
     assert windows.processes.log[0] == "resume_after_restart"  # a game an earlier run paused is resumed first
     assert windows.hotkey.enabled is True
     s = backend.call("get_all_settings")
-    assert s["ocr_provider"] == "googlecloud" and s["translation_provider"] == "freegoogle" and s["enabled"] is True
+    assert s["ocr_provider"] == "google_cloud" and s["translation_provider"] == "google_web" and s["enabled"] is True
 
 
 def test_settings_persist_across_a_restart(start, windows):
@@ -67,7 +67,7 @@ def test_unknown_settings_are_refused(backend):
 
 def test_every_setting_has_a_value_from_the_start(backend):
     s = backend.call("get_all_settings")
-    assert s["input_language"] == "auto" and s["confidence_threshold"] == 0.6 and s["llm_backend"] == "gemini"
+    assert s["source_language"] == "auto" and s["confidence_threshold"] == 0.6 and s["llm_service"] == "gemini"
 
 
 def test_the_saved_gemini_model_is_used_after_a_restart(start):
@@ -76,16 +76,16 @@ def test_the_saved_gemini_model_is_used_after_a_restart(start):
 
 
 def test_a_worker_stays_up_only_for_the_chosen_engine_while_the_plugin_is_on(start):
-    b = start({"translation_provider": "ct2", "ct2_persistent_mode": True})  # no model: nothing really starts
+    b = start({"translation_provider": "nllb", "nllb_keep_alive": True})  # no model: nothing really starts
     pm = b.plugin._providers
-    assert pm._ct2_persistent_mode is True
+    assert pm._nllb_keep_alive is True
     b.call("set_setting", "enabled", False)
-    assert pm._ct2_persistent_mode is False
+    assert pm._nllb_keep_alive is False
     b.call("set_setting", "enabled", True)
-    assert pm._ct2_persistent_mode is True
-    b.call("set_setting", "translation_provider", "freegoogle")
-    assert pm._ct2_persistent_mode is False
-    assert pm._chromescreenai_persistent_mode is False  # "Faster Recognition" is off
+    assert pm._nllb_keep_alive is True
+    b.call("set_setting", "translation_provider", "google_web")
+    assert pm._nllb_keep_alive is False
+    assert pm._chrome_screen_ai_keep_alive is False  # "Faster Recognition" is off
 
 
 def test_capture_ocr_translate_overlay(backend, windows, net):

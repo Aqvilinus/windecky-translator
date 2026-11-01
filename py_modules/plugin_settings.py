@@ -8,20 +8,20 @@ import re
 SETTING_DEFAULTS = {
     "enabled": True,
     "target_language": "en",
-    "input_language": "auto",
-    "ocr_provider": "chromescreenai",       # or "windows_ocr", "googlecloud", "gemini_vision"
-    "translation_provider": "freegoogle",   # or "googlecloud", "ct2" (offline NLLB), "llm" (AI)
+    "source_language": "auto",
+    "ocr_provider": "chrome_screen_ai",       # or "windows_ocr", "google_cloud", "gemini_vision"
+    "translation_provider": "google_web",   # or "google_cloud", "nllb" (offline), "llm" (AI)
     "google_api_key": "",                   # one Google Cloud key for Vision and Translation
     "gemini_api_key": "",                   # Gemini Vision, and AI translation through Gemini
     "gemini_model": "gemini-3.5-flash",     # Gemini Vision's model
-    "chromescreenai_persistent_mode": False,  # "Faster Recognition"
-    "ct2_persistent_mode": False,
+    "chrome_screen_ai_keep_alive": False,  # "Faster Recognition"
+    "nllb_keep_alive": False,
     "pause_game_on_overlay": False,
     "translation_cache_enabled": True,
     "debug_mode": False,
     "confidence_threshold": 0.6,            # OCR lines the engine is less sure of are dropped
     "font_scale": 1.0,                      # read by the frontend only
-    "llm_backend": "gemini",                # or "groq", "custom" (any OpenAI-compatible server)
+    "llm_service": "gemini",                # or "groq", "custom" (any OpenAI-compatible server)
     "llm_gemini_model": "gemini-flash-lite-latest",
     "llm_groq_model": "openai/gpt-oss-120b",
     "llm_custom_model": "",
@@ -30,10 +30,10 @@ SETTING_DEFAULTS = {
     "llm_custom_api_key": "",
 }
 PROVIDER_SETTINGS = {"ocr_provider", "translation_provider", "google_api_key", "gemini_api_key", "gemini_model",
-                     "llm_backend", "llm_gemini_model", "llm_groq_model", "llm_custom_model", "llm_custom_url",
+                     "llm_service", "llm_gemini_model", "llm_groq_model", "llm_custom_model", "llm_custom_url",
                      "groq_api_key", "llm_custom_api_key"}
-WORKER_SETTINGS = {"enabled", "ocr_provider", "translation_provider", "chromescreenai_persistent_mode",
-                   "ct2_persistent_mode"}
+WORKER_SETTINGS = {"enabled", "ocr_provider", "translation_provider", "chrome_screen_ai_keep_alive",
+                   "nllb_keep_alive"}
 API_KEY_SETTINGS = {"google_api_key", "gemini_api_key", "groq_api_key", "llm_custom_api_key"}
 
 

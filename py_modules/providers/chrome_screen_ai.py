@@ -43,7 +43,7 @@ class ChromeScreenAIProvider(OCRProvider):
         self._model_dir = model_dir
         self._init_error: Optional[str] = None
 
-        self._persistent_mode = False
+        self._keep_alive = False
         self._lock = threading.Lock()
 
         # the engine picks its own thread count: don't pass the plugin's limits on
@@ -72,13 +72,13 @@ class ChromeScreenAIProvider(OCRProvider):
     def is_available(self) -> bool:
         return self._check_availability()
 
-    def set_persistent_mode(self, enabled: bool) -> None:
+    def set_keep_alive(self, enabled: bool) -> None:
         """Faster Recognition: the worker stays up between requests (started now, so the first one is fast too)."""
         enabled = bool(enabled)
-        if enabled == self._persistent_mode:
+        if enabled == self._keep_alive:
             return
-        self._persistent_mode = enabled
-        logger.info(f"Chrome Screen AI persistent mode: {enabled}")
+        self._keep_alive = enabled
+        logger.info(f"Chrome Screen AI keep-alive: {enabled}")
         if enabled:
             threading.Thread(target=self._warm_up, daemon=True).start()
         else:
@@ -86,7 +86,7 @@ class ChromeScreenAIProvider(OCRProvider):
 
     def _warm_up(self) -> None:
         with self._lock:
-            if self._persistent_mode and self._check_availability():
+            if self._keep_alive and self._check_availability():
                 try:
                     self._start_worker()
                 except OCRError as e:
@@ -117,7 +117,7 @@ class ChromeScreenAIProvider(OCRProvider):
         with self._lock:
             try:
                 self._start_worker()
-                with tempfile.NamedTemporaryFile(prefix="chromescreenai_input_", suffix=".png",
+                with tempfile.NamedTemporaryFile(prefix="chrome_screen_ai_input_", suffix=".png",
                                                  delete_on_close=False) as image_file:
                     image_file.write(image_data)
                     image_file.close()  # the worker opens it by name; it is deleted when the block ends
@@ -125,7 +125,7 @@ class ChromeScreenAIProvider(OCRProvider):
                     response = self._worker.request({"type": "recognize", "image_path": image_file.name},
                                                     OCR_TIMEOUT_SECONDS)
             finally:
-                if not self._persistent_mode:
+                if not self._keep_alive:
                     self.stop_worker()
         if response is None:
             raise OCRError(f"On-device OCR didn't answer in {OCR_TIMEOUT_SECONDS} s (details in the plugin log)")

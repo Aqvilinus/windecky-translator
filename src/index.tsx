@@ -116,9 +116,9 @@ const GameTranslator: VFC<{ translator: Translator }> = ({ translator }) => {
 
     const refreshStatus = useCallback(async () => {
         try {
-            const [chromescreenai, nllb] = await Promise.all(
-                [backend.getModelStatus('chromescreenai'), backend.getModelStatus('nllb')]);
-            setModels({ chromescreenai, nllb });
+            const [chromeScreenAi, nllb] = await Promise.all(
+                [backend.getModelStatus('chrome_screen_ai'), backend.getModelStatus('nllb')]);
+            setModels({ chrome_screen_ai: chromeScreenAi, nllb });
         } catch (error) {
             logger.error('GameTranslator', 'Failed to fetch the model status', error);
         }
@@ -140,7 +140,7 @@ const GameTranslator: VFC<{ translator: Translator }> = ({ translator }) => {
 
     useEffect(() => {
         setWebReachability(null);
-    }, [settings.ocrProvider, settings.translationProvider, settings.llmBackend]);
+    }, [settings.ocrProvider, settings.translationProvider, settings.llmService]);
 
     return (
         <>

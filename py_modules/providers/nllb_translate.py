@@ -369,7 +369,7 @@ class NLLBTranslateProvider(TranslationProvider):
     def __init__(self, model: NLLBDownloader):
         self._model = model
         self._loaded_model_dir = None
-        self._persistent_mode = False
+        self._keep_alive = False
 
         self._worker = Worker("NLLB", os.path.join(os.path.dirname(__file__), "nllb_worker.py"),
                               env={"OMP_NUM_THREADS": "4", "MKL_NUM_THREADS": "4"})
@@ -378,8 +378,8 @@ class NLLBTranslateProvider(TranslationProvider):
         if self._worker.alive:
             return True
         self._loaded_model_dir = None
-        # a persistent worker skips its idle timeout (nllb_worker.py)
-        return self._worker.start(env={"CT2_PERSISTENT": "1" if self._persistent_mode else None})
+        # a kept-alive worker skips its idle timeout (nllb_worker.py)
+        return self._worker.start(env={"NLLB_KEEP_ALIVE": "1" if self._keep_alive else None})
 
     def _send_command(self, cmd: dict, timeout: float = WORKER_TIMEOUT_SECONDS) -> dict:
         reply = self._worker.request(cmd, timeout)
@@ -499,7 +499,7 @@ class NLLBTranslateProvider(TranslationProvider):
                     action = lm["spec"]["default"]
                 kind, code = action
                 if detected:
-                    logger.debug(f"  CT2 LID {detected} -> {action}: {lm['orig'][:80]}")
+                    logger.debug(f"  NLLB LID {detected} -> {action}: {lm['orig'][:80]}")
                 if kind == "passthrough":
                     lm["kind"] = "passthrough"
                 else:
@@ -524,20 +524,20 @@ class NLLBTranslateProvider(TranslationProvider):
 
         skipped = sum(1 for s in slots if s["kind"] == "skip")
         logger.debug(
-            f"CT2 translate: {len(texts)} inputs, {len(lines_meta)} lines "
+            f"NLLB translate: {len(texts)} inputs, {len(lines_meta)} lines "
             f"({len(unique_fragments)} unique fragments, {skipped} regions skipped), "
             f"{src_nllb} -> {tgt_nllb}"
         )
         for lm in lines_meta:
             if lm["kind"] == "passthrough":
-                logger.debug(f"  CT2 line passthrough: {lm['orig'][:80]}")
+                logger.debug(f"  NLLB line passthrough: {lm['orig'][:80]}")
             elif lm["kind"] == "translate" and lm["tag"] != src_nllb:
-                logger.debug(f"  CT2 line re-tagged {lm['tag']}: {lm['orig'][:80]}")
+                logger.debug(f"  NLLB line re-tagged {lm['tag']}: {lm['orig'][:80]}")
 
         if unique_fragments:
             for i, f in enumerate(unique_fragments):
                 logger.debug(
-                    f"  CT2 input[{i}]: ({len(f)} chars, {unique_tags[i]}) {f[:200]}"
+                    f"  NLLB input[{i}]: ({len(f)} chars, {unique_tags[i]}) {f[:200]}"
                 )
             result = self._send_command({
                 "cmd": "translate",
@@ -551,12 +551,12 @@ class NLLBTranslateProvider(TranslationProvider):
             unique_translations = result["translations"]
             fallback_flags = result["fallbacks"]
             token_counts = result["token_counts"]
-            logger.debug(f"  CT2 token counts: {token_counts}")
+            logger.debug(f"  NLLB token counts: {token_counts}")
             for i, tc in enumerate(token_counts):
                 # Output pinned at the decoding cap means the tail was cut off
                 if tc["output"] >= min(32 + 3 * tc["input"], 256):
                     logger.warning(
-                        f"  CT2 possible truncation on fragment {i}: {unique_fragments[i][:80]}"
+                        f"  NLLB possible truncation on fragment {i}: {unique_fragments[i][:80]}"
                     )
         else:
             unique_translations = []
@@ -599,7 +599,7 @@ class NLLBTranslateProvider(TranslationProvider):
         for i, t in enumerate(translations):
             src_len = len(texts[i]) if i < len(texts) else 0
             logger.debug(
-                f"  CT2 output[{i}]: ({len(t)} chars, input was {src_len}) {t[:200]}"
+                f"  NLLB output[{i}]: ({len(t)} chars, input was {src_len}) {t[:200]}"
             )
 
         return translations
@@ -608,12 +608,12 @@ class NLLBTranslateProvider(TranslationProvider):
         self._worker.stop()
         self._loaded_model_dir = None
 
-    def set_persistent_mode(self, enabled: bool) -> None:
+    def set_keep_alive(self, enabled: bool) -> None:
         enabled = bool(enabled)
-        if enabled == self._persistent_mode:
+        if enabled == self._keep_alive:
             return
-        self._persistent_mode = enabled
-        logger.info(f"CT2 persistent mode: {enabled}")
+        self._keep_alive = enabled
+        logger.info(f"NLLB keep-alive: {enabled}")
         if enabled:
             # Warm up so the first translate is faster
             threading.Thread(target=self._warmup_worker, daemon=True).start()
@@ -621,11 +621,11 @@ class NLLBTranslateProvider(TranslationProvider):
             self.shutdown()
 
     def _warmup_worker(self) -> None:
-        if not self._persistent_mode:
+        if not self._keep_alive:
             return
         if not self._model.is_installed():
             return
-        # recycle a running worker so it gets CT2_PERSISTENT
+        # recycle a running worker so it gets NLLB_KEEP_ALIVE
         if self._worker.alive:
             self._kill_worker()
         if self._ensure_worker():

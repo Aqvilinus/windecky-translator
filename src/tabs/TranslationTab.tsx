@@ -14,7 +14,7 @@ import chromeLogo from "../../assets/chrome-logo.png";
 import { languageOptions, selectLanguageOption, languageLabel, outputLanguageOptions } from "./translation/languages";
 import { ApiKeyModal, CustomServerModal, KeyButton } from "./translation/dialogs";
 import { CacheEntriesModal } from "./translation/cache";
-import { llmBackendOptions, modelOption, ModelPicker, knownGeminiModels } from "./translation/models";
+import { llmServiceOptions, modelOption, ModelPicker, knownGeminiModels } from "./translation/models";
 import { useModelDownload, ModelActionButton, ModelStatusIndicator, ModelProgressBar, ModelDownloadError, ProviderRating } from "./translation/downloads";
 
 // a scroll before Steam's tab transition and focus router settle gets overridden
@@ -27,9 +27,9 @@ interface TranslationTabProps {
 
 export const TranslationTab: VFC<TranslationTabProps> = ({ scrollTarget, onScrolled }) => {
     const { settings, updateSetting } = useSettings();
-    const chromescreenaiActionRef = useRef<HTMLDivElement>(null);
-    const ct2ActionRef = useRef<HTMLDivElement>(null);
-    const csai = useModelDownload('chromescreenai', 80);  // sizes until the backend answers
+    const chromeScreenAiActionRef = useRef<HTMLDivElement>(null);
+    const nllbActionRef = useRef<HTMLDivElement>(null);
+    const csai = useModelDownload('chrome_screen_ai', 80);  // sizes until the backend answers
     const nllb = useModelDownload('nllb', 1410);
     const [cacheEntries, setCacheEntries] = useState<number | null>(null);
     const [windowsOcrLanguages, setWindowsOcrLanguages] = useState<string[] | null>(null);
@@ -53,8 +53,8 @@ export const TranslationTab: VFC<TranslationTabProps> = ({ scrollTarget, onScrol
 
     useEffect(() => {
         if (!scrollTarget) return;
-        const ref = scrollTarget === 'chromescreenai-action' ? chromescreenaiActionRef
-                  : scrollTarget === 'ct2-action' ? ct2ActionRef
+        const ref = scrollTarget === 'chrome_screen_ai-action' ? chromeScreenAiActionRef
+                  : scrollTarget === 'nllb-action' ? nllbActionRef
                   : null;
 
         const timeoutId = setTimeout(() => {
@@ -69,18 +69,18 @@ export const TranslationTab: VFC<TranslationTabProps> = ({ scrollTarget, onScrol
         return () => clearTimeout(timeoutId);
     }, [scrollTarget]);
 
-    const isCT2 = settings.translationProvider === 'ct2';
-    const filteredLanguageOptions = isCT2
+    const isNllb = settings.translationProvider === 'nllb';
+    const filteredLanguageOptions = isNllb
         ? languageOptions.filter(lang => lang.data !== "auto")
         : languageOptions;
 
-    const placeholderOption = settings.inputLanguage === '' ? [selectLanguageOption] : [];
-    const inputLanguageOptions = [...placeholderOption, ...filteredLanguageOptions];
+    const placeholderOption = settings.sourceLanguage === '' ? [selectLanguageOption] : [];
+    const sourceLanguageOptions = [...placeholderOption, ...filteredLanguageOptions];
 
-    // CT2 can't detect the source language: the user picks one
+    // NLLB can't detect the source language: the user picks one
     useEffect(() => {
-        if (isCT2 && settings.inputLanguage === 'auto') {
-            updateSetting('inputLanguage', '', 'Input language');
+        if (isNllb && settings.sourceLanguage === 'auto') {
+            updateSetting('sourceLanguage', '', 'Input language');
         }
     }, [settings.translationProvider]);
 
@@ -91,12 +91,12 @@ export const TranslationTab: VFC<TranslationTabProps> = ({ scrollTarget, onScrol
                     <DropdownItem
                         layout="below"
                         label="Input Language"
-                        description={isCT2
+                        description={isNllb
                             ? "Source language (auto-detect not available for offline translation)"
                             : "Source language (Select auto-detect if unsure)"}
-                        rgOptions={inputLanguageOptions}
-                        selectedOption={settings.inputLanguage}
-                        onChange={(option: any) => updateSetting('inputLanguage', option.data, 'Input language')}
+                        rgOptions={sourceLanguageOptions}
+                        selectedOption={settings.sourceLanguage}
+                        onChange={(option: any) => updateSetting('sourceLanguage', option.data, 'Input language')}
                     />
                 </PanelSectionRow>
 
@@ -126,15 +126,15 @@ export const TranslationTab: VFC<TranslationTabProps> = ({ scrollTarget, onScrol
                             <Dropdown
                                 rgOptions={[
                                     { label: <span style={{ display: "flex", alignItems: "center", height: "20px", lineHeight: "20px" }}><span>On-Device</span><span style={{ fontSize: "10px", opacity: 0.7, marginLeft: "4px", transform: "translateY(2px)" }}>(Windows OCR)</span></span>, data: "windows_ocr" },
-                                    { label: <span style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", width: "100%", height: "20px", lineHeight: "20px" }}><span style={{ display: "flex", alignItems: "center" }}><span>On-Device</span><span style={{ fontSize: "10px", opacity: 0.7, marginLeft: "4px", transform: "translateY(2px)" }}>(Chrome)</span></span><span className="dt-recommended-tag" style={{ fontSize: "10px", color: "#9aa0a6", fontStyle: "italic" }}>★ recommended</span></span>, data: "chromescreenai" },
-                                    { label: <span style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", width: "100%", height: "20px", lineHeight: "20px" }}><span>Google Cloud</span><span className="dt-recommended-tag" style={{ fontSize: "10px", color: "#9aa0a6", fontStyle: "italic" }}>★ recommended</span></span>, data: "googlecloud" },
+                                    { label: <span style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", width: "100%", height: "20px", lineHeight: "20px" }}><span style={{ display: "flex", alignItems: "center" }}><span>On-Device</span><span style={{ fontSize: "10px", opacity: 0.7, marginLeft: "4px", transform: "translateY(2px)" }}>(Chrome)</span></span><span className="dt-recommended-tag" style={{ fontSize: "10px", color: "#9aa0a6", fontStyle: "italic" }}>★ recommended</span></span>, data: "chrome_screen_ai" },
+                                    { label: <span style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", width: "100%", height: "20px", lineHeight: "20px" }}><span>Google Cloud</span><span className="dt-recommended-tag" style={{ fontSize: "10px", color: "#9aa0a6", fontStyle: "italic" }}>★ recommended</span></span>, data: "google_cloud" },
                                     { label: <span style={{ display: "flex", alignItems: "center", gap: "6px", height: "20px", lineHeight: "20px" }}>Gemini Vision <BsStars style={{ fontSize: "12px" }} /></span>, data: "gemini_vision" }
                                 ]}
                                 selectedOption={settings.ocrProvider}
                                 onChange={(option) => updateSetting('ocrProvider', option.data, 'OCR provider')}
                             />
                             </div>
-                            {settings.ocrProvider === 'googlecloud' && (
+                            {settings.ocrProvider === 'google_cloud' && (
                                 <KeyButton hasKey={!!settings.googleApiKey} onClick={() => {
                                     showModal(
                                         <ApiKeyModal
@@ -158,8 +158,8 @@ export const TranslationTab: VFC<TranslationTabProps> = ({ scrollTarget, onScrol
                                     );
                                 }} />
                             )}
-                            {settings.ocrProvider === 'chromescreenai' && (
-                                <ModelActionButton state={csai} actionRef={chromescreenaiActionRef} />
+                            {settings.ocrProvider === 'chrome_screen_ai' && (
+                                <ModelActionButton state={csai} actionRef={chromeScreenAiActionRef} />
                             )}
                         </Focusable>
                     </Field>
@@ -182,7 +182,7 @@ export const TranslationTab: VFC<TranslationTabProps> = ({ scrollTarget, onScrol
                         childrenLayout="below"
                     >
                         <div style={{ color: "#8b929a", fontSize: "12px", lineHeight: "1.6", paddingLeft: "4px", paddingTop: "4px" }}>
-                            {settings.ocrProvider === 'chromescreenai' && (
+                            {settings.ocrProvider === 'chrome_screen_ai' && (
                                 <>
                                     <div style={{ display: "inline-flex", flexDirection: "column" }}>
                                         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
@@ -216,17 +216,17 @@ export const TranslationTab: VFC<TranslationTabProps> = ({ scrollTarget, onScrol
                                     <div>- Each language needs its Windows language pack with text recognition</div>
                                     <div>- Installed: {windowsOcrLanguages === null ? '...' :
                                         windowsOcrLanguages.length ? windowsOcrLanguages.map(languageLabel).join(', ') : 'none'}</div>
-                                    {windowsOcrLanguages && settings.inputLanguage && settings.inputLanguage !== 'auto'
-                                        && !windowsOcrLanguages.includes(settings.inputLanguage) && (
+                                    {windowsOcrLanguages && settings.sourceLanguage && settings.sourceLanguage !== 'auto'
+                                        && !windowsOcrLanguages.includes(settings.sourceLanguage) && (
                                         <div style={{ color: "#ffa726", marginTop: "6px" }}>
-                                            No pack for {languageLabel(settings.inputLanguage)}: add the language in Windows Settings &gt;
+                                            No pack for {languageLabel(settings.sourceLanguage)}: add the language in Windows Settings &gt;
                                             Time &amp; language &gt; Language &amp; region, or use On-Device (Chrome), which reads 70+
                                             languages without packs
                                         </div>
                                     )}
                                 </>
                             )}
-                            {settings.ocrProvider === 'googlecloud' && (
+                            {settings.ocrProvider === 'google_cloud' && (
                                 <>
                                     <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
                                         <img src={googlecloudLogo} alt="" style={{ height: "18px" }} />
@@ -260,14 +260,14 @@ export const TranslationTab: VFC<TranslationTabProps> = ({ scrollTarget, onScrol
                     </Field>
                 </PanelSectionRow>
 
-                {settings.ocrProvider === 'chromescreenai' && (
+                {settings.ocrProvider === 'chrome_screen_ai' && (
                     <PanelSectionRow>
                         <ToggleField
                             label="Faster Recognition"
                             description="Keeps the recognition engine loaded in memory between translations"
-                            checked={settings.chromescreenaiPersistentMode}
+                            checked={settings.chromeScreenAiKeepAlive}
                             onChange={(value) => {
-                                updateSetting('chromescreenaiPersistentMode', value, 'Faster recognition');
+                                updateSetting('chromeScreenAiKeepAlive', value, 'Faster recognition');
                             }}
                         />
                     </PanelSectionRow>
@@ -315,9 +315,9 @@ export const TranslationTab: VFC<TranslationTabProps> = ({ scrollTarget, onScrol
                             <div style={{ flex: 1 }}>
                                 <Dropdown
                                     rgOptions={[
-                                        { label: <span>On-Device</span>, data: "ct2" },
-                                        { label: <span>Google Translate</span>, data: "freegoogle" },
-                                        { label: <span>Google Cloud</span>, data: "googlecloud" },
+                                        { label: <span>On-Device</span>, data: "nllb" },
+                                        { label: <span>Google Translate</span>, data: "google_web" },
+                                        { label: <span>Google Cloud</span>, data: "google_cloud" },
                                         { label: <span style={{ display: "flex", alignItems: "center", gap: "6px", height: "20px", lineHeight: "20px" }}>AI Translation <BsStars style={{ fontSize: "12px" }} /></span>, data: "llm" }
                                     ]}
                                     selectedOption={settings.translationProvider}
@@ -326,7 +326,7 @@ export const TranslationTab: VFC<TranslationTabProps> = ({ scrollTarget, onScrol
                             </div>
                             {settings.translationProvider === 'llm' && (
                                 <KeyButton hasKey={llmConfigured(settings)} onClick={() => {
-                                    if (settings.llmBackend === 'custom') {
+                                    if (settings.llmService === 'custom') {
                                         showModal(
                                             <CustomServerModal
                                                 url={settings.llmCustomUrl}
@@ -341,8 +341,8 @@ export const TranslationTab: VFC<TranslationTabProps> = ({ scrollTarget, onScrol
                                         );
                                         return;
                                     }
-                                    const isGemini = settings.llmBackend === 'gemini';
-                                    const keySetting = LLM_KEY_SETTING[settings.llmBackend];
+                                    const isGemini = settings.llmService === 'gemini';
+                                    const keySetting = LLM_KEY_SETTING[settings.llmService];
                                     showModal(
                                         <ApiKeyModal
                                             currentKey={String(settings[keySetting] || '')}
@@ -355,7 +355,7 @@ export const TranslationTab: VFC<TranslationTabProps> = ({ scrollTarget, onScrol
                                     );
                                 }} />
                             )}
-                            {settings.translationProvider === 'googlecloud' && (
+                            {settings.translationProvider === 'google_cloud' && (
                                 <KeyButton hasKey={!!settings.googleApiKey} onClick={() => {
                                     showModal(
                                         <ApiKeyModal
@@ -367,8 +367,8 @@ export const TranslationTab: VFC<TranslationTabProps> = ({ scrollTarget, onScrol
                                     );
                                 }} />
                             )}
-                            {settings.translationProvider === 'ct2' && (
-                                <ModelActionButton state={nllb} actionRef={ct2ActionRef} />
+                            {settings.translationProvider === 'nllb' && (
+                                <ModelActionButton state={nllb} actionRef={nllbActionRef} />
                             )}
                         </Focusable>
                         )}
@@ -381,20 +381,20 @@ export const TranslationTab: VFC<TranslationTabProps> = ({ scrollTarget, onScrol
                             <DropdownItem
                                 layout="below"
                                 label="AI Service"
-                                rgOptions={llmBackendOptions}
-                                selectedOption={settings.llmBackend}
-                                onChange={(option) => updateSetting('llmBackend', option.data, 'AI service')}
+                                rgOptions={llmServiceOptions}
+                                selectedOption={settings.llmService}
+                                onChange={(option) => updateSetting('llmService', option.data, 'AI service')}
                             />
                         </PanelSectionRow>
                         <ModelPicker
                             label="AI Model"
-                            source={settings.llmBackend}
+                            source={settings.llmService}
                             listModels={(llm) => backend.getLlmModels(llm)}
-                            fallback={(LLM_DEFAULT_MODELS[settings.llmBackend] || []).map(modelOption)}
+                            fallback={(LLM_DEFAULT_MODELS[settings.llmService] || []).map(modelOption)}
                             placeholder="Select model..."
                             selectedModel={llmModel(settings)}
-                            canList={llmConfigured(settings) || (settings.llmBackend === 'custom' && !!settings.llmCustomUrl)}
-                            onChange={(model) => updateSetting(LLM_MODEL_SETTING[settings.llmBackend], model, 'AI model')}
+                            canList={llmConfigured(settings) || (settings.llmService === 'custom' && !!settings.llmCustomUrl)}
+                            onChange={(model) => updateSetting(LLM_MODEL_SETTING[settings.llmService], model, 'AI model')}
                         />
                     </>
                 )}
@@ -409,27 +409,27 @@ export const TranslationTab: VFC<TranslationTabProps> = ({ scrollTarget, onScrol
                             {settings.ocrProvider !== 'gemini_vision' && settings.translationProvider === 'llm' && (
                                 <>
                                     <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
-                                        {settings.llmBackend === 'gemini'
+                                        {settings.llmService === 'gemini'
                                             ? <img src={geminiLogo} alt="" style={{ height: "18px" }} />
                                             : <BsStars style={{ fontSize: "16px", color: "#dcdedf" }} />}
                                         <span style={{ fontWeight: "bold", color: "#dcdedf" }}>
-                                            AI Translation ({settings.llmBackend === 'gemini' ? 'Gemini' : settings.llmBackend === 'groq' ? 'Groq' : 'Custom server'})
+                                            AI Translation ({settings.llmService === 'gemini' ? 'Gemini' : settings.llmService === 'groq' ? 'Groq' : 'Custom server'})
                                         </span>
                                     </div>
-                                    <ProviderRating quality={3} speed={settings.llmBackend === 'groq' ? 3 : 2} />
+                                    <ProviderRating quality={3} speed={settings.llmService === 'groq' ? 3 : 2} />
                                     <div>- Translates the whole screen at once, with context</div>
                                     <div>- Google Translate, then Bing, take over when the AI is unavailable or rate-limited</div>
-                                    {settings.llmBackend === 'gemini' && (
+                                    {settings.llmService === 'gemini' && (
                                         <>
                                             <div>- Free API key at aistudio.google.com</div>
                                             <div>- EU/EEA, UK, Switzerland: Google's terms require billing on the key's project</div>
                                         </>
                                     )}
-                                    {settings.llmBackend === 'groq' && <div>- Free API key at console.groq.com, about 1,000 requests a day</div>}
-                                    {settings.llmBackend === 'custom' && <div>- Any OpenAI-compatible API: OpenRouter, a local llama.cpp server...</div>}
+                                    {settings.llmService === 'groq' && <div>- Free API key at console.groq.com, about 1,000 requests a day</div>}
+                                    {settings.llmService === 'custom' && <div>- Any OpenAI-compatible API: OpenRouter, a local llama.cpp server...</div>}
                                     {!llmConfigured(settings) && (
                                         <div style={{ color: "#ff6b6b", marginTop: "4px" }}>
-                                            {settings.llmBackend === 'custom'
+                                            {settings.llmService === 'custom'
                                                 ? "Set the server address and model with the key button (Google Translate is used until then)"
                                                 : "You need to add your API Key (Google Translate is used until then)"}
                                         </div>
@@ -447,7 +447,7 @@ export const TranslationTab: VFC<TranslationTabProps> = ({ scrollTarget, onScrol
                                     <div>- OCR and translation happen in a single step</div>
                                 </>
                             )}
-                            {settings.ocrProvider !== 'gemini_vision' && settings.translationProvider === 'freegoogle' && (
+                            {settings.ocrProvider !== 'gemini_vision' && settings.translationProvider === 'google_web' && (
                                 <>
                                     <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
                                         <img src={googletranslateLogo} alt="" style={{ height: "18px" }} />
@@ -458,7 +458,7 @@ export const TranslationTab: VFC<TranslationTabProps> = ({ scrollTarget, onScrol
                                     <div>- Good quality for most languages</div>
                                 </>
                             )}
-                            {settings.ocrProvider !== 'gemini_vision' && settings.translationProvider === 'googlecloud' && (
+                            {settings.ocrProvider !== 'gemini_vision' && settings.translationProvider === 'google_cloud' && (
                                 <>
                                     <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
                                         <img src={googlecloudLogo} alt="" style={{ height: "18px" }} />
@@ -472,7 +472,7 @@ export const TranslationTab: VFC<TranslationTabProps> = ({ scrollTarget, onScrol
                                     )}
                                 </>
                             )}
-                            {settings.ocrProvider !== 'gemini_vision' && settings.translationProvider === 'ct2' && (
+                            {settings.ocrProvider !== 'gemini_vision' && settings.translationProvider === 'nllb' && (
                                 <>
                                     <div style={{ display: "inline-flex", flexDirection: "column" }}>
                                         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
@@ -489,7 +489,7 @@ export const TranslationTab: VFC<TranslationTabProps> = ({ scrollTarget, onScrol
                                     <div>- Single model covers most languages</div>
                                     <div>- Language auto-detect not supported</div>
                                     <div>- Experimental support</div>
-                                    {(settings.inputLanguage === 'auto' || settings.inputLanguage === '') && (
+                                    {(settings.sourceLanguage === 'auto' || settings.sourceLanguage === '') && (
                                         <div style={{ color: "#ffa726", marginTop: "6px" }}>
                                             Offline translation needs a specific source language. Select one in the Languages section above.
                                         </div>
@@ -500,14 +500,14 @@ export const TranslationTab: VFC<TranslationTabProps> = ({ scrollTarget, onScrol
                     </Field>
                 </PanelSectionRow>
 
-                {settings.translationProvider === 'ct2' && (
+                {settings.translationProvider === 'nllb' && (
                     <PanelSectionRow>
                         <ToggleField
                             label="Faster Translation"
                             description="Keeps the translation model loaded in memory between translations"
-                            checked={settings.ct2PersistentMode}
+                            checked={settings.nllbKeepAlive}
                             onChange={(value) => {
-                                updateSetting('ct2PersistentMode', value, 'Faster translation');
+                                updateSetting('nllbKeepAlive', value, 'Faster translation');
                             }}
                         />
                     </PanelSectionRow>

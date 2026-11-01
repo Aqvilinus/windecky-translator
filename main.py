@@ -180,7 +180,7 @@ class Plugin:
                      ocr_provider=self._setting("ocr_provider"), translation_provider=self._setting("translation_provider"))
         pm.set_gemini_model(self._setting("gemini_model"))
         pm.configure_llm(
-            backend=self._setting("llm_backend"),
+            backend=self._setting("llm_service"),
             keys={"gemini": self._setting("gemini_api_key"), "groq": self._setting("groq_api_key"),
                   "custom": self._setting("llm_custom_api_key")},
             models={"gemini": self._setting("llm_gemini_model"), "groq": self._setting("llm_groq_model"),
@@ -195,10 +195,10 @@ class Plugin:
         if not pm:
             return
         on = bool(self._setting("enabled"))
-        pm.set_chromescreenai_persistent_mode(
-            on and self._setting("ocr_provider") == "chromescreenai" and bool(self._setting("chromescreenai_persistent_mode")))
-        pm.set_ct2_persistent_mode(
-            on and self._setting("translation_provider") == "ct2" and bool(self._setting("ct2_persistent_mode")))
+        pm.set_chrome_screen_ai_keep_alive(
+            on and self._setting("ocr_provider") == "chrome_screen_ai" and bool(self._setting("chrome_screen_ai_keep_alive")))
+        pm.set_nllb_keep_alive(
+            on and self._setting("translation_provider") == "nllb" and bool(self._setting("nllb_keep_alive")))
 
     async def get_all_settings(self):
         # no catch-all: a failure here rejects the frontend's call instead of answering {} (every setting unset)
@@ -357,14 +357,14 @@ class Plugin:
             logger.error("Provider manager not initialized")
             return []
 
-        if self._setting("ocr_provider") == "chromescreenai" and not self._providers.model_installed("chromescreenai"):
+        if self._setting("ocr_provider") == "chrome_screen_ai" and not self._providers.model_installed("chrome_screen_ai"):
             return {"error": "model_not_available", "message": "Chrome Screen AI engine not downloaded.\nDownload it in plugin settings"}
 
-        if self._setting("ocr_provider") == "windows_ocr" and self._setting("input_language") not in ("", "auto"):
+        if self._setting("ocr_provider") == "windows_ocr" and self._setting("source_language") not in ("", "auto"):
             from providers.windows_ocr import WindowsOCRProvider, plugin_code
-            if plugin_code(self._setting("input_language")) not in WindowsOCRProvider().get_supported_languages():
+            if plugin_code(self._setting("source_language")) not in WindowsOCRProvider().get_supported_languages():
                 from providers.base import LANGUAGE_NAMES
-                lang = LANGUAGE_NAMES.get(self._setting("input_language"), self._setting("input_language"))
+                lang = LANGUAGE_NAMES.get(self._setting("source_language"), self._setting("source_language"))
                 return {"error": "model_not_available",
                         "message": f"No Windows OCR language pack for {lang}.\n"
                                    "Add it in Windows Settings or use On-Device (Chrome)"}
@@ -375,7 +375,7 @@ class Plugin:
 
         start_time = time.time()
         text_regions = await self._providers.recognize_text(
-            png, self._setting("input_language"), self._setting("confidence_threshold"))
+            png, self._setting("source_language"), self._setting("confidence_threshold"))
         logger.info(f"OCR completed in {time.time() - start_time:.2f}s, found {len(text_regions)} regions")
 
         return [region.to_dict() for region in text_regions]
@@ -402,7 +402,7 @@ class Plugin:
         return await self._recognize(await asyncio.to_thread(encode_png, image))
 
     @catch_errors("translation_failed", "Translation failed (details in the plugin log)")
-    async def translate_text(self, text_regions, target_lang, input_lang):
+    async def translate_text(self, text_regions, target_lang, source_lang):
         if not text_regions:
             return []
 
@@ -418,15 +418,15 @@ class Plugin:
                 if any(normalize(s) != normalize(t) for s, t in pairs):
                     await self._use_cache(
                         self._translation_cache.put_many,
-                        pairs, input_lang, target_lang,
+                        pairs, source_lang, target_lang,
                         PROVIDER_TIERS.get("gemini_vision", 0), "gemini_vision",
                     )
             return text_regions
 
-        if self._setting("translation_provider") == "ct2":
+        if self._setting("translation_provider") == "nllb":
             provider = self._providers.get_translation_provider()
-            if provider and not provider.is_available(input_lang, target_lang):
-                if input_lang == "auto":
+            if provider and not provider.is_available(source_lang, target_lang):
+                if source_lang == "auto":
                     return {"error": "model_not_available", "message": "Offline translation requires a specific source language. Select one in plugin settings"}
                 return {"error": "model_not_available", "message": "Offline model not found. Download it in plugin settings"}
 
@@ -442,7 +442,7 @@ class Plugin:
         if cache_on and texts_to_translate:
             cached = await self._use_cache(
                 self._translation_cache.get_many,
-                texts_to_translate, input_lang, target_lang, provider_tier,
+                texts_to_translate, source_lang, target_lang, provider_tier,
             ) or {}
 
         if cache_on:
@@ -456,7 +456,7 @@ class Plugin:
 
         start_time = time.time()
         requested = await self._providers.translate_text(
-            to_request, source_lang=input_lang, target_lang=target_lang
+            to_request, source_lang=source_lang, target_lang=target_lang
         ) if to_request else []
         elapsed = time.time() - start_time
         logger.info(f"Translation completed in {elapsed:.2f}s, {len(to_request)} new / {len(cached)} cached")
@@ -479,7 +479,7 @@ class Plugin:
             if cache_on and any(normalize(s) != normalize(t) for s, t in translated):
                 await self._use_cache(
                     self._translation_cache.put_many,
-                    translated, input_lang, target_lang, PROVIDER_TIERS.get(src, provider_tier), src,
+                    translated, source_lang, target_lang, PROVIDER_TIERS.get(src, provider_tier), src,
                 )
 
         # A failed item shows its original text.
@@ -522,7 +522,7 @@ class Plugin:
     async def clear_translation_cache(self):
         await asyncio.to_thread(self._translation_cache.clear)
 
-    # -- the downloadable models, by kind: "nllb" (offline translation) or "chromescreenai" (on-device OCR) --
+    # -- the downloadable models, by kind: "nllb" (offline translation) or "chrome_screen_ai" (on-device OCR) --
 
     async def get_model_status(self, kind):
         """{downloaded, size, approx_size_mb, downloading, progress, error}, or None for an unknown kind."""
@@ -563,8 +563,8 @@ class Plugin:
             self._settings = SettingsManager(name="decky-translator-settings", settings_directory=SETTINGS_DIR)
 
             models_dir = os.path.join(RUNTIME_DIR, "models")
-            ct2_models_dir = os.path.join(models_dir, "nllb")
-            os.makedirs(ct2_models_dir, exist_ok=True)
+            nllb_models_dir = os.path.join(models_dir, "nllb")
+            os.makedirs(nllb_models_dir, exist_ok=True)
 
             try:
                 self._translation_cache = TranslationCache(os.path.join(RUNTIME_DIR, "translation_cache.db"))
@@ -573,7 +573,7 @@ class Plugin:
                 self._translation_cache = None
 
             self._providers = ProviderRegistry()
-            self._providers.configure(ct2_models_dir=ct2_models_dir, screenai_models_dir=models_dir)
+            self._providers.configure(nllb_models_dir=nllb_models_dir, screenai_models_dir=models_dir)
             for key in ("debug_mode", "enabled"):  # log level; Ctrl+Alt+T on or off
                 self._on_setting_changed(key)
             self._configure_providers()

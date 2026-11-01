@@ -21,8 +21,8 @@ function startTranslator() {
     });
     const translator = new Translator(state);
     translator.applySettings({
-        enabled: true, inputLanguage: 'auto', targetLanguage: 'en', ocrProvider: 'chromescreenai',
-        translationProvider: 'freegoogle', googleApiKey: '', geminiApiKey: '', debugMode: false, fontScale: 1,
+        enabled: true, sourceLanguage: 'auto', targetLanguage: 'en', ocrProvider: 'chrome_screen_ai',
+        translationProvider: 'google_web', googleApiKey: '', geminiApiKey: '', debugMode: false, fontScale: 1,
     });
     return { translator, steps };
 }

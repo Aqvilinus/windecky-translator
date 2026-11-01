@@ -15,7 +15,7 @@ const ERROR_MESSAGE_MS = 3000;
 // The settings a translation needs (settings.tsx gives them all)
 export interface TranslatorSettings {
     enabled: boolean;
-    inputLanguage: string;
+    sourceLanguage: string;
     targetLanguage: string;
     ocrProvider: string;
     translationProvider: string;
@@ -100,7 +100,7 @@ export class Translator {
                     || s.translationProvider);
             }
             const translated: TranslatedRegion[] | null = throwIfBackendError(
-                await backend.translateText(regions, s.targetLanguage, s.inputLanguage));
+                await backend.translateText(regions, s.targetLanguage, s.sourceLanguage));
             if (!translated) throw new BackendError("Translation failed (details in the plugin log)");
             if (isCancelled()) return;
 
@@ -122,15 +122,15 @@ export class Translator {
 
     // A check that fails shows a toast saying what to set
     private canStartTranslation(s: TranslatorSettings): boolean {
-        const problem = !s.inputLanguage && !s.targetLanguage ? "Input and output languages are not set"
-            : !s.inputLanguage ? "Input language is not set"
+        const problem = !s.sourceLanguage && !s.targetLanguage ? "Input and output languages are not set"
+            : !s.sourceLanguage ? "Input language is not set"
             : !s.targetLanguage ? "Output language is not set"
             : null;
         if (problem) {
-            toast(problem, `Please select ${s.inputLanguage || s.targetLanguage ? "it" : "them"} in the plugin settings`, 3000);
+            toast(problem, `Please select ${s.sourceLanguage || s.targetLanguage ? "it" : "them"} in the plugin settings`, 3000);
             return false;
         }
-        if (s.inputLanguage !== 'auto' && s.inputLanguage === s.targetLanguage) {
+        if (s.sourceLanguage !== 'auto' && s.sourceLanguage === s.targetLanguage) {
             toast("Input and output languages can't be the same", "Change one of them in the plugin settings", 3000);
             return false;
         }
@@ -145,7 +145,7 @@ export class Translator {
     private missingKeyMessage(s: TranslatorSettings): string | null {
         if (s.ocrProvider === 'gemini_vision' && !s.geminiApiKey) return "Gemini API key required for Gemini Vision";
         if (s.googleApiKey) return null;
-        const ocr = s.ocrProvider === 'googlecloud', translation = s.translationProvider === 'googlecloud';
+        const ocr = s.ocrProvider === 'google_cloud', translation = s.translationProvider === 'google_cloud';
         if (ocr && translation) return "API key required for OCR & Translation";
         if (ocr) return "API key required for OCR";
         if (translation) return "API key required for Translation";

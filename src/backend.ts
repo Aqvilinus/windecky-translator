@@ -7,7 +7,7 @@ import type { TextRegion, TranslatedRegion } from "./regions";
 // main.py SETTING_DEFAULTS, keys as the backend names them
 export type BackendSettings = Record<string, any>;
 // A downloadable model: offline translation, on-device OCR
-export type ModelKind = 'nllb' | 'chromescreenai';
+export type ModelKind = 'nllb' | 'chrome_screen_ai';
 export interface ModelStatus {
     downloaded: boolean;
     size: number;
@@ -38,7 +38,7 @@ export const backend = {
     captureScreen: callable<[], { id?: number; error?: string }>('capture_screen'),
     discardCapture: callable<[id: number], boolean>('discard_capture'),
     recognizeCapture: callable<[id: number], TextRegion[] | ErrorResponse>('recognize_capture'),
-    translateText: callable<[regions: TextRegion[], target: string, input: string],
+    translateText: callable<[regions: TextRegion[], target: string, source: string],
         TranslatedRegion[] | ErrorResponse | null>('translate_text'),
     updateOverlay: callable<[state: Partial<OverlayState>], boolean>('update_overlay'),
     getStartupErrors: callable<[], string[]>('get_startup_errors'),

@@ -11,10 +11,10 @@ class Configure(unittest.TestCase):
         return pm._ocr_provider_preference, pm._translation_provider_preference
 
     def test_defaults(self):
-        self.assertEqual(self.prefs(), ("chromescreenai", "freegoogle"))
+        self.assertEqual(self.prefs(), ("chrome_screen_ai", "google_web"))
 
     def test_saved_choices_win(self):
-        self.assertEqual(self.prefs(ocr_provider="windows_ocr", translation_provider="ct2"), ("windows_ocr", "ct2"))
+        self.assertEqual(self.prefs(ocr_provider="windows_ocr", translation_provider="nllb"), ("windows_ocr", "nllb"))
 
 
 if __name__ == "__main__":

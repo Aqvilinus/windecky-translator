@@ -19,12 +19,12 @@ export function maskKey(value: string): string {
 }
 
 export interface Settings {
-    inputLanguage: string;
+    sourceLanguage: string;
     targetLanguage: string;
     enabled: boolean;
     confidenceThreshold: number;
-    chromescreenaiPersistentMode: boolean; // its worker stays alive between requests
-    ct2PersistentMode: boolean; // the CT2/NLLB worker stays alive between requests
+    chromeScreenAiKeepAlive: boolean; // its worker stays alive between requests
+    nllbKeepAlive: boolean; // the NLLB worker stays alive between requests
     pauseGameOnOverlay: boolean;
     ocrProvider: OcrProvider;
     translationProvider: TranslationProvider;
@@ -35,7 +35,7 @@ export interface Settings {
     fontScale: number; // the overlay's text, for external monitors
     translationCacheEnabled: boolean;
     // AI translation (providers/llm_translate.py)
-    llmBackend: 'gemini' | 'groq' | 'custom';
+    llmService: 'gemini' | 'groq' | 'custom';
     llmGeminiModel: string;
     llmGroqModel: string;
     llmCustomModel: string;

@@ -12,7 +12,7 @@ import { HiInboxArrowDown } from "react-icons/hi2";
 import { useSettings } from "../settings";
 import type { ModelKind, ModelStatus } from "../backend";
 import { Translator } from "../translator";
-import { LLM_BACKEND_LABELS, llmModel } from "../providers";
+import { LLM_SERVICE_LABELS, llmModel } from "../providers";
 import { logger } from "../log";
 import { closeAllSideMenus } from "../steam";
 
@@ -61,11 +61,11 @@ export const MainTab: VFC<MainTabProps> = ({ translator, overlayVisible, models,
     const { settings, updateSetting } = useSettings();
 
     const ocrNeedsDownload =
-        !!models && settings.ocrProvider === 'chromescreenai' && !models.chromescreenai?.downloaded;
+        !!models && settings.ocrProvider === 'chrome_screen_ai' && !models.chrome_screen_ai?.downloaded;
 
     const translationNeedsDownload =
         settings.ocrProvider !== 'gemini_vision'
-        && settings.translationProvider === 'ct2'
+        && settings.translationProvider === 'nllb'
         && !!models && !models.nllb?.downloaded;
 
     const handleButtonClick = () => {
@@ -75,11 +75,11 @@ export const MainTab: VFC<MainTabProps> = ({ translator, overlayVisible, models,
             return;
         }
         if (ocrNeedsDownload) {
-            onNavigateToTab('translation', 'chromescreenai-action');
+            onNavigateToTab('translation', 'chrome_screen_ai-action');
             return;
         }
         if (translationNeedsDownload) {
-            onNavigateToTab('translation', 'ct2-action');
+            onNavigateToTab('translation', 'nllb-action');
             return;
         }
         closeAllSideMenus()
@@ -138,29 +138,29 @@ export const MainTab: VFC<MainTabProps> = ({ translator, overlayVisible, models,
                                         </span>
                                     </div>
                                 )}
-                                {settings.ocrProvider === 'chromescreenai' && (
+                                {settings.ocrProvider === 'chrome_screen_ai' && (
                                     <div style={{ marginLeft: '22px', marginBottom: '6px' }}>
-                                        {models?.chromescreenai?.downloaded && (
+                                        {models?.chrome_screen_ai?.downloaded && (
                                             <div style={{ color: '#666', fontSize: '10px', marginBottom: '4px' }}>Engine: Chrome Screen AI</div>
                                         )}
                                         <div style={{ color: '#666', fontSize: '10px', display: 'flex', alignItems: 'center' }}>
-                                            {models?.chromescreenai?.downloading ? (
+                                            {models?.chrome_screen_ai?.downloading ? (
                                                 <>
                                                     <Dot color={DOT_INSTALLING} />
                                                     <span>Installing...</span>
                                                 </>
                                             ) : (
                                                 <>
-                                                    <Dot color={!!models?.chromescreenai?.downloaded ? DOT_OK : DOT_FAILED} />
-                                                    <span>{models?.chromescreenai?.downloaded ? 'Ready' : 'Not ready (Engine not installed)'}</span>
+                                                    <Dot color={!!models?.chrome_screen_ai?.downloaded ? DOT_OK : DOT_FAILED} />
+                                                    <span>{models?.chrome_screen_ai?.downloaded ? 'Ready' : 'Not ready (Engine not installed)'}</span>
                                                 </>
                                             )}
                                         </div>
                                     </div>
                                 )}
-                                {settings.ocrProvider === 'googlecloud' && (
+                                {settings.ocrProvider === 'google_cloud' && (
                                     <div style={{ marginLeft: '22px', marginBottom: '6px' }}>
-                                        <ReachabilityRow result={webReachability?.ocr} expectedProvider="googlecloud" />
+                                        <ReachabilityRow result={webReachability?.ocr} expectedProvider="google_cloud" />
                                     </div>
                                 )}
                                 {settings.ocrProvider !== 'gemini_vision' && (
@@ -169,7 +169,7 @@ export const MainTab: VFC<MainTabProps> = ({ translator, overlayVisible, models,
                                         <span style={{ color: '#888' }}>Translation:</span>
                                         <span style={{ marginLeft: '6px', fontWeight: 'bold' }}>
                                             {TRANSLATION_PROVIDER_LABELS[settings.translationProvider]}
-                                            {settings.translationProvider === 'llm' && ` (${LLM_BACKEND_LABELS[settings.llmBackend] || settings.llmBackend})`}
+                                            {settings.translationProvider === 'llm' && ` (${LLM_SERVICE_LABELS[settings.llmService] || settings.llmService})`}
                                         </span>
                                     </div>
                                 )}
@@ -182,10 +182,10 @@ export const MainTab: VFC<MainTabProps> = ({ translator, overlayVisible, models,
                                             <ReachabilityRow result={webReachability?.ocr} expectedProvider="gemini_vision" />
                                         </>
                                     )}
-                                    {settings.ocrProvider !== 'gemini_vision' && settings.translationProvider === 'freegoogle' && (
+                                    {settings.ocrProvider !== 'gemini_vision' && settings.translationProvider === 'google_web' && (
                                         <>
                                             <div style={{ color: '#666', fontSize: '10px' }}>No API key needed</div>
-                                            <ReachabilityRow result={webReachability?.translation} expectedProvider="freegoogle" />
+                                            <ReachabilityRow result={webReachability?.translation} expectedProvider="google_web" />
                                         </>
                                     )}
                                     {settings.ocrProvider !== 'gemini_vision' && settings.translationProvider === 'llm' && (
@@ -196,12 +196,12 @@ export const MainTab: VFC<MainTabProps> = ({ translator, overlayVisible, models,
                                             <ReachabilityRow result={webReachability?.translation} expectedProvider="llm" />
                                         </>
                                     )}
-                                    {settings.ocrProvider !== 'gemini_vision' && settings.translationProvider === 'googlecloud' && (
+                                    {settings.ocrProvider !== 'gemini_vision' && settings.translationProvider === 'google_cloud' && (
                                         <>
-                                            <ReachabilityRow result={webReachability?.translation} expectedProvider="googlecloud" />
+                                            <ReachabilityRow result={webReachability?.translation} expectedProvider="google_cloud" />
                                         </>
                                     )}
-                                    {settings.ocrProvider !== 'gemini_vision' && settings.translationProvider === 'ct2' && (
+                                    {settings.ocrProvider !== 'gemini_vision' && settings.translationProvider === 'nllb' && (
                                         <>
                                             {models?.nllb?.downloaded && (
                                                 <div style={{ color: '#666', fontSize: '10px' }}>Model: NLLB-200 1.3B</div>

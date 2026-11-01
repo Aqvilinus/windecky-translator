@@ -34,8 +34,8 @@ def net():
 
 
 # Google Cloud Vision for the screen text and the free Google translator: both answered by the stubs
-DEFAULT_SETTINGS = {"ocr_provider": "googlecloud", "google_api_key": "test-key-0123456789",
-                    "translation_provider": "freegoogle", "target_language": "en"}
+DEFAULT_SETTINGS = {"ocr_provider": "google_cloud", "google_api_key": "test-key-0123456789",
+                    "translation_provider": "google_web", "target_language": "en"}
 
 
 @pytest.fixture

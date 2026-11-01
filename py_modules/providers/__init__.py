@@ -25,8 +25,8 @@ logger = logging.getLogger(__name__)
 
 _REACHABILITY_CACHE_SECONDS = 4.0
 
-_WEB_OCR_PROVIDERS = {"gemini_vision", "googlecloud"}
-_WEB_TRANSLATION_PROVIDERS = {"googlecloud", "freegoogle", "llm"}
+_WEB_OCR_PROVIDERS = {"gemini_vision", "google_cloud"}
+_WEB_TRANSLATION_PROVIDERS = {"google_cloud", "google_web", "llm"}
 
 
 class ProviderRegistry:
@@ -40,13 +40,13 @@ class ProviderRegistry:
         self._gemini_api_key = ""
         self._gemini_model = "gemini-3.5-flash"
         self._gemini_target_language = "en"
-        self._ocr_provider_preference = "chromescreenai"  # engine ids as the frontend names them (main.py)
-        self._translation_provider_preference = "freegoogle"
+        self._ocr_provider_preference = "chrome_screen_ai"  # engine ids as the frontend names them (main.py)
+        self._translation_provider_preference = "google_web"
         # main.py _update_workers decides: the worker of the chosen local engine stays up between requests
-        self._chromescreenai_persistent_mode = False
-        self._ct2_persistent_mode = False
+        self._chrome_screen_ai_keep_alive = False
+        self._nllb_keep_alive = False
 
-        # The models the user downloads in the settings, by kind: "nllb" (offline translation), "chromescreenai"
+        # The models the user downloads in the settings, by kind: "nllb" (offline translation), "chrome_screen_ai"
         # (on-device OCR); configure() creates them with their folders
         self.downloads: Dict[str, Downloader] = {}
 
@@ -63,13 +63,13 @@ class ProviderRegistry:
         gemini_api_key: str = "",
         ocr_provider: str = "",
         translation_provider: str = "",
-        ct2_models_dir: str = "",
+        nllb_models_dir: str = "",
         screenai_models_dir: str = "",
     ) -> None:
-        if ct2_models_dir and "nllb" not in self.downloads:
-            self.downloads["nllb"] = NLLBDownloader(ct2_models_dir)
-        if screenai_models_dir and "chromescreenai" not in self.downloads:
-            self.downloads["chromescreenai"] = ChromeScreenAIDownloader(screenai_models_dir)
+        if nllb_models_dir and "nllb" not in self.downloads:
+            self.downloads["nllb"] = NLLBDownloader(nllb_models_dir)
+        if screenai_models_dir and "chrome_screen_ai" not in self.downloads:
+            self.downloads["chrome_screen_ai"] = ChromeScreenAIDownloader(screenai_models_dir)
         self._google_api_key = google_api_key
         self._gemini_api_key = gemini_api_key
 
@@ -78,10 +78,10 @@ class ProviderRegistry:
         if translation_provider:
             self._translation_provider_preference = translation_provider
 
-        if "googlecloud" in self._ocr_providers:
-            self._ocr_providers["googlecloud"].set_api_key(google_api_key)
-        if "googlecloud" in self._translation_providers:
-            self._translation_providers["googlecloud"].set_api_key(google_api_key)
+        if "google_cloud" in self._ocr_providers:
+            self._ocr_providers["google_cloud"].set_api_key(google_api_key)
+        if "google_cloud" in self._translation_providers:
+            self._translation_providers["google_cloud"].set_api_key(google_api_key)
 
         if "gemini_vision" in self._ocr_providers:
             self._ocr_providers["gemini_vision"].set_api_key(gemini_api_key)
@@ -123,21 +123,21 @@ class ProviderRegistry:
             # recreated with the new model on next use
             self._ocr_providers.pop("gemini_vision", None)
 
-    def set_chromescreenai_persistent_mode(self, enabled: bool) -> None:
+    def set_chrome_screen_ai_keep_alive(self, enabled: bool) -> None:
         """Keep the Chrome Screen AI worker running between requests (True), or stop it (False)."""
-        self._chromescreenai_persistent_mode = bool(enabled)
-        provider = (self.get_ocr_provider("chromescreenai") if enabled
-                    else self._ocr_providers.get("chromescreenai"))
+        self._chrome_screen_ai_keep_alive = bool(enabled)
+        provider = (self.get_ocr_provider("chrome_screen_ai") if enabled
+                    else self._ocr_providers.get("chrome_screen_ai"))
         if provider:
-            provider.set_persistent_mode(self._chromescreenai_persistent_mode)
+            provider.set_keep_alive(self._chrome_screen_ai_keep_alive)
 
-    def set_ct2_persistent_mode(self, enabled: bool) -> None:
+    def set_nllb_keep_alive(self, enabled: bool) -> None:
         """Keep the offline NLLB worker running between requests (True), or stop it (False)."""
-        self._ct2_persistent_mode = bool(enabled)
-        provider = (self.get_translation_provider("ct2") if enabled
-                    else self._translation_providers.get("ct2"))
+        self._nllb_keep_alive = bool(enabled)
+        provider = (self.get_translation_provider("nllb") if enabled
+                    else self._translation_providers.get("nllb"))
         if provider:
-            provider.set_persistent_mode(self._ct2_persistent_mode)
+            provider.set_keep_alive(self._nllb_keep_alive)
 
     def get_ocr_provider(self, engine: Optional[str] = None) -> Optional[OCRProvider]:
         """The OCR provider for an engine id (default: the chosen one), created on first use."""
@@ -150,16 +150,16 @@ class ProviderRegistry:
         return self._ocr_providers[engine]
 
     def _make_ocr_provider(self, engine: str) -> Optional[OCRProvider]:
-        if engine == "chromescreenai":
-            screenai = self.downloads.get("chromescreenai")
+        if engine == "chrome_screen_ai":
+            screenai = self.downloads.get("chrome_screen_ai")
             provider = ChromeScreenAIProvider(model_dir=screenai.resources_dir if screenai else "")
-            if self._chromescreenai_persistent_mode:
-                provider.set_persistent_mode(True)
+            if self._chrome_screen_ai_keep_alive:
+                provider.set_keep_alive(True)
             return provider
         if engine == "windows_ocr":
             from .windows_ocr import WindowsOCRProvider  # winrt, loaded only when chosen
             return WindowsOCRProvider()
-        if engine == "googlecloud":
+        if engine == "google_cloud":
             return GoogleCloudVisionProvider(self._google_api_key)
         if engine == "gemini_vision":
             provider = GeminiVisionProvider(api_key=self._gemini_api_key, model=self._gemini_model)
@@ -179,23 +179,23 @@ class ProviderRegistry:
         return self._translation_providers[engine]
 
     def _make_translation_provider(self, engine: str) -> Optional[TranslationProvider]:
-        if engine == "freegoogle":
+        if engine == "google_web":
             return GoogleWebTranslateProvider()
-        if engine == "googlecloud":
+        if engine == "google_cloud":
             return GoogleCloudTranslateProvider(self._google_api_key)
         if engine == "llm":
             # shares the free provider, so a Google pause after a 429 holds for both
-            llm = LLMTranslateProvider(fallback=self.get_translation_provider("freegoogle"))
+            llm = LLMTranslateProvider(fallback=self.get_translation_provider("google_web"))
             cfg = self._llm_config
             llm.configure(backend=cfg.get("backend", ""), keys=cfg.get("keys"), models=cfg.get("models"),
                           custom_url=cfg.get("custom_url", ""))
             return llm
-        if engine == "ct2":
+        if engine == "nllb":
             if "nllb" not in self.downloads:
                 return None
             provider = NLLBTranslateProvider(self.downloads["nllb"])
-            if self._ct2_persistent_mode:
-                provider.set_persistent_mode(True)
+            if self._nllb_keep_alive:
+                provider.set_keep_alive(True)
             return provider
         logger.error(f"Unknown translation engine: {engine}")
         return None
@@ -240,11 +240,11 @@ class ProviderRegistry:
             return result
 
         if ocr_pref in _WEB_OCR_PROVIDERS:
-            key = self._google_api_key if ocr_pref == "googlecloud" else ""
+            key = self._google_api_key if ocr_pref == "google_cloud" else ""
             result["ocr"] = await self._probe_cached(ocr_pref, "ocr", key)
 
         if trans_pref in _WEB_TRANSLATION_PROVIDERS:
-            key = self._google_api_key if trans_pref == "googlecloud" else ""
+            key = self._google_api_key if trans_pref == "google_cloud" else ""
             result["translation"] = await self._probe_cached(trans_pref, "translation", key)
 
         return result
@@ -300,11 +300,11 @@ class ProviderRegistry:
         if kind not in self.downloads:
             return False
         if kind == "nllb":
-            ct2 = self._translation_providers.get("ct2")
-            if ct2:
-                ct2.unload_current_model()
-        elif kind == "chromescreenai":
-            screenai = self._ocr_providers.pop("chromescreenai", None)  # rechecks availability later
+            nllb = self._translation_providers.get("nllb")
+            if nllb:
+                nllb.unload_current_model()
+        elif kind == "chrome_screen_ai":
+            screenai = self._ocr_providers.pop("chrome_screen_ai", None)  # rechecks availability later
             if screenai:
                 screenai.stop_worker()
         return self.downloads[kind].delete()

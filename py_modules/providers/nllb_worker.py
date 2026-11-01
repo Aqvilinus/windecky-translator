@@ -30,8 +30,8 @@ import unicode_scripts  # beside this script, which Python puts first on sys.pat
 
 IDLE_TIMEOUT_SECONDS = 600
 
-# the plugin's persistent mode: no idle timeout
-PERSISTENT = os.environ.get("CT2_PERSISTENT") == "1"
+# the plugin's keep-alive: no idle timeout
+KEEP_ALIVE = os.environ.get("NLLB_KEEP_ALIVE") == "1"
 
 _DASH_PREFIXES = ("-", "–", "—", "‐", "−", "‑")
 
@@ -278,7 +278,7 @@ def main():
     def _idle_watch():
         while True:
             time.sleep(30)
-            if not PERSISTENT and time.monotonic() - last_activity > IDLE_TIMEOUT_SECONDS:
+            if not KEEP_ALIVE and time.monotonic() - last_activity > IDLE_TIMEOUT_SECONDS:
                 os._exit(0)
 
     threading.Thread(target=_idle_watch, daemon=True).start()
