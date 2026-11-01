@@ -12,8 +12,6 @@ import tarfile
 import decky  # Decky Loader's plugin API (typings/decky.pyi)
 
 PLUGIN_DIR = decky.DECKY_PLUGIN_DIR
-if PLUGIN_DIR not in sys.path:
-    sys.path.insert(0, PLUGIN_DIR)
 
 # Decky Store installs ship the third-party packages as an archive: extracted before anything imports them
 BIN_DIR = os.path.join(PLUGIN_DIR, "bin")
@@ -53,11 +51,7 @@ if _should_extract_dependencies():
         if os.path.exists(EXTRACTION_MARKER):
             os.remove(EXTRACTION_MARKER)  # the next start retries
 
-ROOT_PY_MODULES_DIR = os.path.join(PLUGIN_DIR, "py_modules")
-
-if ROOT_PY_MODULES_DIR not in sys.path:
-    sys.path.insert(0, ROOT_PY_MODULES_DIR)
-
+# Decky puts the plugin's own py_modules on sys.path; the extracted third-party packages are ours to add
 if os.path.exists(BIN_PY_MODULES_DIR) and BIN_PY_MODULES_DIR not in sys.path:
     sys.path.insert(0, BIN_PY_MODULES_DIR)
 
